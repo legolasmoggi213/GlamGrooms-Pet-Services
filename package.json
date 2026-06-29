@@ -1,0 +1,29 @@
+{
+  "name": "capstone_project",
+  "version": "1.0.0",
+  "description": "This folder is for capstone project",
+  "keywords": [
+    "JM"
+  ],
+  "homepage": "https://github.com/johnandrino11-spec/Capstone_Project#readme",
+  "bugs": {
+    "url": "https://github.com/johnandrino11-spec/Capstone_Project/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnandrino11-spec/Capstone_Project.git"
+  },
+  "license": "MIT",
+  "author": "John Michale Andrino",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "index.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "nodemon": "^3.1.14"
+  },
+  "devDependencies": {}
+}

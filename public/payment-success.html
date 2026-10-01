@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Payment Receipt — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="receipt-page">
+  <main class="section">
+    <div class="form-card receipt-confirmation">
+      <h2 id="payment-title">Confirming your payment</h2>
+      <p id="payment-message" class="text-muted" role="status" aria-live="polite">Please wait while we verify your GCash payment.</p>
+      <section id="payment-receipt" class="payment-receipt" hidden aria-label="Payment receipt"></section>
+      <a class="btn btn-outline" href="/customer/account.html">Go to My Account</a>
+    </div>
+  </main>
+  <script src="/js/api.js"></script>
+  <script>
+    (async () => {
+      const message = document.getElementById('payment-message');
+      const sessionId = new URLSearchParams(location.search).get('session_id');
+      if (!sessionId) {
+        message.textContent = 'Payment session not found. Please contact the business if you were charged.';
+        return;
+      }
+      try {
+        const result = await apiPost('/payments/verify', { sessionId });
+        if (!result.receipt) throw new Error('Payment was verified, but the receipt is unavailable. Please contact the business.');
+        const receipt = result.receipt;
+        const receiptElement = document.getElementById('payment-receipt');
+        const isHotel = receipt.bookingType === 'hotel';
+        const service = String(receipt.service || (isHotel ? 'Pet hotel stay' : 'Grooming service'))
+          .replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+        const schedule = isHotel
+          ? `Check-in: ${fmtDate(receipt.checkIn)}${receipt.checkInTime ? ` at ${escapeHtml(receipt.checkInTime)}` : ''}<br>Check-out: ${fmtDate(receipt.checkOut)}${receipt.checkOutTime ? ` at ${escapeHtml(receipt.checkOutTime)}` : ''}`
+          : `Appointment: ${fmtDate(receipt.date)} at ${escapeHtml(receipt.time || 'Time TBA')}${receipt.pickupTime ? `<br>Pickup: ${escapeHtml(receipt.pickupTime)}` : ''}`;
+        const pets = Array.isArray(receipt.petNames) && receipt.petNames.length
+          ? receipt.petNames.map(escapeHtml).join(', ')
+          : '—';
+        receiptElement.innerHTML = `
+          <div class="receipt-heading">
+            <div class="receipt-mark">GG</div>
+            <div><strong>Glam Grooms</strong><span>Pet Spa &amp; Hotel</span></div>
+            <span class="receipt-paid">Paid</span>
+          </div>
+          <h3>Payment receipt</h3>
+          <div class="receipt-meta"><span>Receipt #${escapeHtml(receipt.bookingId)}</span><span>${escapeHtml(fmtDateTime(receipt.paidAt))}</span></div>
+          <div class="receipt-details">
+            <div><span>Customer</span><strong>${escapeHtml(receipt.customerName || 'Customer')}</strong></div>
+            <div><span>Pet${receipt.petNames && receipt.petNames.length === 1 ? '' : 's'}</span><strong>${pets}</strong></div>
+            <div><span>${isHotel ? 'Stay' : 'Service'}</span><strong>${escapeHtml(service)}</strong></div>
+            <div><span>Schedule</span><strong>${schedule}</strong></div>
+            <div><span>Payment method</span><strong>GCash · PayMongo QR Ph</strong></div>
+            <div><span>Payment reference</span><strong>${escapeHtml(receipt.paymentReference)}</strong></div>
+          </div>
+          <div class="receipt-total"><span>Total paid</span><strong>${fmtMoney(receipt.amount)}</strong></div>
+          <div class="receipt-actions">
+            <button class="btn btn-primary" type="button" id="print-receipt">Print receipt</button>
+          </div>`;
+        receiptElement.hidden = false;
+        document.getElementById('payment-title').textContent = 'Payment received';
+        message.textContent = 'Your payment is confirmed. Here is your receipt.';
+        document.getElementById('print-receipt').addEventListener('click', () => window.print());
+      } catch (error) {
+        message.textContent = error.message || 'We could not verify the payment yet. Please contact the business if you were charged.';
+      }
+    })();
+  </script>
+</body>
+</html>

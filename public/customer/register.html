@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Customer Registration — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="/js/firebase-config.js"></script>
+</head>
+<body>
+  <header class="navbar">
+    <a class="brand" href="/">Glam Grooms Pet Spa & Hotel</a>
+  </header>
+
+  <div class="customer-login-card">
+    <h2>Create an account</h2>
+    <p class="text-muted">Register to book grooming and hotel services faster.</p>
+    <form method="POST" action="/customer/register">
+      <input type="hidden" name="return" value="" id="return-field" />
+      <div class="field"><label for="name">Full name</label><input id="name" name="name" required placeholder="Juan Dela Cruz" /></div>
+      <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required placeholder="you@gmail.com" pattern="^[^@\s]+@gmail\.com$" title="Please use a Gmail address (@gmail.com)" /></div>
+      <div class="field"><label for="password">Password</label>
+        <div class="password-field">
+          <input id="password" name="password" type="password" required placeholder="8-24 characters with letters, a number, and a symbol" minlength="8" maxlength="24" autocomplete="new-password" />
+          <button type="button" class="toggle-password" data-target="password" aria-label="Show password">👁</button>
+        </div>
+      </div>
+      <div class="field"><label for="phone">Phone *</label><input id="phone" name="phone" required placeholder="0917-555-0123" /></div>
+      <div class="field"><label for="address">Address *</label><input id="address" name="address" required placeholder="Street, City" /></div>
+      <div class="field terms">
+        <input id="accept-terms" name="acceptTerms" type="checkbox" required />
+        <div class="terms-copy">
+          <label for="accept-terms">I have reviewed and agree to the</label>
+          <button class="terms-link" id="toggle-privacy-terms" type="button" aria-expanded="false" aria-controls="privacy-terms-panel">privacy terms and conditions</button>.
+        </div>
+      </div>
+      <section id="privacy-terms-panel" class="terms-panel" hidden aria-labelledby="privacy-terms-title">
+        <h3 id="privacy-terms-title">Privacy Terms &amp; Conditions</h3>
+        <h4>Information we collect</h4>
+        <p>When you create an account or make a booking, we may collect your name, contact details, pet information, and appointment details.</p>
+        <h4>How we use your information</h4>
+        <p>We use this information to manage accounts, provide grooming and hotel services, process bookings, and send important service updates.</p>
+        <h4>How we protect your information</h4>
+        <p>Your data is stored securely and is only accessed by authorized staff for the purposes described above. We do not sell, rent, or share your personal information with third parties except as required to complete a booking or as required by law.</p>
+        <h4>Governing laws</h4>
+        <p>This website and its digital services are operated in compliance with the following Republic Acts of the Philippines:</p>
+        <ul>
+          <li><strong>Republic Act No. 10173 — Data Privacy Act of 2011:</strong> Requires the protection of personal data collected and processed through digital systems, including consent, security, and the rights of data subjects (access, correction, and erasure).</li>
+          <li><strong>Republic Act No. 10175 — Cybercrime Prevention Act of 2012:</strong> Defines and penalizes offenses committed through digital systems (e.g., unauthorized access, data interference, and online fraud) and requires reasonable security measures to safeguard digital data.</li>
+          <li><strong>Republic Act No. 10173 (Implementing Rules and Regulations):</strong> Establishes the National Privacy Commission as the regulatory body and mandates data protection officers, breach notification, and privacy impact assessments for automated processing of personal data.</li>
+        </ul>
+        <h4>Your agreement</h4>
+        <ul>
+          <li>You agree to provide accurate information.</li>
+          <li>You understand that your information is used to provide our services.</li>
+          <li>You may contact the business to ask about or update your information.</li>
+        </ul>
+        <div class="terms-panel-actions">
+          <label class="terms-panel-accept"><input type="checkbox" id="privacy-panel-accept" /> I accept these terms and conditions.</label>
+          <button class="btn btn-primary btn-sm" id="privacy-panel-close" type="button" disabled>Accept and close</button>
+        </div>
+      </section>
+      <div class="field login-actions"><button class="btn btn-primary" type="submit" id="submit-btn">Register</button>
+        <a href="/customer/login.html" style="margin-left:1rem;">Already have an account?</a></div>
+    </form>
+  </div>
+
+  <script>
+    // preserve return url
+    const params = new URLSearchParams(location.search);
+    const ret = params.get('return') || '/';
+    document.getElementById('return-field').value = ret;
+
+    // Expand the terms inline and keep consent linked to the required form checkbox.
+    const privacyPanel = document.getElementById('privacy-terms-panel');
+    const privacyToggle = document.getElementById('toggle-privacy-terms');
+    const privacyAcceptCheckbox = document.getElementById('privacy-panel-accept');
+    const privacyCloseBtn = document.getElementById('privacy-panel-close');
+    const termsCheckbox = document.getElementById('accept-terms');
+
+    const setPrivacyPanelOpen = (isOpen) => {
+      privacyPanel.hidden = !isOpen;
+      privacyToggle.setAttribute('aria-expanded', String(isOpen));
+      if (isOpen) privacyPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+
+    privacyToggle.addEventListener('click', () => {
+      setPrivacyPanelOpen(privacyPanel.hidden);
+    });
+
+    privacyAcceptCheckbox.addEventListener('change', () => {
+      privacyCloseBtn.disabled = !privacyAcceptCheckbox.checked;
+      termsCheckbox.checked = privacyAcceptCheckbox.checked;
+    });
+
+    privacyCloseBtn.addEventListener('click', () => {
+      setPrivacyPanelOpen(false);
+      privacyToggle.focus();
+    });
+
+    // Expose the inline panel opener for customer-auth.js.
+    window.openPrivacyModal = () => {
+      setPrivacyPanelOpen(true);
+    };
+  </script>
+  <script src="/js/password-strength.js"></script>
+  <script src="/js/customer-auth.js"></script>
+  <script src="/js/password-toggle.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin Login — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="navbar">
+    <a class="brand" href="/index.html">Glam Grooms Pet Spa & Hotel</a>
+  </header>
+
+  <div class="customer-login-card">
+    <h2>Admin Login</h2>
+    <form method="POST" action="/admin/login">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+      </div>
+      <div class="field login-actions">
+        <button class="btn btn-primary" type="submit">Sign in</button>
+        <a href="/customer/login.html" style="margin-left:1rem;">← Back to customer login</a>
+      </div>
+    </form>
+  </div>
+
+</body>
+</html>

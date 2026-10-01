@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Privacy Terms & Agreements — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <main class="privacy-card">
+    <h1>Before you continue</h1>
+    <p>Welcome to Glam Grooms Pet Spa & Hotel. Please review and accept our privacy terms and agreements before using the site.</p>
+
+    <h2>Information we collect</h2>
+    <p>When you create an account or make a booking, we may collect your name, contact details, pet information, and appointment details.</p>
+
+    <h2>How we use your information</h2>
+    <p>We use this information to manage accounts, provide grooming and hotel services, process bookings, and send important service updates.</p>
+
+    <h2>How we protect your information</h2>
+    <p>Your data is stored securely and is only accessed by authorized staff for the purposes described above. We do not sell, rent, or share your personal information with third parties except as required to complete a booking or as required by law.</p>
+
+    <h2>Governing Laws</h2>
+    <p>This website and its digital services are operated in compliance with the following Republic Acts of the Philippines:</p>
+    <ul>
+      <li><strong>Republic Act No. 10173 — Data Privacy Act of 2011:</strong> Requires the protection of personal data collected and processed through digital systems, including consent, security, and the rights of data subjects (access, correction, and erasure).</li>
+      <li><strong>Republic Act No. 10175 — Cybercrime Prevention Act of 2012:</strong> Defines and penalizes offenses committed through digital systems (e.g., unauthorized access, data interference, and online fraud) and requires reasonable security measures to safeguard digital data.</li>
+      <li><strong>Republic Act No. 10173 (Implementing Rules and Regulations):</strong> Establishes the National Privacy Commission as the regulatory body and mandates data protection officers, breach notification, and privacy impact assessments for automated processing of personal data.</li>
+    </ul>
+
+    <h2>Your agreement</h2>
+    <ul>
+      <li>You agree to provide accurate information.</li>
+      <li>You understand that your information is used to provide our services.</li>
+      <li>You may contact the business to ask about or update your information.</li>
+    </ul>
+
+    <div class="privacy-actions">
+      <button class="btn btn-primary" id="accept-privacy" type="button">Accept and continue</button>
+      <p class="privacy-note">You must accept these terms to view the site.</p>
+    </div>
+  </main>
+
+  <script>
+    const returnUrl = new URLSearchParams(location.search).get('return') || '/';
+    document.getElementById('accept-privacy').addEventListener('click', () => {
+      document.cookie = 'site_privacy_consent=accepted; max-age=31536000; path=/; SameSite=Lax';
+      window.location.replace(returnUrl.startsWith('/') ? returnUrl : '/');
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pet Hotel Reservation — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="navbar">
+    <a class="brand" href="/">Glam Grooms Pet Spa & Hotel</a>
+    <nav>
+      <a href="/">Home</a>
+      <a id="customer-nav-link" href="/customer/login.html">Login</a>
+      <a href="/grooming.html">Grooming</a>
+      <a href="/hotel.html" class="active">Pet Hotel</a>
+    </nav>
+  </header>
+
+  <section class="section">
+    <h2 class="section-title">Reserve a Hotel Suite</h2>
+    <p class="section-sub">A safe, luxurious stay for your pet while you're away.</p>
+
+    <div class="form-card">
+      <div id="alert" class="alert"></div>
+
+      <form id="hotel-form">
+        <div class="form-section-label">Your Information</div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="c-name">Full Name *</label>
+            <input id="c-name" name="name" required />
+          </div>
+          <div class="field">
+            <label for="c-phone">Phone *</label>
+            <input id="c-phone" name="phone" required />
+          </div>
+          <div class="field full">
+            <label for="c-email">Email *</label>
+            <input id="c-email" name="email" type="email" required />
+          </div>
+          <div class="field full">
+            <label for="c-address">Address *</label>
+            <input id="c-address" name="address" required />
+          </div>
+        </div>
+
+        <div class="form-section-label">Pet Information</div>
+        <div class="field"><label for="pet-count">How many pets?</label><select id="pet-count" name="petCount"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
+        <div id="pet-fields" class="form-grid"></div>
+
+        <div class="form-section-label">Stay Details</div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="roomType">Room Type *</label>
+            <select id="roomType" name="roomType">
+              <option value="staycation-standard">Standard Room — ₱500/night</option>
+              <option value="staycation-deluxe" selected>Premium Deluxe Room — ₱800/night</option>
+            </select>
+          </div>
+          <div class="field"></div>
+          <div class="field">
+            <label for="checkIn">Check-in *</label>
+            <input id="checkIn" name="checkIn" type="date" required />
+          </div>
+          <div class="field">
+            <label for="checkInTime">Check-in time *</label>
+            <select id="checkInTime" name="checkInTime" required></select>
+          </div>
+          <div class="field">
+            <label for="checkOut">Check-out *</label>
+            <input id="checkOut" name="checkOut" type="date" required />
+          </div>
+          <div class="field">
+            <label for="checkOutTime">Check-out time *</label>
+            <select id="checkOutTime" name="checkOutTime" required></select>
+          </div>
+          <div class="field full">
+            <label for="notes">Special Care Instructions *</label>
+            <textarea id="notes" name="notes" required rows="2"></textarea>
+          </div>
+        </div>
+
+        <div class="form-section-label">Payment</div>
+        <div class="payment-options">
+          <label><input type="radio" name="paymentMethod" value="cash" checked /> Pay at the counter (cash)</label>
+          <label><input type="radio" name="paymentMethod" value="qrph" /> Pay online in advance via GCash QR</label>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-accent" id="submit-btn">Reserve Stay</button>
+          <span class="text-muted" id="price-preview"></span>
+        </div>
+        <div id="availability-badge" style="margin-top:0.8rem;font-size:0.9rem;font-weight:600;"></div>
+      </form>
+
+      <div id="order-summary"></div>
+    </div>
+  </section>
+
+  <footer class="footer"><div class="footer-brand">Glam Grooms Pet Spa & Hotel</div><p>Address: # Unit 1, PR1MO Building, Gloria Diaz Street, BF Resort Village, Las Piñas 1747</p><p>Phone: <a href="tel:+639608672330">0960 867 2330</a></p><p>Hours: Friday 9 AM-6 PM | Saturday 9 AM-6 PM | Sunday 6 AM-6 PM | Monday 9 AM-6 PM | Tuesday 9 AM-6 PM | Wednesday 9 AM-6 PM | Thursday 9 AM-6 PM</p></footer>
+
+  <script src="/js/api.js?v=2"></script>
+  <script src="/js/hotel.js?v=2"></script>
+<script>
+    // Show "My Account" if the customer is logged in, otherwise "Login".
+    // Verified against the server via the httpOnly token — no stale cookie issues.
+    function updateCustomerNav() {
+      const navLink = document.getElementById('customer-nav-link');
+      if (!navLink) return;
+      navLink.textContent = 'Login';
+      navLink.href = '/customer/login.html';
+      fetch('/admin/nav-status', { credentials: 'include' })
+        .then((r) => r.ok ? r.json() : null)
+        .then((admin) => {
+          if (admin && admin.authenticated) {
+            navLink.textContent = 'Admin Dashboard';
+            navLink.href = '/admin/index.html';
+            return;
+          }
+          return fetch('/customer/nav-status', { credentials: 'include' })
+            .then((r) => r.ok ? r.json() : null)
+            .then((data) => {
+              if (data && data.authenticated) {
+                navLink.textContent = 'My Account';
+                navLink.href = '/customer/account.html';
+              }
+            });
+        })
+        .catch(() => {});
+    }
+    document.addEventListener('DOMContentLoaded', updateCustomerNav);
+    // Re-check on every page show (including back/forward cache restores)
+    window.addEventListener('pageshow', updateCustomerNav);
+  </script>
+</body>
+</html>

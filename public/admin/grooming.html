@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grooming Appointments — Glam Grooms Admin</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="admin-main">
+      <div class="flex-between">
+        <div>
+          <h1>Grooming Appointments</h1>
+          <p class="page-sub">Track and manage grooming bookings.</p>
+        </div>
+        <button class="btn btn-primary" id="add-btn">+ New Appointment</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Date</th><th>Time</th><th>Pickup</th><th>Service</th><th>Pet</th><th>Customer</th><th>Price</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="10" class="loading">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>
+    renderSidebar('Grooming');
+
+    const rowsEl = document.getElementById('rows');
+    let customersCache = [];
+    let petsCache = [];
+
+    const SERVICES = ['bath', 'nail-trim', 'haircut', 'deshedding', 'full-groom'];
+    const STATUSES = ['pending', 'scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled'];
+
+    async function loadAppointments() {
+      const items = await apiGet('/grooming');
+      if (!items.length) {
+        rowsEl.innerHTML = '<tr><td colspan="9" class="empty">No appointments yet.</td></tr>';
+        return;
+      }
+      rowsEl.innerHTML = items
+        .map(
+          (a) => `
+        <tr>
+          <td>${a.id}</td>
+          <td>${fmtDate(a.date)}</td>
+          <td>${escapeHtml(a.time)}</td>
+          <td>${escapeHtml(a.pickupTime || '—')}</td>
+          <td>${capitalize(a.service)}</td>
+          <td>${a.Pet ? escapeHtml(a.Pet.name) : '—'}</td>
+          <td>${a.Customer ? escapeHtml(a.Customer.name) : '—'}</td>
+          <td>${fmtMoney(a.price)}</td>
+          <td>${statusBadge(a.status)}</td>
+          <td>
+            ${a.status !== 'confirmed' && a.status !== 'completed' && a.status !== 'cancelled' ? `<button class="btn btn-success btn-sm" onclick="confirmAppt('${a.id}', this)">Confirm</button>` : ''}
+            <button class="btn btn-outline btn-sm" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})'>View</button>
+            <button class="btn btn-danger btn-sm" onclick='removeAppt(${escapeHtml(JSON.stringify(a.id))})'>Delete</button>
+          </td>
+        </tr>`
+        )
+        .join('');
+    }
+
+    function apptForm(a = {}) {
+      const serviceOptions = SERVICES.map((s) => `<option value="${s}" ${a.service === s ? 'selected' : ''}>${capitalize(s)}</option>`).join('');
+      const statusOptions = STATUSES.map((s) => `<option value="${s}" ${a.status === s ? 'selected' : ''}>${capitalize(s)}</option>`).join('');
+      const customerOptions = customersCache.map((c) => `<option value="${escapeHtml(c.id)}" ${String(a.customerId) === String(c.id) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+      const petOptions = petsCache.map((p) => `<option value="${escapeHtml(p.id)}" data-customer="${escapeHtml(p.customerId)}" ${String(a.petId) === String(p.id) ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+      return `
+        <form id="appt-form" class="form-grid">
+          <div class="field"><label>Customer *</label><select name="customerId" required>${customerOptions}</select></div>
+          <div class="field"><label>Pet *</label><select name="petId" required>${petOptions}</select></div>
+          <div class="field"><label>Service *</label><select name="service">${serviceOptions}</select></div>
+          <div class="field"><label>Status</label><select name="status">${statusOptions}</select></div>
+          <div class="field"><label>Date *</label><input name="date" type="date" required value="${a.date || ''}" /></div>
+          <div class="field"><label>Time *</label><input name="time" required value="${escapeHtml(a.time || '10:00')}" /></div>
+          <div class="field"><label>Pickup Time</label><input name="pickupTime" type="time" value="${escapeHtml(a.pickupTime || '')}" placeholder="When will customer pick up?" /></div>
+          <div class="field full"><label>Notes</label><textarea name="notes" rows="2">${escapeHtml(a.notes || '')}</textarea></div>
+          <div class="form-actions full">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
+          </div>
+        </form>`;
+    }
+
+    function bindForm(id) {
+      const form = document.getElementById('appt-form');
+      const customerSelect = form.customerId;
+      const petSelect = form.petId;
+      const filterPets = () => {
+        const cid = customerSelect.value;
+        let firstValid = null;
+        [...petSelect.options].forEach((opt) => {
+          const match = opt.dataset.customer === cid;
+          opt.hidden = !match;
+          if (match && !firstValid) firstValid = opt;
+        });
+        if (petSelect.selectedOptions[0] && petSelect.selectedOptions[0].hidden && firstValid) {
+          petSelect.value = firstValid.value;
+        }
+      };
+      customerSelect.addEventListener('change', filterPets);
+      filterPets();
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const body = {
+          customerId: form.customerId.value,
+          petId: form.petId.value,
+          service: form.service.value,
+          status: form.status.value,
+          date: form.date.value,
+          time: form.time.value.trim(),
+          pickupTime: form.pickupTime ? form.pickupTime.value.trim() : null,
+          notes: form.notes.value.trim() || null,
+        };
+        try {
+          if (id) await apiPut(`/grooming/${id}`, body);
+          else await apiPost('/grooming', body);
+          closeModal();
+          loadAppointments();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+    }
+
+    document.getElementById('add-btn').addEventListener('click', () => {
+      if (!customersCache.length || !petsCache.length) {
+        alert('Add at least one customer and pet first.');
+        return;
+      }
+      openModal('New Appointment', apptForm({ customerId: customersCache[0].id, petId: petsCache[0].id, status: 'pending' }));
+      bindForm(null);
+    });
+
+    window.viewAppt = async (id) => {
+      const a = await apiGet(`/grooming/${id}`);
+      const pet = a.Pet ? escapeHtml(a.Pet.name) : '—';
+      const customer = a.Customer ? escapeHtml(a.Customer.name) : '—';
+      const petInfo = a.Pet ? `Species: ${escapeHtml(a.Pet.species || '—')}, Breed: ${escapeHtml(a.Pet.breed || '—')}, Age: ${a.Pet.age != null ? a.Pet.age : '—'}` : '';
+      const customerInfo = a.Customer ? `Email: ${escapeHtml(a.Customer.email || '—')}, Phone: ${escapeHtml(a.Customer.phone || '—')}` : '';
+      openModal('Appointment Details', `
+        <div class="form-grid">
+          <div class="field"><label>Appointment ID</label><input type="text" readonly value="${escapeHtml(a.id)}" /></div>
+          <div class="field"><label>Customer</label><input type="text" readonly value="${customer}" /></div>
+          <div class="field"><label>Pet</label><input type="text" readonly value="${pet}" /></div>
+          <div class="field"><label>Service</label><input type="text" readonly value="${escapeHtml(a.service)}" /></div>
+          <div class="field"><label>Date</label><input type="text" readonly value="${escapeHtml(a.date)}" /></div>
+          <div class="field"><label>Time</label><input type="text" readonly value="${escapeHtml(a.time)}" /></div>
+          <div class="field"><label>Pickup Time</label><input type="text" readonly value="${escapeHtml(a.pickupTime || '—')}" /></div>
+          <div class="field"><label>Price</label><input type="text" readonly value="${fmtMoney(a.price)}" /></div>
+          <div class="field"><label>Status</label><input type="text" readonly value="${escapeHtml(a.status)}" /></div>
+          <div class="field full"><label>Pet Details</label><textarea rows="2" readonly>${petInfo || '—'}</textarea></div>
+          <div class="field full"><label>Customer Details</label><textarea rows="2" readonly>${customerInfo || '—'}</textarea></div>
+          <div class="field full"><label>Customer Notes</label><textarea rows="3" readonly>${escapeHtml(a.notes || 'No notes.')}</textarea></div>
+        </div>
+      `);
+    };
+
+    window.confirmAppt = async (id, button) => {
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Confirming...';
+      }
+      try {
+        const result = await apiPut(`/grooming/${id}`, { status: 'confirmed' });
+        if (!result.emailSent) alert('Booking confirmed, but the customer email was not sent. Check SMTP settings in .env.');
+        await loadAppointments();
+      } catch (error) {
+        if (button) {
+          button.disabled = false;
+          button.textContent = 'Confirm';
+        }
+        alert(error.message);
+      }
+    };
+
+    window.removeAppt = (id) =>
+      confirmDelete('Delete this appointment?', async () => {
+        try {
+          await apiDelete(`/grooming/${id}`);
+          loadAppointments();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+
+    (async () => {
+      try {
+        [customersCache, petsCache] = await Promise.all([apiGet('/customers'), apiGet('/pets')]);
+        await loadAppointments();
+      } catch (e) {
+        rowsEl.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      }
+    })();
+  </script>
+</body>
+</html>

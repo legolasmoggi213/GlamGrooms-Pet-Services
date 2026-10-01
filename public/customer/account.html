@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>My Account — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="navbar">
+    <a class="brand" href="/">Glam Grooms Pet Spa & Hotel</a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/grooming.html">Grooming</a>
+      <a href="/hotel.html">Pet Hotel</a>
+      <a href="/customer/account.html" class="active">My Account</a>
+      <a href="/customer/logout">Logout</a>
+    </nav>
+  </header>
+
+  <div id="toast" class="toast" aria-live="polite">Account created successfully.</div>
+
+  <div id="confirm-delete" class="confirm-box hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="confirm-card">
+      <h3 id="confirm-title">Delete account?</h3>
+      <p>Are you sure you want to permanently delete your account? This action cannot be undone.</p>
+      <div class="confirm-actions">
+        <button id="cancel-delete" class="btn btn-outline" type="button">No</button>
+        <button id="confirm-delete-btn" class="btn btn-danger" type="button">Yes</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="page-shell">
+    <div class="account-header">
+      <h1>My Account</h1>
+      <span class="account-tag">Customer profile</span>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; margin-bottom:1rem;">
+      <button id="delete-account-btn" class="btn btn-danger btn-sm" type="button">Delete Account</button>
+    </div>
+
+    <div class="account-grid" id="content">
+      <section class="card profile-card" id="profile">Loading profile…</section>
+      <section class="card">
+        <div class="section-title">Your Pets</div>
+        <div id="pets">Loading pets…</div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="section-title">Recent & Ongoing Transactions</div>
+      <div id="bookings">Loading bookings…</div>
+    </section>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const showSuccessToast = params.get('justRegistered') === '1';
+    const deleteBtn = document.getElementById('delete-account-btn');
+    const deleteModal = document.getElementById('confirm-delete');
+    const cancelDelete = document.getElementById('cancel-delete');
+    const confirmDelete = document.getElementById('confirm-delete-btn');
+
+    if (showSuccessToast) {
+      const toast = document.getElementById('toast');
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+        const nextUrl = new URL(location.href);
+        nextUrl.searchParams.delete('justRegistered');
+        history.replaceState(null, '', nextUrl);
+      }, 1000);
+    }
+
+    deleteBtn.addEventListener('click', () => deleteModal.classList.remove('hidden'));
+    cancelDelete.addEventListener('click', () => deleteModal.classList.add('hidden'));
+    confirmDelete.addEventListener('click', async () => {
+      deleteModal.classList.add('hidden');
+      try {
+        const res = await fetch('/customer/delete-account', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' } });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Unable to delete account');
+        location.href = '/';
+      } catch (e) {
+        alert('Failed to delete account. Please try again.');
+      }
+    });
+
+    async function loadProfile() {
+      try {
+        const r = await fetch('/customer/profile', { credentials: 'include' });
+        if (r.status === 401) return location.href = '/customer/login.html?return=' + encodeURIComponent(location.pathname);
+        const data = await r.json();
+        const p = data.customer || {};
+
+        document.getElementById('profile').innerHTML = `
+          <div class="profile-title">Profile details</div>
+          <div class="profile-name">${escapeHtml(p.name || 'Customer')}</div>
+          <div class="info-list">
+            <div class="info-row"><strong>Email</strong><span>${escapeHtml(p.email || 'Not set')}</span></div>
+            <div class="info-row"><strong>Phone</strong><span>${escapeHtml(p.phone || 'Not set')}</span></div>
+            <div class="info-row"><strong>Address</strong><span>${escapeHtml(p.address || 'Not provided')}</span></div>
+            <div class="info-row"><strong>Member since</strong><span>${formatDate(p.createdAt)}</span></div>
+          </div>
+          <div class="profile-actions"><button id="edit-profile-btn" class="btn btn-primary btn-sm" type="button">Edit Profile</button></div>
+          <form id="profile-edit" class="profile-edit">
+            <label>Full name<input name="name" required value="${escapeHtml(p.name || '')}"></label>
+            <label>Phone<input name="phone" value="${escapeHtml(p.phone || '')}"></label>
+            <label>Address<input name="address" value="${escapeHtml(p.address || '')}"></label>
+            <div class="profile-actions"><button class="btn btn-primary btn-sm" type="submit">Save Changes</button><button id="cancel-profile-btn" class="btn btn-outline btn-sm" type="button">Cancel</button></div>
+          </form>
+        `;
+
+        const editButton = document.getElementById('edit-profile-btn');
+        const editForm = document.getElementById('profile-edit');
+        editButton.addEventListener('click', () => editForm.classList.add('open'));
+        document.getElementById('cancel-profile-btn').addEventListener('click', () => editForm.classList.remove('open'));
+        editForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const formData = new FormData(editForm);
+          const response = await fetch('/customer/profile', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(Object.fromEntries(formData)),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'Failed to update profile');
+          await loadProfile();
+        });
+
+        const pets = (data.pets || []);
+        document.getElementById('pets').innerHTML = pets.length
+          ? `<ul class="pet-list">${pets.map(pt => `
+              <li>
+                <div>
+                  <strong>${escapeHtml(pt.name || 'Pet')}</strong><br>
+                  <span class="transaction-meta">${escapeHtml(pt.species || 'Unknown')} • ${escapeHtml(pt.breed || 'Mixed')} • ${escapeHtml(pt.age != null ? pt.age + ' yrs' : 'Age not set')}</span>
+                </div>
+                <span class="status-pill secondary">${escapeHtml(pt.status || 'Active')}</span>
+              </li>
+            `).join('')}</ul>`
+          : '<div class="empty-state">No pets registered yet.</div>';
+
+        const grooming = (data.grooming || []).map(item => {
+          const statusClass = item.status === 'completed' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
+          return `
+            <li>
+              <div>
+                <strong>${escapeHtml(item.service || 'Grooming')}</strong>
+                <div class="transaction-meta">${formatDate(item.date)} • ${escapeHtml(item.time || 'Time TBA')}${item.pickupTime ? ` • Pickup ${escapeHtml(item.pickupTime)}` : ''} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.price)}</div>
+                ${paymentReceiptLink(item)}
+              </div>
+              <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
+            </li>
+          `;
+        }).join('') || '<div class="empty-state">No grooming appointments yet.</div>';
+
+        const hotel = (data.hotel || []).map(item => {
+          const statusClass = item.status === 'checked-out' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
+          return `
+            <li>
+              <div>
+                <strong>${escapeHtml(item.roomType || 'Room')} stay</strong>
+                <div class="transaction-meta">Check-in: ${formatDate(item.checkIn)} at ${escapeHtml(item.checkInTime || 'Time TBA')} • Check-out: ${formatDate(item.checkOut)} at ${escapeHtml(item.checkOutTime || 'Time TBA')} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.totalPrice)}</div>
+                ${paymentReceiptLink(item)}
+              </div>
+              <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
+            </li>
+          `;
+        }).join('') || '<div class="empty-state">No hotel reservations yet.</div>';
+
+        const recent = [
+          ...(data.grooming || []).map(item => ({ type: 'Grooming', date: item.date, createdAt: item.createdAt, label: item.service || 'Grooming', details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'), receiptLink: paymentReceiptLink(item) })),
+          ...(data.hotel || []).map(item => ({ type: 'Hotel', date: item.checkIn, createdAt: item.createdAt, label: `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'), receiptLink: paymentReceiptLink(item) })),
+        ].sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)).slice(0, 5);
+        const recentHtml = recent.length
+          ? `<ul class="transaction-list">${recent.map(item => {
+              const statusClass = ['completed', 'checked-out'].includes(item.status) ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
+              return `<li><div><strong>${escapeHtml(item.type)}: ${escapeHtml(item.label)}</strong><div class="transaction-meta">${escapeHtml(item.details)} • ${escapeHtml(item.pets)}</div>${item.receiptLink || ''}</div><span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span></li>`;
+            }).join('')}</ul>`
+          : '<div class="empty-state">No recent transactions yet.</div>';
+
+        document.getElementById('bookings').innerHTML = `
+          <div style="display:grid; gap:1rem;">
+            <div>
+              <div class="section-title" style="margin-bottom:0.7rem;">Recent Transactions</div>
+              ${recentHtml}
+            </div>
+            <div>
+              <div class="section-title" style="margin-bottom:0.7rem;">Grooming</div>
+              <ul class="transaction-list">${grooming}</ul>
+            </div>
+            <div>
+              <div class="section-title" style="margin-bottom:0.7rem;">Hotel</div>
+              <ul class="transaction-list">${hotel}</ul>
+            </div>
+          </div>
+        `;
+      } catch (e) {
+        document.getElementById('content').innerHTML = '<div class="card">Failed to load profile.</div>';
+      }
+    }
+
+    function formatDate(value) {
+      if (!value) return 'Not set';
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return value;
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    function formatMoney(value) {
+      return `PHP ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    function paymentReceiptLink(item) {
+      if (item.paymentMethod !== 'qrph' || item.paymentStatus !== 'paid' || !item.paymentReference) return '';
+      return `<a class="receipt-link" href="/payment-success.html?session_id=${encodeURIComponent(item.paymentReference)}">View / print receipt</a>`;
+    }
+
+    function escapeHtml(s) {
+      if (!s) return '';
+      return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    loadProfile();
+    let autoRefresh = setInterval(loadProfile, 5000);
+
+    // Stop auto-refresh while editing profile so the form stays intact
+    document.addEventListener('focusin', (e) => {
+      if (e.target.closest('#profile-edit') || e.target.closest('.profile-edit')) {
+        clearInterval(autoRefresh);
+      }
+    });
+    document.addEventListener('focusout', (e) => {
+      if (e.target.closest('#profile-edit') || e.target.closest('.profile-edit')) {
+        autoRefresh = setInterval(loadProfile, 5000);
+      }
+    });
+  </script>
+</body>
+</html>

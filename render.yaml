@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: glam-grooms-pet-spa
+    runtime: node
+    plan: 0.5c-512mb
+    region: singapore
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REMINDER_TIME_ZONE
+        value: Asia/Manila
+      - key: ADMIN_SECRET
+        generateValue: true
+      - key: CUSTOMER_SECRET
+        generateValue: true
+      - key: ADMIN_PASS
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false

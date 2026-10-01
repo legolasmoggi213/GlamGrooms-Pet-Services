@@ -1,5 +1,6 @@
 const { User, Project } = require('../model');
 
+
 const getStatus = async (req, res, next) => {
   try {
     const users = await User.count();
@@ -42,6 +43,7 @@ const listProjects = async (req, res, next) => {
     next(error);
   }
 };
+
 
 const createProject = async (req, res, next) => {
   try {

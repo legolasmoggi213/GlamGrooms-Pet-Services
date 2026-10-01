@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Book Grooming — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="navbar">
+    <a class="brand" href="/">Glam Grooms Pet Spa & Hotel</a>
+    <nav>
+      <a href="/">Home</a>
+      <a id="customer-nav-link" href="/customer/login.html">Login</a>
+      <a href="/grooming.html" class="active">Grooming</a>
+      <a href="/hotel.html">Pet Hotel</a>
+    </nav>
+  </header>
+
+  <section class="section">
+    <h2 class="section-title">Book a Spa Grooming</h2>
+    <p class="section-sub">Fill in your details and your pet's — we'll confirm your glam session.</p>
+
+    <div class="form-card">
+      <div id="alert" class="alert"></div>
+
+      <form id="grooming-form">
+        <div class="form-section-label">Your Information</div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="c-name">Full Name *</label>
+            <input id="c-name" name="name" required />
+          </div>
+          <div class="field">
+            <label for="c-phone">Phone *</label>
+            <input id="c-phone" name="phone" required />
+          </div>
+          <div class="field full">
+            <label for="c-email">Email *</label>
+            <input id="c-email" name="email" type="email" required />
+          </div>
+          <div class="field full">
+            <label for="c-address">Address *</label>
+            <input id="c-address" name="address" required />
+          </div>
+        </div>
+
+        <div class="form-section-label">Pet Information</div>
+        <div class="field"><label for="pet-count">How many pets?</label><select id="pet-count" name="petCount"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
+        <div id="pet-fields" class="form-grid"></div>
+
+        <div class="form-section-label">Appointment</div>
+        <div class="form-grid">
+           <div class="field">
+             <label for="service">Service *</label>
+             <select id="service" name="service">
+               <optgroup label="Standard Services">
+                 <option value="grooming-basic-s">Basic S — ₱450</option>
+                 <option value="grooming-basic-m">Basic M — ₱550</option>
+                 <option value="grooming-basic-l">Basic L — ₱700</option>
+                 <option value="grooming-basic-xl">Basic XL — ₱900</option>
+                 <option value="grooming-basic-cat">Basic Cat — ₱550</option>
+                 <option value="grooming-full-s">Full S — ₱550</option>
+                 <option value="grooming-full-m">Full M — ₱650</option>
+                 <option value="grooming-full-l">Full L — ₱900</option>
+                 <option value="grooming-full-xl">Full XL — ₱1100</option>
+                 <option value="grooming-full-cat">Full Cat — ₱750</option>
+                 <option value="grooming-premium-s">Premium S — ₱700</option>
+                 <option value="grooming-premium-m">Premium M — ₱800</option>
+                 <option value="grooming-premium-l">Premium L — ₱1050</option>
+                 <option value="grooming-premium-xl">Premium XL — ₱1250</option>
+               </optgroup>
+               <optgroup label="A La Carte Services">
+                 <option value="grooming-a-la-carte-face-trim">Face Trim — ₱250</option>
+                 <option value="grooming-a-la-carte-paw-trim">Paw Trim — ₱200</option>
+                 <option value="grooming-a-la-carte-nail-clipping">Nail Clipping — ₱90</option>
+                 <option value="grooming-a-la-carte-ear-cleaning">Ear Cleaning — ₱90</option>
+                 <option value="grooming-a-la-carte-anal-sac-expressing">Anal Sac Expressing — ₱120</option>
+                 <option value="grooming-a-la-carte-de-matting">De-matting — ₱500</option>
+               </optgroup>
+               <optgroup label="Ayurveda Herbal Services">
+                 <option value="ayurveda-herb-beauty-s">Beauty S — ₱600</option>
+                 <option value="ayurveda-herb-beauty-m">Beauty M — ₱650</option>
+                 <option value="ayurveda-herb-beauty-l">Beauty L — ₱750</option>
+                 <option value="ayurveda-herb-beauty-xl">Beauty XL — ₱800</option>
+                 <option value="ayurveda-herb-doctors-s">Doctor's S — ₱700</option>
+                 <option value="ayurveda-herb-doctors-m">Doctor's M — ₱750</option>
+                 <option value="ayurveda-herb-doctors-l">Doctor's L — ₱850</option>
+                 <option value="ayurveda-herb-doctors-xl">Doctor's XL — ₱900</option>
+                 <option value="ayurveda-herb-moisture-s">Moisture S — ₱600</option>
+                 <option value="ayurveda-herb-moisture-m">Moisture M — ₱650</option>
+                 <option value="ayurveda-herb-moisture-l">Moisture L — ₱750</option>
+                 <option value="ayurveda-herb-moisture-xl">Moisture XL — ₱800</option>
+               </optgroup>
+               <optgroup label="Ayurveda Packages">
+                 <option value="ayurveda-pkg-basic-beauty-moisture-s">Basic Beauty/Moisture S — ₱900</option>
+                 <option value="ayurveda-pkg-basic-beauty-moisture-m">Basic Beauty/Moisture M — ₱1050</option>
+                 <option value="ayurveda-pkg-basic-beauty-moisture-l">Basic Beauty/Moisture L — ₱1250</option>
+                 <option value="ayurveda-pkg-basic-beauty-moisture-xl">Basic Beauty/Moisture XL — ₱1500</option>
+                 <option value="ayurveda-pkg-basic-doctors-s">Basic Doctor's S — ₱1000</option>
+                 <option value="ayurveda-pkg-basic-doctors-m">Basic Doctor's M — ₱1150</option>
+                 <option value="ayurveda-pkg-basic-doctors-l">Basic Doctor's L — ₱1350</option>
+                 <option value="ayurveda-pkg-basic-doctors-xl">Basic Doctor's XL — ₱1600</option>
+                 <option value="ayurveda-pkg-full-beauty-moisture-s">Full Beauty/Moisture S — ₱1000</option>
+                 <option value="ayurveda-pkg-full-beauty-moisture-m">Full Beauty/Moisture M — ₱1050</option>
+                 <option value="ayurveda-pkg-full-beauty-moisture-l">Full Beauty/Moisture L — ₱1400</option>
+                 <option value="ayurveda-pkg-full-beauty-moisture-xl">Full Beauty/Moisture XL — ₱1650</option>
+                 <option value="ayurveda-pkg-full-doctors-s">Full Doctor's S — ₱1100</option>
+                 <option value="ayurveda-pkg-full-doctors-m">Full Doctor's M — ₱1250</option>
+                 <option value="ayurveda-pkg-full-doctors-l">Full Doctor's L — ₱1450</option>
+                 <option value="ayurveda-pkg-full-doctors-xl">Full Doctor's XL — ₱1700</option>
+                 <option value="ayurveda-pkg-premium-beauty-moisture-s">Premium Beauty/Moisture S — ₱1150</option>
+                 <option value="ayurveda-pkg-premium-beauty-moisture-m">Premium Beauty/Moisture M — ₱1300</option>
+                 <option value="ayurveda-pkg-premium-beauty-moisture-l">Premium Beauty/Moisture L — ₱1550</option>
+                 <option value="ayurveda-pkg-premium-beauty-moisture-xl">Premium Beauty/Moisture XL — ₱1800</option>
+                 <option value="ayurveda-pkg-premium-doctors-s">Premium Doctor's S — ₱1250</option>
+                 <option value="ayurveda-pkg-premium-doctors-m">Premium Doctor's M — ₱1400</option>
+                 <option value="ayurveda-pkg-premium-doctors-l">Premium Doctor's L — ₱1650</option>
+                 <option value="ayurveda-pkg-premium-doctors-xl">Premium Doctor's XL — ₱1900</option>
+               </optgroup>
+             </select>
+           </div>
+          <div class="field">
+            <label for="date">Date *</label>
+            <input id="date" name="date" type="date" required />
+          </div>
+          <div class="field">
+            <label for="time">Time Slot *</label>
+            <select id="time" name="time" required disabled>
+              <option value="">Select a date first</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="pickupTime">Pickup Time *</label>
+            <input id="pickupTime" name="pickupTime" type="time" step="3600" required disabled />
+          </div>
+          <div class="field full">
+            <label for="notes">Special Requests *</label>
+            <textarea id="notes" name="notes" required rows="2"></textarea>
+          </div>
+        </div>
+
+        <div class="form-section-label">Payment</div>
+        <div class="payment-options">
+          <label><input type="radio" name="paymentMethod" value="cash" checked /> Pay at the counter (cash)</label>
+          <label><input type="radio" name="paymentMethod" value="qrph" /> Pay online in advance via GCash QR</label>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="submit-btn">Book Appointment</button>
+          <span class="text-muted" id="price-preview"></span>
+        </div>
+      </form>
+
+      <div id="order-summary"></div>
+    </div>
+  </section>
+
+  <footer class="footer"><div class="footer-brand">Glam Grooms Pet Spa & Hotel</div><p>Address: # Unit 1, PR1MO Building, Gloria Diaz Street, BF Resort Village, Las Piñas 1747</p><p>Phone: <a href="tel:+639608672330">0960 867 2330</a></p><p>Hours: Friday 9 AM-6 PM | Saturday 9 AM-6 PM | Sunday 6 AM-6 PM | Monday 9 AM-6 PM | Tuesday 9 AM-6 PM | Wednesday 9 AM-6 PM | Thursday 9 AM-6 PM</p></footer>
+
+  <script src="/js/api.js?v=2"></script>
+  <script src="/js/grooming.js?v=3"></script>
+<script>
+    // Show "My Account" if the customer is logged in, otherwise "Login".
+    // Verified against the server via the httpOnly token — no stale cookie issues.
+    function updateCustomerNav() {
+      const navLink = document.getElementById('customer-nav-link');
+      if (!navLink) return;
+      navLink.textContent = 'Login';
+      navLink.href = '/customer/login.html';
+      fetch('/admin/nav-status', { credentials: 'include' })
+        .then((r) => r.ok ? r.json() : null)
+        .then((admin) => {
+          if (admin && admin.authenticated) {
+            navLink.textContent = 'Admin Dashboard';
+            navLink.href = '/admin/index.html';
+            return;
+          }
+          return fetch('/customer/nav-status', { credentials: 'include' })
+            .then((r) => r.ok ? r.json() : null)
+            .then((data) => {
+              if (data && data.authenticated) {
+                navLink.textContent = 'My Account';
+                navLink.href = '/customer/account.html';
+              }
+            });
+        })
+        .catch(() => {});
+    }
+    document.addEventListener('DOMContentLoaded', updateCustomerNav);
+    // Re-check on every page show (including back/forward cache restores)
+    window.addEventListener('pageshow', updateCustomerNav);
+  </script>
+</body>
+</html>

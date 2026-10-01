@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pets — Glam Grooms Admin</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="admin-main">
+      <div class="flex-between">
+        <div>
+          <h1>Pets</h1>
+          <p class="page-sub">All registered pets and their owners.</p>
+        </div>
+        <button class="btn btn-primary" id="add-btn">+ Add Pet</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Name</th><th>Species</th><th>Breed</th><th>Age</th><th>Owner</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="7" class="loading">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>
+    renderSidebar('Pets');
+
+    const rowsEl = document.getElementById('rows');
+    let customersCache = [];
+
+    async function loadPets() {
+      const pets = await apiGet('/pets');
+      if (!pets.length) {
+        rowsEl.innerHTML = '<tr><td colspan="7" class="empty">No pets registered yet.</td></tr>';
+        return;
+      }
+      rowsEl.innerHTML = pets
+        .map(
+          (p) => `
+        <tr>
+          <td>${p.id}</td>
+          <td><strong>${escapeHtml(p.name)}</strong></td>
+          <td>${capitalize(p.species)}</td>
+          <td>${escapeHtml(p.breed || '—')}</td>
+          <td>${p.age != null ? p.age : '—'}</td>
+          <td>${escapeHtml((p.Customer && p.Customer.name) || (customersCache.find((c) => String(c.id) === String(p.customerId)) || {}).name || '—')}</td>
+          <td>
+            <button class="btn btn-outline btn-sm" onclick='editPet(${escapeHtml(JSON.stringify(p.id))})'>Edit</button>
+            <button class="btn btn-danger btn-sm" onclick='removePet(${escapeHtml(JSON.stringify(p.id))}, ${escapeHtml(JSON.stringify(p.name))})'>Delete</button>
+          </td>
+        </tr>`
+        )
+        .join('');
+    }
+
+    function petForm(p = {}) {
+      const options = customersCache
+        .map((c) => `<option value="${escapeHtml(c.id)}" ${String(p.customerId) === String(c.id) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`)
+        .join('');
+      const speciesOptions = ['dog', 'cat', 'bird', 'rabbit', 'other']
+        .map((s) => `<option value="${s}" ${p.species === s ? 'selected' : ''}>${capitalize(s)}</option>`)
+        .join('');
+      return `
+        <form id="pet-form" class="form-grid">
+          <div class="field"><label>Name *</label><input name="name" required value="${escapeHtml(p.name || '')}" /></div>
+          <div class="field"><label>Species *</label><select name="species">${speciesOptions}</select></div>
+          <div class="field"><label>Breed</label><input name="breed" value="${escapeHtml(p.breed || '')}" /></div>
+          <div class="field"><label>Age</label><input name="age" type="number" min="0" value="${p.age != null ? p.age : ''}" /></div>
+          <div class="field full"><label>Owner *</label><select name="customerId" required>${options}</select></div>
+          <div class="field full"><label>Notes</label><textarea name="notes" rows="2">${escapeHtml(p.notes || '')}</textarea></div>
+          <div class="form-actions full">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
+          </div>
+        </form>`;
+    }
+
+    function bindForm(id) {
+      document.getElementById('pet-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        const body = {
+          name: f.name.value.trim(),
+          species: f.species.value,
+          breed: f.breed.value.trim() || null,
+          age: f.age.value ? Number(f.age.value) : null,
+          notes: f.notes.value.trim() || null,
+          customerId: f.customerId.value,
+        };
+        try {
+          if (id) await apiPut(`/pets/${id}`, body);
+          else await apiPost('/pets', body);
+          closeModal();
+          loadPets();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+    }
+
+    document.getElementById('add-btn').addEventListener('click', () => {
+      if (!customersCache.length) {
+        alert('Add a customer first.');
+        return;
+      }
+      openModal('Add Pet', petForm({ customerId: customersCache[0].id }));
+      bindForm(null);
+    });
+
+    window.editPet = async (id) => {
+      const p = await apiGet(`/pets/${id}`);
+      openModal('Edit Pet', petForm(p));
+      bindForm(id);
+    };
+
+    window.removePet = (id, name) =>
+      confirmDelete(`Delete pet "${name}"?`, async () => {
+        try {
+          await apiDelete(`/pets/${id}`);
+          loadPets();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+
+    (async () => {
+      try {
+        customersCache = await apiGet('/customers');
+        await loadPets();
+      } catch (e) {
+        rowsEl.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      }
+    })();
+  </script>
+</body>
+</html>

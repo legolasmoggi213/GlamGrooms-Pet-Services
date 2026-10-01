@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="admin-main">
+      <h1>Dashboard</h1>
+      <p class="page-sub">Live overview of your grooming &amp; hotel operations.</p>
+
+      <div class="stat-grid" id="stats">
+        <div class="loading">Loading stats…</div>
+      </div>
+
+      <div class="panel-grid">
+        <div class="panel">
+          <h3>Hotel Occupancy — Next 14 Days</h3>
+          <div id="occupancy"><div class="loading">Loading…</div></div>
+        </div>
+        <div class="panel">
+          <h3>Recent Activity</h3>
+          <div id="activity"><div class="loading">Loading…</div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Revenue by Service</h3>
+        <div class="panel-grid" id="revenue">
+          <div class="loading">Loading…</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Service Catalog</h3>
+        <p class="text-muted">All grooming and hotel services with current pricing</p>
+        <div class="panel-grid" id="services">
+          <div class="loading">Loading service catalog…</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>
+    const initDashboard = () => {
+      renderSidebar('Dashboard');
+
+      const statCard = (label, value, color) => `
+        <div class="stat-card">
+          <div class="label">${label}</div>
+          <div class="value ${color || ''}">${value}</div>
+        </div>`;
+
+      async function loadStats() {
+        const s = await apiGet('/admin/stats');
+        document.getElementById('stats').innerHTML =
+          statCard('Customers', s.customers, 'purple') +
+          statCard('Pets', s.pets, 'purple') +
+          statCard("Today's Grooming", s.grooming.today, 'green') +
+          statCard('Active Grooming', s.grooming.active, 'green') +
+          statCard('Current Guests', s.hotel.currentGuests, 'orange') +
+          statCard('Upcoming Arrivals', s.hotel.upcomingArrivals, 'orange') +
+          statCard('Grooming Revenue', fmtMoney(s.grooming.revenue), 'green') +
+          statCard('Hotel Revenue', fmtMoney(s.hotel.revenue), 'green') +
+          statCard('Walk-in Cash Sales', fmtMoney(s.overTheCounterRevenue), 'green') +
+          statCard('Total Revenue', fmtMoney(s.totalRevenue), 'purple');
+      }
+
+      async function loadOccupancy() {
+        const days = await apiGet('/admin/occupancy');
+        const max = Math.max(1, ...days.map((d) => d.occupied));
+        document.getElementById('occupancy').innerHTML = days
+          .map(
+            (d) => `
+              <div class="occ-row">
+                <span class="date">${fmtDate(d.date)}</span>
+                <div class="bar"><div style="width:${(d.occupied / max) * 100}%"></div></div>
+                <span class="count">${d.occupied}</span>
+              </div>`
+          )
+          .join('');
+      }
+
+      async function loadActivity() {
+        const items = await apiGet('/admin/activity');
+        const el = document.getElementById('activity');
+        if (!items.length) {
+          el.innerHTML = '<div class="empty">No activity yet.</div>';
+          return;
+        }
+        el.innerHTML = items
+          .map(
+            (a) => `
+              <div class="activity-item">
+                <span class="dot">${a.type === 'grooming' ? 'Grooming' : 'Hotel'}</span>
+                <div>
+                  <div>${escapeHtml(a.summary)} ${statusBadge(a.status)}</div>
+                  <div class="meta">${fmtDateTime(a.createdAt)}</div>
+                </div>
+              </div>`
+          )
+          .join('');
+      }
+
+      async function loadRevenue() {
+        const data = await apiGet('/admin/revenue-by-service');
+        const renderTable = (rows, labelHeader) => {
+          if (!rows.length) return '<div class="empty">No data yet.</div>';
+          return `
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>${labelHeader}</th><th>Bookings</th><th>Revenue</th></tr></thead>
+                <tbody>
+                  ${rows
+                    .map(
+                      (r) => `<tr><td>${escapeHtml(capitalize(r.label))}</td><td>${r.count}</td><td>${fmtMoney(r.revenue)}</td></tr>`
+                    )
+                    .join('')}
+                </tbody>
+              </table>
+            </div>`;
+        };
+        document.getElementById('revenue').innerHTML =
+          `<div><h4 class="text-muted">Grooming</h4>${renderTable(data.grooming, 'Service')}</div>` +
+          `<div><h4 class="text-muted">Hotel</h4>${renderTable(data.hotel, 'Room Type')}</div>` +
+          `<div><h4 class="text-muted">Walk-in Sales</h4>${renderTable(data.overTheCounter || [], 'Item or Service')}</div>`;
+      }
+
+      async function loadServiceCatalog() {
+        try {
+          const response = await fetch('/api/v1/admin/services', { credentials: 'include' });
+          if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+              window.location.href = '/admin/login.html';
+              return;
+            }
+            throw new Error(`Service catalog request failed (${response.status})`);
+          }
+
+          const data = await response.json();
+          const container = document.getElementById('services');
+          if (!container) return;
+
+          const grooming = Array.isArray(data?.grooming) ? data.grooming : [];
+          const hotel = Array.isArray(data?.hotel) ? data.hotel : [];
+          const groomingServices = grooming.filter((s) => s && s.name && s.name.startsWith('grooming-'));
+          const ayurvedaServices = grooming.filter((s) => s && s.name && s.name.startsWith('ayurveda-'));
+          const hotelServices = hotel;
+
+          container.innerHTML = `
+            <details class="admin-service-group">
+              <summary>Grooming &amp; Spa Services <span>${groomingServices.length}</span></summary>
+              <div class="card-grid">
+                ${groomingServices.length ? groomingServices.map(service => {
+                  const serviceName = service.name.replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                  const size = service.name.includes('-') ? service.name.split('-').pop() : '';
+                  return `
+                    <div class="card">
+                      <h5 style="font-size: 1rem; margin-bottom: 0.5rem;">${serviceName}</h5>
+                      ${size ? `<p style="color: var(--muted); margin-bottom: 0.5rem; font-size: 0.9rem;">Size: ${size}</p>` : ''}
+                      <div class="price">₱${service.price}</div>
+                    </div>
+                  `;
+                }).join('') : '<div class="empty">No grooming services available.</div>'}
+              </div>
+            </details>
+
+            <details class="admin-service-group">
+              <summary>Hotel Services <span>${hotelServices.length}</span></summary>
+              <div class="card-grid">
+                ${hotelServices.length ? hotelServices.map(service => {
+                  const roomType = service.name.replace(/^(day-care|staycation)-/, '').replace('-', ' ');
+                  const stayType = service.name.startsWith('day-care-') ? 'Day Care' : 'Staycation';
+                  return `
+                    <div class="card">
+                      <h5 style="font-size: 1rem; margin-bottom: 0.5rem;">${stayType} - ${roomType}</h5>
+                      <p style="color: var(--muted); margin-bottom: 0.5rem; font-size: 0.9rem;">Weekday: ₱${service.price} / Weekend: ₱${service.price} ${stayType === 'Day Care' ? 'per hour' : 'per night'}</p>
+                      <div class="price">From ₱${service.price}</div>
+                    </div>
+                  `;
+                }).join('') : '<div class="empty">No hotel services available.</div>'}
+              </div>
+            </details>
+
+            <details class="admin-service-group">
+              <summary>Ayurveda Services <span>${ayurvedaServices.length}</span></summary>
+              <div class="card-grid">
+                ${ayurvedaServices.length ? ayurvedaServices.map(service => {
+                  const serviceName = service.name.replace(/^ayurveda-/, '').replace(/-/g, ' ');
+                  return `
+                    <div class="card">
+                      <h5 style="font-size: 1rem; margin-bottom: 0.5rem;">${serviceName}</h5>
+                      <div class="price">₱${service.price}</div>
+                    </div>
+                  `;
+                }).join('') : '<div class="empty">No Ayurveda services available.</div>'}
+              </div>
+            </details>
+          `;
+          container.querySelectorAll('.admin-service-group').forEach((group) => {
+            group.addEventListener('toggle', () => {
+              if (!group.open) return;
+              container.querySelectorAll('.admin-service-group').forEach((otherGroup) => {
+                if (otherGroup !== group) otherGroup.open = false;
+              });
+            });
+          });
+        } catch (error) {
+          console.error('Error loading service catalog:', error);
+          const container = document.getElementById('services');
+          if (container) container.innerHTML = '<div class="alert alert-error">Unable to load service catalog.</div>';
+        }
+      }
+
+      const runDashboardLoader = (loader, targetId) => loader().catch((error) => {
+        console.error(`Unable to load ${targetId}:`, error);
+        const target = document.getElementById(targetId);
+        if (target) target.innerHTML = '<div class="alert alert-error">Unable to load this dashboard section. Please sign in again.</div>';
+      });
+
+      loadServiceCatalog();
+      runDashboardLoader(loadStats, 'stats');
+      runDashboardLoader(loadOccupancy, 'occupancy');
+      runDashboardLoader(loadActivity, 'activity');
+      runDashboardLoader(loadRevenue, 'revenue');
+
+      const refreshLiveDashboard = () => {
+        runDashboardLoader(loadStats, 'stats');
+        runDashboardLoader(loadOccupancy, 'occupancy');
+        runDashboardLoader(loadActivity, 'activity');
+        runDashboardLoader(loadRevenue, 'revenue');
+      };
+      window.setInterval(refreshLiveDashboard, 30000);
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initDashboard, { once: true });
+    } else {
+      initDashboard();
+    }
+  </script>
+</body>
+</html>

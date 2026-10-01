@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Payment Cancelled — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <main class="section">
+    <div class="form-card">
+      <h2>Payment cancelled</h2>
+      <p id="payment-message" class="text-muted">Voiding your pending booking...</p>
+      <a id="return-link" class="btn btn-primary" href="/">Book with Cash at counter</a>
+    </div>
+  </main>
+  <script src="/js/api.js"></script>
+  <script>
+    (async () => {
+      sessionStorage.removeItem('pending_paymongo_booking');
+      const params = new URLSearchParams(location.search);
+      const bookingType = params.get('booking_type') === 'hotel' ? 'hotel' : 'grooming';
+      const bookingId = params.get('booking_id');
+      const returnPath = bookingType === 'hotel' ? '/hotel.html?payment=cancelled' : '/grooming.html?payment=cancelled';
+      const message = document.getElementById('payment-message');
+      const returnLink = document.getElementById('return-link');
+      returnLink.href = returnPath;
+
+      if (!bookingId) {
+        message.textContent = 'Payment was cancelled. No booking was created.';
+        return;
+      }
+      try {
+        await apiPost('/payments/cancel', { bookingType, bookingId });
+        message.textContent = 'Payment was cancelled and the booking was discarded. No booking was created.';
+      } catch (error) {
+        message.textContent = 'Payment was cancelled. No booking was created.';
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Customer Login — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="/js/firebase-config.js"></script>
+</head>
+<body>
+  <header class="navbar">
+    <a class="brand" href="/">Glam Grooms Pet Spa & Hotel</a>
+  </header>
+
+  <div class="customer-login-card">
+    <h2>Customer Login</h2>
+    <p class="text-muted">Enter your email and password to sign in.</p>
+    <p id="verification-message" class="text-success" hidden>Account created. Please check your email, verify your account, and then sign in.</p>
+    <form method="POST" action="/customer/login">
+      <input type="hidden" name="return" value="" id="return-field" />
+      <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required /></div>
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="password-field">
+          <input id="password" name="password" type="password" required />
+          <button type="button" class="toggle-password" data-target="password" aria-label="Show password">👁</button>
+        </div>
+      </div>
+      <div class="field login-actions"><button class="btn btn-primary" type="submit">Sign in</button>
+        <a href="/customer/register.html" style="margin-left:1rem;">Register</a></div>
+      <button id="forgot-password" class="btn forgot-password-btn" type="button">Forgot password?</button>
+      <p id="reset-message" class="text-muted" aria-live="polite"></p>
+      <p class="text-muted"><a href="/admin/login.html">Staff/Admin login</a></p>
+    </form>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const ret = params.get('return') || '/';
+    document.getElementById('return-field').value = ret;
+    if (params.get('registered') === '1') {
+      document.getElementById('verification-message').hidden = false;
+    }
+  </script>
+  <script src="/js/customer-auth.js"></script>
+  <script src="/js/password-toggle.js"></script>
+</body>
+</html>

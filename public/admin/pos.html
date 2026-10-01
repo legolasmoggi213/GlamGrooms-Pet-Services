@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Point of Sale — Glam Grooms Admin</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="admin-main">
+      <div class="flex-between">
+        <div>
+          <h1>Point of Sale</h1>
+          <p class="page-sub">Counter checkout</p>
+        </div>
+        <a class="btn btn-outline btn-sm" href="/admin/transactions.html">Transaction history</a>
+      </div>
+
+      <div class="pos-layout">
+        <section class="panel pos-workspace" aria-label="Sale items">
+          <div class="pos-toolbar">
+            <div class="field">
+              <label for="product-search">Find a service</label>
+              <input id="product-search" type="search" placeholder="Search services" autocomplete="off" />
+            </div>
+          </div>
+          <div class="pos-categories" role="group" aria-label="Service category">
+            <button type="button" data-category="all" aria-pressed="true">All</button>
+            <button type="button" data-category="grooming" aria-pressed="false">Grooming</button>
+            <button type="button" data-category="ayurveda" aria-pressed="false">Ayurveda</button>
+          </div>
+          <div id="pos-products" class="pos-products"><div class="loading">Loading services…</div></div>
+
+          <form id="custom-item-form" class="pos-custom-form">
+            <div class="field">
+              <label for="custom-item-name">Counter item</label>
+              <input id="custom-item-name" maxlength="160" placeholder="Item or service name" required />
+            </div>
+            <div class="field">
+              <label for="custom-item-price">Price (PHP)</label>
+              <input id="custom-item-price" type="number" min="0.01" max="10000000" step="0.01" required />
+            </div>
+            <button class="btn btn-outline" type="submit">Add item</button>
+          </form>
+        </section>
+
+        <section class="panel pos-cart" aria-label="Current sale">
+          <div class="flex-between">
+            <h3>Current sale</h3>
+            <button type="button" id="clear-cart" class="btn btn-outline btn-sm">Clear</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th></th></tr></thead>
+              <tbody id="cart-rows"><tr><td colspan="4" class="empty">No items in this sale.</td></tr></tbody>
+            </table>
+          </div>
+
+          <form id="pos-checkout" class="pos-checkout">
+            <div class="field">
+              <label for="sale-customer">Customer</label>
+              <input id="sale-customer" maxlength="120" value="Walk-in customer" />
+            </div>
+            <div class="field">
+              <label for="sale-contact">Contact</label>
+              <input id="sale-contact" maxlength="160" placeholder="Optional" />
+            </div>
+            <div class="field">
+              <span class="field-label">Payment method</span>
+              <div class="pos-tender-options">
+                <label><input type="radio" name="paymentMethod" value="cash" checked /><span>Cash</span></label>
+                <label><input type="radio" name="paymentMethod" value="gcash" /><span>GCash</span></label>
+                <label><input type="radio" name="paymentMethod" value="card" /><span>Card</span></label>
+              </div>
+            </div>
+            <div id="cash-received-field" class="field">
+              <label for="cash-received">Cash received (PHP)</label>
+              <input id="cash-received" type="number" min="0.01" max="10000000" step="0.01" placeholder="Enter amount" />
+              <div id="change-preview" class="pos-change" aria-live="polite"></div>
+            </div>
+            <div class="pos-total"><span>Total due</span><strong id="cart-total">₱0.00</strong></div>
+            <button id="complete-sale" class="btn btn-primary" type="submit" disabled>Complete sale</button>
+            <div id="pos-message" class="alert" role="status" aria-live="polite" hidden></div>
+          </form>
+        </section>
+      </div>
+
+      <section id="pos-receipt" class="pos-receipt" aria-live="polite"></section>
+    </main>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>
+    renderSidebar('Point of Sale');
+
+    const productContainer = document.getElementById('pos-products');
+    const cartRows = document.getElementById('cart-rows');
+    const cartTotal = document.getElementById('cart-total');
+    const checkoutButton = document.getElementById('complete-sale');
+    const cashReceived = document.getElementById('cash-received');
+    const cashField = document.getElementById('cash-received-field');
+    const cart = [];
+    let catalog = [];
+    let categoryFilter = 'all';
+
+    const money = (value) => fmtMoney(value);
+    const saleTotal = () => Math.round(cart.reduce((total, item) => total + item.unitPrice * item.quantity, 0) * 100) / 100;
+
+    const displayName = (service) => service.name
+      .replace(/^grooming-/, '')
+      .replace(/^ayurveda-(herb|pkg)-/, '')
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+    function renderProducts() {
+      const search = document.getElementById('product-search').value.trim().toLowerCase();
+      const visible = catalog.filter((product) => {
+        const matchesCategory = categoryFilter === 'all' || product.kind === categoryFilter;
+        return matchesCategory && product.label.toLowerCase().includes(search);
+      });
+      productContainer.innerHTML = visible.length ? visible.map((product) => `
+        <button type="button" class="pos-product" data-product-id="${escapeHtml(product.id)}">
+          <strong>${escapeHtml(product.label)}</strong>
+          <span>${money(product.price)}</span>
+        </button>`).join('') : '<div class="empty">No matching services.</div>';
+    }
+
+    function renderCart() {
+      if (!cart.length) {
+        cartRows.innerHTML = '<tr><td colspan="4" class="empty">No items in this sale.</td></tr>';
+      } else {
+        cartRows.innerHTML = cart.map((item, index) => `
+          <tr>
+            <td class="pos-item-name">${escapeHtml(item.name)}<br><span class="text-muted">${money(item.unitPrice)} each</span></td>
+            <td><span class="pos-quantity">
+              <button type="button" data-cart-action="decrease" data-index="${index}" aria-label="Decrease quantity">−</button>
+              <span>${item.quantity}</span>
+              <button type="button" data-cart-action="increase" data-index="${index}" aria-label="Increase quantity">+</button>
+            </span></td>
+            <td>${money(item.unitPrice * item.quantity)}</td>
+            <td><button type="button" class="pos-remove" data-cart-action="remove" data-index="${index}" aria-label="Remove item">×</button></td>
+          </tr>`).join('');
+      }
+      cartTotal.textContent = money(saleTotal());
+      checkoutButton.disabled = !cart.length;
+      updateTender();
+    }
+
+    function addItem(item) {
+      const existing = cart.find((line) => line.name === item.name && line.unitPrice === item.unitPrice);
+      if (existing) existing.quantity += 1;
+      else cart.push({ ...item, quantity: 1 });
+      renderCart();
+    }
+
+    function updateTender() {
+      const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
+      const isCash = paymentMethod === 'cash';
+      cashField.hidden = !isCash;
+      cashReceived.required = isCash && cart.length > 0;
+      const received = Number(cashReceived.value);
+      const change = Math.round((received - saleTotal()) * 100) / 100;
+      document.getElementById('change-preview').textContent = isCash && received >= saleTotal() && saleTotal() > 0
+        ? `Change: ${money(change)}`
+        : '';
+    }
+
+    function showMessage(text, kind) {
+      const message = document.getElementById('pos-message');
+      message.textContent = text;
+      message.className = `alert alert-${kind} show`;
+      message.hidden = false;
+    }
+
+    function renderReceipt(transaction, sale, paymentMethod, tenderedAmount, customerName) {
+      const receipt = document.getElementById('pos-receipt');
+      const lines = sale.map((item) => `<tr><td>${escapeHtml(item.name)} × ${item.quantity}</td><td>${money(item.unitPrice * item.quantity)}</td></tr>`).join('');
+      receipt.innerHTML = `
+        <h1>Glam Grooms Pet Spa &amp; Hotel</h1>
+        <p>Sale receipt · ${escapeHtml(fmtDateTime(transaction.paidAt || new Date().toISOString()))}</p>
+        <p>Receipt: ${escapeHtml(transaction.id)}<br>Customer: ${escapeHtml(customerName)}<br>Payment: ${escapeHtml(capitalize(paymentMethod))}</p>
+        <table><thead><tr><th>Item</th><th>Amount</th></tr></thead><tbody>${lines}</tbody></table>
+        <p><strong>Total: ${money(transaction.amount)}</strong></p>
+        ${paymentMethod === 'cash' ? `<p>Cash received: ${money(tenderedAmount)}<br>Change: ${money(transaction.changeDue)}</p>` : ''}
+        <p>Thank you for your visit.</p>
+        <button type="button" class="btn btn-primary" onclick="window.print()">Print receipt</button>`;
+      receipt.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    productContainer.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-product-id]');
+      if (!button) return;
+      const product = catalog.find((item) => item.id === button.dataset.productId);
+      if (product) addItem({ name: product.label, unitPrice: product.price, category: product.category });
+    });
+
+    cartRows.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-cart-action]');
+      if (!button) return;
+      const index = Number(button.dataset.index);
+      const item = cart[index];
+      if (!item) return;
+      if (button.dataset.cartAction === 'increase') item.quantity += 1;
+      if (button.dataset.cartAction === 'decrease') item.quantity = Math.max(1, item.quantity - 1);
+      if (button.dataset.cartAction === 'remove') cart.splice(index, 1);
+      renderCart();
+    });
+
+    document.querySelector('.pos-categories').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-category]');
+      if (!button) return;
+      categoryFilter = button.dataset.category;
+      document.querySelectorAll('.pos-categories button').forEach((option) => {
+        option.setAttribute('aria-pressed', String(option === button));
+      });
+      renderProducts();
+    });
+
+    document.getElementById('product-search').addEventListener('input', renderProducts);
+    document.querySelectorAll('input[name="paymentMethod"]').forEach((input) => input.addEventListener('change', updateTender));
+    cashReceived.addEventListener('input', updateTender);
+
+    document.getElementById('custom-item-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const name = document.getElementById('custom-item-name').value.trim();
+      const unitPrice = Number(document.getElementById('custom-item-price').value);
+      if (!name || !Number.isFinite(unitPrice) || unitPrice <= 0) return;
+      addItem({ name, unitPrice, category: 'Custom' });
+      event.currentTarget.reset();
+      document.getElementById('custom-item-name').focus();
+    });
+
+    document.getElementById('clear-cart').addEventListener('click', () => {
+      cart.splice(0, cart.length);
+      cashReceived.value = '';
+      renderCart();
+    });
+
+    document.getElementById('pos-checkout').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!cart.length || !event.currentTarget.reportValidity()) return;
+      const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
+      const amount = saleTotal();
+      const tenderedAmount = paymentMethod === 'cash' ? Number(cashReceived.value) : amount;
+      if (paymentMethod === 'cash' && tenderedAmount < amount) {
+        showMessage('Cash received must cover the total due.', 'error');
+        return;
+      }
+      const sale = cart.map((item) => ({ ...item }));
+      const customerName = document.getElementById('sale-customer').value.trim() || 'Walk-in customer';
+      checkoutButton.disabled = true;
+      checkoutButton.textContent = 'Processing…';
+      try {
+        const result = await apiPost('/admin/cash-transactions', {
+          type: 'walk-in',
+          customerName,
+          contact: document.getElementById('sale-contact').value.trim(),
+          paymentMethod,
+          tenderedAmount,
+          items: sale.map(({ name, quantity, unitPrice, category }) => ({ name, quantity, unitPrice, category })),
+        });
+        cart.splice(0, cart.length);
+        cashReceived.value = '';
+        renderCart();
+        document.getElementById('sale-contact').value = '';
+        showMessage('Sale recorded.', 'success');
+        renderReceipt(result.transaction, sale, paymentMethod, tenderedAmount, customerName);
+      } catch (error) {
+        showMessage(error.message || 'Unable to complete this sale.', 'error');
+      } finally {
+        checkoutButton.textContent = 'Complete sale';
+        checkoutButton.disabled = !cart.length;
+      }
+    });
+
+    apiGet('/admin/services').then((services) => {
+      const grooming = Array.isArray(services.grooming) ? services.grooming : [];
+      catalog = grooming
+        .filter((service) => service && service.name && (service.name.startsWith('grooming-') || service.name.startsWith('ayurveda-')))
+        .map((service) => ({
+          id: service.name,
+          label: displayName(service),
+          price: Number(service.price),
+          category: service.details && service.details.category || 'Service',
+          kind: service.name.startsWith('ayurveda-') ? 'ayurveda' : 'grooming',
+        }))
+        .filter((service) => Number.isFinite(service.price) && service.price > 0);
+      renderProducts();
+    }).catch((error) => {
+      productContainer.innerHTML = '<div class="alert alert-error show">Unable to load services. Sign in again and retry.</div>';
+      showMessage(error.message || 'Unable to load the service catalog.', 'error');
+    });
+
+    renderCart();
+  </script>
+</body>
+</html>

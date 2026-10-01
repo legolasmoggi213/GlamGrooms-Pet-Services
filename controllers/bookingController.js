@@ -122,7 +122,6 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
       return res.status(401).json({ error: 'Please sign in with the customer account used for this booking.' });
     }
     if (!String(customerData.address || '').trim()) return res.status(400).json({ error: 'Address is required' });
-    if (!String(notes || '').trim()) return res.status(400).json({ error: 'Special requests are required' });
 
     // Release any previous uncompleted PayMongo attempts by this customer to prevent double-booking or slot-locking
     await cleanupAbandonedPayMongoBookings(signedInCustomer.id);
@@ -215,7 +214,6 @@ const bookHotel = async (req, res, next) => {
       return res.status(401).json({ error: 'Please sign in with the customer account used for this booking.' });
     }
     if (!String(customerData.address || '').trim()) return res.status(400).json({ error: 'Address is required' });
-    if (!String(notes || '').trim()) return res.status(400).json({ error: 'Special care instructions are required' });
 
     // Release any previous uncompleted PayMongo attempts by this customer to prevent double-booking or slot-locking
     await cleanupAbandonedPayMongoBookings(signedInCustomer.id);

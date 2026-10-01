@@ -140,6 +140,7 @@ const ROOM_PRICES = {
   applyCheckInDates();
 
   const updatePrice = () => {
+    if (!pricePreview) return;
     const nights = Math.round((new Date(checkOutInput.value) - new Date(checkInInput.value)) / 864e5);
     if (nights > 0) {
       const count = Math.max(1, Math.min(5, Number(petCount.value) || 1));

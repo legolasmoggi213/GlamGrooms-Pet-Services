@@ -200,6 +200,7 @@
   };
 
   const updatePrice = () => {
+    if (!pricePreview) return;
     const count = Math.max(1, Math.min(5, Number(petCountSelect.value) || 1));
     const total = (PRICES[serviceSelect.value] || 0) * count;
     pricePreview.textContent = `Total: ${formatMoney(total)}`;

@@ -16,35 +16,16 @@
           <h1>Point of Sale</h1>
           <p class="page-sub">Counter checkout</p>
         </div>
-        <a class="btn btn-outline btn-sm" href="/admin/transactions.html">Transaction history</a>
       </div>
 
       <div class="pos-layout">
         <section class="panel pos-workspace" aria-label="Sale items">
-          <div class="pos-toolbar">
-            <div class="field">
-              <label for="product-search">Find a service</label>
-              <input id="product-search" type="search" placeholder="Search services" autocomplete="off" />
-            </div>
-          </div>
           <div class="pos-categories" role="group" aria-label="Service category">
             <button type="button" data-category="all" aria-pressed="true">All</button>
             <button type="button" data-category="grooming" aria-pressed="false">Grooming</button>
             <button type="button" data-category="ayurveda" aria-pressed="false">Ayurveda</button>
           </div>
           <div id="pos-products" class="pos-products"><div class="loading">Loading services…</div></div>
-
-          <form id="custom-item-form" class="pos-custom-form">
-            <div class="field">
-              <label for="custom-item-name">Counter item</label>
-              <input id="custom-item-name" maxlength="160" placeholder="Item or service name" required />
-            </div>
-            <div class="field">
-              <label for="custom-item-price">Price (PHP)</label>
-              <input id="custom-item-price" type="number" min="0.01" max="10000000" step="0.01" required />
-            </div>
-            <button class="btn btn-outline" type="submit">Add item</button>
-          </form>
         </section>
 
         <section class="panel pos-cart" aria-label="Current sale">
@@ -117,10 +98,9 @@
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
     function renderProducts() {
-      const search = document.getElementById('product-search').value.trim().toLowerCase();
       const visible = catalog.filter((product) => {
         const matchesCategory = categoryFilter === 'all' || product.kind === categoryFilter;
-        return matchesCategory && product.label.toLowerCase().includes(search);
+        return matchesCategory;
       });
       productContainer.innerHTML = visible.length ? visible.map((product) => `
         <button type="button" class="pos-product" data-product-id="${escapeHtml(product.id)}">
@@ -220,19 +200,8 @@
       renderProducts();
     });
 
-    document.getElementById('product-search').addEventListener('input', renderProducts);
     document.querySelectorAll('input[name="paymentMethod"]').forEach((input) => input.addEventListener('change', updateTender));
     cashReceived.addEventListener('input', updateTender);
-
-    document.getElementById('custom-item-form').addEventListener('submit', (event) => {
-      event.preventDefault();
-      const name = document.getElementById('custom-item-name').value.trim();
-      const unitPrice = Number(document.getElementById('custom-item-price').value);
-      if (!name || !Number.isFinite(unitPrice) || unitPrice <= 0) return;
-      addItem({ name, unitPrice, category: 'Custom' });
-      event.currentTarget.reset();
-      document.getElementById('custom-item-name').focus();
-    });
 
     document.getElementById('clear-cart').addEventListener('click', () => {
       cart.splice(0, cart.length);

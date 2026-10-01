@@ -7,7 +7,6 @@ const ADMIN_PAGES = [
   { href: '/admin/grooming.html', label: 'Grooming' },
   { href: '/admin/hotel.html', label: 'Hotel' },
   { href: '/admin/pos.html', label: 'Point of Sale' },
-  { href: '/admin/transactions.html', label: 'Cash Transactions' },
   { href: '/admin/change-password.html', label: 'Change Password' },
 ];
 

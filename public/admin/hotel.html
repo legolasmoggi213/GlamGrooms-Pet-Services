@@ -16,7 +16,6 @@
           <h1>Hotel Reservations</h1>
           <p class="page-sub">Manage pet hotel stays and check-ins.</p>
         </div>
-        <button class="btn btn-primary" id="add-btn">+ New Reservation</button>
       </div>
 
       <div class="table-wrap">
@@ -38,11 +37,6 @@
     renderSidebar('Hotel');
 
     const rowsEl = document.getElementById('rows');
-    let customersCache = [];
-    let petsCache = [];
-
-    const ROOMS = ['standard', 'deluxe', 'suite'];
-    const STATUSES = ['pending', 'reserved', 'confirmed', 'checked-in', 'checked-out', 'cancelled'];
 
     async function loadReservations() {
       const items = await apiGet('/hotel');
@@ -71,81 +65,6 @@
         )
         .join('');
     }
-
-    function resForm(r = {}) {
-      const roomOptions = ROOMS.map((s) => `<option value="${s}" ${r.roomType === s ? 'selected' : ''}>${capitalize(s)}</option>`).join('');
-      const statusOptions = STATUSES.map((s) => `<option value="${s}" ${r.status === s ? 'selected' : ''}>${capitalize(s)}</option>`).join('');
-      const customerOptions = customersCache.map((c) => `<option value="${escapeHtml(c.id)}" ${String(r.customerId) === String(c.id) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
-      const petOptions = petsCache.map((p) => `<option value="${escapeHtml(p.id)}" data-customer="${escapeHtml(p.customerId)}" ${String(r.petId) === String(p.id) ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
-      return `
-        <form id="res-form" class="form-grid">
-          <div class="field"><label>Customer *</label><select name="customerId" required>${customerOptions}</select></div>
-          <div class="field"><label>Pet *</label><select name="petId" required>${petOptions}</select></div>
-          <div class="field"><label>Room Type *</label><select name="roomType">${roomOptions}</select></div>
-          <div class="field"><label>Status</label><select name="status">${statusOptions}</select></div>
-          <div class="field"><label>Check-in *</label><input name="checkIn" type="date" required value="${r.checkIn || ''}" /></div>
-          <div class="field"><label>Check-in time *</label><input name="checkInTime" type="time" required value="${r.checkInTime || '14:00'}" /></div>
-          <div class="field"><label>Check-out *</label><input name="checkOut" type="date" required value="${r.checkOut || ''}" /></div>
-          <div class="field"><label>Check-out time *</label><input name="checkOutTime" type="time" required value="${r.checkOutTime || '12:00'}" /></div>
-          <div class="field full"><label>Notes</label><textarea name="notes" rows="2">${escapeHtml(r.notes || '')}</textarea></div>
-          <div class="form-actions full">
-            <button type="submit" class="btn btn-primary">Save</button>
-            <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
-          </div>
-        </form>`;
-    }
-
-    function bindForm(id) {
-      const form = document.getElementById('res-form');
-      const customerSelect = form.customerId;
-      const petSelect = form.petId;
-      const filterPets = () => {
-        const cid = customerSelect.value;
-        let firstValid = null;
-        [...petSelect.options].forEach((opt) => {
-          const match = opt.dataset.customer === cid;
-          opt.hidden = !match;
-          if (match && !firstValid) firstValid = opt;
-        });
-        if (petSelect.selectedOptions[0] && petSelect.selectedOptions[0].hidden && firstValid) {
-          petSelect.value = firstValid.value;
-        }
-      };
-      customerSelect.addEventListener('change', filterPets);
-      filterPets();
-
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const body = {
-          customerId: form.customerId.value,
-          petId: form.petId.value,
-          roomType: form.roomType.value,
-          status: form.status.value,
-          checkIn: form.checkIn.value,
-          checkInTime: form.checkInTime.value,
-          checkOut: form.checkOut.value,
-          checkOutTime: form.checkOutTime.value,
-          notes: form.notes.value.trim() || null,
-        };
-        try {
-          if (id) await apiPut(`/hotel/${id}`, body);
-          else await apiPost('/hotel', body);
-          closeModal();
-          loadReservations();
-        } catch (error) {
-          alert(error.message);
-        }
-      });
-    }
-
-    document.getElementById('add-btn').addEventListener('click', () => {
-      if (!customersCache.length || !petsCache.length) {
-        alert('Add at least one customer and pet first.');
-        return;
-      }
-      openModal('New Reservation', resForm({ customerId: customersCache[0].id, petId: petsCache[0].id, status: 'pending' }));
-      bindForm(null);
-    });
 
     window.viewRes = async (id) => {
       const r = await apiGet(`/hotel/${id}`);
@@ -202,7 +121,6 @@
 
     (async () => {
       try {
-        [customersCache, petsCache] = await Promise.all([apiGet('/customers'), apiGet('/pets')]);
         await loadReservations();
       } catch (e) {
         rowsEl.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(e.message)}</td></tr>`;

@@ -1133,6 +1133,28 @@ tr:hover td { background: #f5f1e5; }
 .panel h3 { margin-bottom: 1.2rem; font-size: 1.1rem; font-weight: 700; letter-spacing: -0.01em; }
 .panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.8rem; }
 
+.analytics-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.2rem; }
+.analytics-heading h3 { margin-bottom: 0.25rem; }
+.analytics-heading .text-muted { margin: 0; }
+.revenue-periods { display: inline-flex; padding: 0.25rem; gap: 0.2rem; background: #eeece4; border-radius: 8px; }
+.revenue-periods button { border: 0; border-radius: 6px; padding: 0.55rem 0.8rem; background: transparent; color: var(--admin-muted); font: inherit; font-size: 0.88rem; font-weight: 700; cursor: pointer; }
+.revenue-periods button[aria-pressed="true"] { color: #263238; background: var(--primary); box-shadow: 0 2px 6px rgba(80, 64, 0, 0.14); }
+.revenue-combined { margin: 0.4rem 0 1.4rem; font-family: var(--font-display); font-size: 1.35rem; font-weight: 800; color: #8a6900; }
+.revenue-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem; }
+.revenue-chart-panel { min-width: 0; padding: 1rem; border: 1px solid var(--admin-border); border-radius: 8px; background: #fffefa; }
+.revenue-chart-panel .flex-between { gap: 0.6rem; margin-bottom: 1rem; }
+.revenue-chart-panel h4 { margin: 0; font-size: 1rem; }
+.revenue-chart-panel .flex-between strong { color: #8a6900; white-space: nowrap; }
+.hotel-chart .flex-between strong { color: #28766f; }
+.revenue-bars { display: flex; align-items: stretch; gap: 0.6rem; overflow-x: auto; min-height: 230px; padding: 0.4rem 0.1rem 0.6rem; }
+.revenue-bar-column { flex: 1 0 70px; min-width: 70px; display: grid; grid-template-rows: 1.25rem 1fr auto auto; gap: 0.35rem; text-align: center; }
+.revenue-bar-value { overflow: hidden; color: var(--admin-muted); font-size: 0.72rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.revenue-bar-track { display: flex; align-items: end; min-height: 145px; border-bottom: 1px solid var(--admin-border); background: repeating-linear-gradient(to bottom, transparent 0, transparent 35px, rgba(95, 107, 115, 0.09) 36px); }
+.revenue-bar { width: min(52px, 72%); min-height: 0; margin: 0 auto; border-radius: 5px 5px 0 0; background: linear-gradient(180deg, #ffd21a, #d4a900); transition: height 0.35s ease; }
+.hotel-chart .revenue-bar { background: linear-gradient(180deg, #69b5a6, #28766f); }
+.revenue-bar-label { color: var(--admin-text); font-size: 0.77rem; font-weight: 700; white-space: nowrap; }
+.revenue-bar-count { color: var(--admin-muted); font-size: 0.68rem; white-space: nowrap; }
+
 /* Keep catalog cards readable inside the light admin workspace. */
 .admin-layout .card {
   background: var(--admin-surface);
@@ -1330,6 +1352,9 @@ tr:hover td { background: #f5f1e5; }
   .sidebar .brand { margin-bottom: 0; margin-right: 1.2rem; }
   .sidebar a { margin-bottom: 0; font-size: 0.88rem; padding: 0.6rem 0.8rem; }
   .panel-grid { grid-template-columns: 1fr; }
+  .revenue-chart-grid { grid-template-columns: 1fr; }
+  .analytics-heading { align-items: stretch; flex-direction: column; }
+  .revenue-periods { width: fit-content; max-width: 100%; }
   .form-grid { grid-template-columns: 1fr; }
   .navbar { flex-wrap: wrap; gap: 1rem; padding: 1rem 5vw; }
   .navbar nav { gap: 0.8rem; flex-wrap: wrap; justify-content: center; }

@@ -203,7 +203,7 @@ const updateReservation = async (req, res, next) => {
       claimedNewLockIds = await claimReplacementBookingSlots(oldLockIds, newLockIds, { type: 'hotel', roomType: nextRoomType, checkIn: nextCheckIn, checkOut: nextCheckOut });
     }
     try {
-      await reservation.update({
+      const updates = {
       roomType: nextRoomType,
       checkIn: nextCheckIn,
       checkInTime: checkInTime || reservation.checkInTime || null,
@@ -215,7 +215,9 @@ const updateReservation = async (req, res, next) => {
       petId: petId === undefined ? reservation.petId : petId,
       pricePerNight,
       totalPrice: pricePerNight * nights * (reservation.petIds && reservation.petIds.length ? reservation.petIds.length : 1),
-      });
+      };
+      if (status === 'confirmed' && !wasConfirmed) updates.confirmedAt = new Date();
+      await reservation.update(updates);
     } catch (error) {
       if (claimedNewLockIds.length) await releaseBookingSlotsByIds(claimedNewLockIds);
       throw error;

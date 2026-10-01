@@ -29,12 +29,30 @@
         </div>
       </div>
 
-      <div class="panel">
-        <h3>Revenue by Service</h3>
-        <div class="panel-grid" id="revenue">
-          <div class="loading">Loading…</div>
+      <section class="panel" id="revenue" aria-label="Revenue analytics">
+        <div class="analytics-heading">
+          <div>
+            <h3>Revenue Analytics</h3>
+            <p class="text-muted" id="revenue-period-label">Last 6 months</p>
+          </div>
+          <div class="revenue-periods" role="group" aria-label="Revenue period">
+            <button type="button" data-period="daily" aria-pressed="false">Daily</button>
+            <button type="button" data-period="weekly" aria-pressed="false">Weekly</button>
+            <button type="button" data-period="monthly" aria-pressed="true">Monthly</button>
+          </div>
         </div>
-      </div>
+        <div id="revenue-combined" class="revenue-combined" aria-live="polite">Loading revenue…</div>
+        <div class="revenue-chart-grid">
+          <section class="revenue-chart-panel grooming-chart">
+            <div class="flex-between"><h4>Grooming Revenue</h4><strong id="grooming-revenue-total">₱0.00</strong></div>
+            <div id="grooming-revenue-chart" class="revenue-bars"></div>
+          </section>
+          <section class="revenue-chart-panel hotel-chart">
+            <div class="flex-between"><h4>Hotel Revenue</h4><strong id="hotel-revenue-total">₱0.00</strong></div>
+            <div id="hotel-revenue-chart" class="revenue-bars"></div>
+          </section>
+        </div>
+      </section>
 
       <div class="panel">
         <h3>Service Catalog</h3>
@@ -110,27 +128,33 @@
       }
 
       async function loadRevenue() {
-        const data = await apiGet('/admin/revenue-by-service');
-        const renderTable = (rows, labelHeader) => {
-          if (!rows.length) return '<div class="empty">No data yet.</div>';
-          return `
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>${labelHeader}</th><th>Bookings</th><th>Revenue</th></tr></thead>
-                <tbody>
-                  ${rows
-                    .map(
-                      (r) => `<tr><td>${escapeHtml(capitalize(r.label))}</td><td>${r.count}</td><td>${fmtMoney(r.revenue)}</td></tr>`
-                    )
-                    .join('')}
-                </tbody>
-              </table>
-            </div>`;
+        const period = document.querySelector('.revenue-periods button[aria-pressed="true"]').dataset.period;
+        const data = await apiGet(`/admin/revenue-analytics?period=${period}`);
+        const periods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months' };
+        document.getElementById('revenue-period-label').textContent = periods[data.period];
+        document.getElementById('revenue-combined').textContent = `Combined revenue: ${fmtMoney(data.totals.combined)}`;
+
+        const renderChart = (buckets) => {
+          const maximum = Math.max(0, ...buckets.map((bucket) => Number(bucket.revenue) || 0));
+          return buckets.map((bucket) => {
+            const value = Number(bucket.revenue) || 0;
+            const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
+            return `
+              <div class="revenue-bar-column" title="${escapeHtml(`${bucket.label}: ${fmtMoney(value)}, ${bucket.count} bookings`)}">
+                <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
+                <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
+                <span class="revenue-bar-label">${escapeHtml(bucket.label)}</span>
+                <span class="revenue-bar-count">${bucket.count} ${bucket.count === 1 ? 'booking' : 'bookings'}</span>
+              </div>`;
+          }).join('');
         };
-        document.getElementById('revenue').innerHTML =
-          `<div><h4 class="text-muted">Grooming</h4>${renderTable(data.grooming, 'Service')}</div>` +
-          `<div><h4 class="text-muted">Hotel</h4>${renderTable(data.hotel, 'Room Type')}</div>` +
-          `<div><h4 class="text-muted">Walk-in Sales</h4>${renderTable(data.overTheCounter || [], 'Item or Service')}</div>`;
+
+        const groomingTotal = data.grooming.reduce((total, bucket) => total + bucket.revenue, 0);
+        const hotelTotal = data.hotel.reduce((total, bucket) => total + bucket.revenue, 0);
+        document.getElementById('grooming-revenue-total').textContent = fmtMoney(groomingTotal);
+        document.getElementById('hotel-revenue-total').textContent = fmtMoney(hotelTotal);
+        document.getElementById('grooming-revenue-chart').innerHTML = renderChart(data.grooming);
+        document.getElementById('hotel-revenue-chart').innerHTML = renderChart(data.hotel);
       }
 
       async function loadServiceCatalog() {
@@ -226,6 +250,14 @@
       });
 
       loadServiceCatalog();
+      document.querySelector('.revenue-periods').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-period]');
+        if (!button) return;
+        document.querySelectorAll('.revenue-periods button').forEach((option) => {
+          option.setAttribute('aria-pressed', String(option === button));
+        });
+        runDashboardLoader(loadRevenue, 'revenue');
+      });
       runDashboardLoader(loadStats, 'stats');
       runDashboardLoader(loadOccupancy, 'occupancy');
       runDashboardLoader(loadActivity, 'activity');

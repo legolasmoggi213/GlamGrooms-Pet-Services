@@ -1,7 +1,7 @@
 const { GroomingAppointment, Customer, Pet } = require('../models');
 const { sendBookingConfirmation } = require('../util/mailer');
 const { groomingLockIds, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
-const { validateTime } = require('../util/businessHours');
+const { validateTime, validatePickupTime } = require('../util/businessHours');
 const catalog = require('../util/serviceCatalog');
 
 // Exact service menus from the Glam Grooms flyers.
@@ -106,7 +106,7 @@ const createAppointment = async (req, res, next) => {
       if (!check.ok) return res.status(400).json({ error: check.error });
     }
     if (pickupTime) {
-      const check = validateTime(date, pickupTime);
+      const check = validatePickupTime(date, pickupTime);
       if (!check.ok) return res.status(400).json({ error: check.error });
     }
     const existingAppointments = await GroomingAppointment.findAll({ where: { date, time } });
@@ -179,6 +179,7 @@ const updateAppointment = async (req, res, next) => {
       updates.price = SERVICE_PRICES[service];
     }
     const wasConfirmed = appointment.status === 'confirmed';
+    if (status === 'confirmed' && !wasConfirmed) updates.confirmedAt = new Date();
     const oldDate = appointment.date;
     const oldTime = appointment.time;
     const oldLockIds = groomingLockIds(oldDate, oldTime);

@@ -211,6 +211,12 @@
     return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
   };
 
+  const formatSlotLabel = (time) => {
+    const [hour] = time.split(':').map(Number);
+    const endTime = `${String(hour + 1).padStart(2, '0')}:00`;
+    return `${formatTimeLabel(time)} – ${formatTimeLabel(endTime)}`;
+  };
+
   const loadAvailability = async () => {
     const requestId = ++slotRequest;
     if (!dateInput.value) {
@@ -238,7 +244,7 @@
       const availableSlots = slots.filter((slot) => slot.available);
       const previousTime = timeSelect.value;
       const slotOptions = slots.map((slot) => new Option(
-        `${formatTimeLabel(slot.time)}${slot.available ? '' : ' — Slot taken'}`,
+        `${formatSlotLabel(slot.time)}${slot.available ? '' : ' — Slot taken'}`,
         slot.time,
         false,
         false,
@@ -251,11 +257,15 @@
 
       const openingTime = slots[0]?.time;
       const lastPickupTime = slots[slots.length - 1]?.time;
+      const lastSlotHour = lastPickupTime ? Number(lastPickupTime.split(':')[0]) : NaN;
+      const pickupClosingTime = Number.isFinite(lastSlotHour)
+        ? `${String(lastSlotHour + 1).padStart(2, '0')}:00`
+        : null;
       pickupTimeInput.value = '';
       pickupTimeInput.disabled = !openingTime;
-      if (openingTime && lastPickupTime) {
+      if (openingTime && pickupClosingTime) {
         pickupTimeInput.min = openingTime;
-        pickupTimeInput.max = lastPickupTime;
+        pickupTimeInput.max = pickupClosingTime;
         pickupTimeInput.step = '3600';
       }
       renderSummary();

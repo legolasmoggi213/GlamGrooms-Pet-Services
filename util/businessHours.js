@@ -51,6 +51,18 @@ const validateTime = (date, time) => {
   return { ok: true };
 };
 
+const validatePickupTime = (date, time) => {
+  if (!date || !time) return { ok: false, error: 'Date and pickup time are required.' };
+  const [h, m] = String(time).split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return { ok: false, error: 'Invalid pickup time format.' };
+  if (m !== 0) return { ok: false, error: 'Pickup times must be on the hour.' };
+  const open = openHourFor(date);
+  if (h < open || h > CLOSE_HOUR) {
+    return { ok: false, error: `Pickup must be between ${fmtHour(open)} and ${fmtHour(CLOSE_HOUR)}.` };
+  }
+  return { ok: true };
+};
+
 module.exports = {
   OPEN_HOUR,
   SUN_OPEN_HOUR,
@@ -67,4 +79,5 @@ module.exports = {
   validHoursFor,
   fmtHour,
   validateTime,
+  validatePickupTime,
 };

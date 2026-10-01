@@ -5,6 +5,14 @@ const ACTIVE_GROOMING_STATUSES = ['scheduled', 'in-progress'];
 const ACTIVE_HOTEL_STATUSES = ['pending', 'reserved', 'confirmed', 'checked-in'];
 const REVENUE_GROOMING_STATUSES = ['scheduled', 'confirmed', 'in-progress', 'completed'];
 const REVENUE_HOTEL_STATUSES = ['reserved', 'confirmed', 'checked-in', 'checked-out'];
+const BUSINESS_TIME_ZONE = 'Asia/Manila';
+const businessDateKey = (date = new Date()) => new Intl.DateTimeFormat('en-CA', {
+  timeZone: BUSINESS_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+}).format(date);
+
 const findRevenueRecords = async (Model, acceptedStatuses) => {
   const [acceptedRecords, paidRecords] = await Promise.all([
     Model.findAll({ where: { status: acceptedStatuses } }),
@@ -17,10 +25,69 @@ const findRevenueRecords = async (Model, acceptedStatuses) => {
   return [...records.values()];
 };
 
+const createRevenueBuckets = (period, today) => {
+  const todayDate = new Date(`${today}T00:00:00.000Z`);
+  const format = (date, options) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...options }).format(date);
+  if (period === 'daily') {
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(todayDate.getTime() - (6 - index) * 86400000);
+      const key = date.toISOString().slice(0, 10);
+      return { key, label: format(date, { weekday: 'short', month: 'short', day: 'numeric' }) };
+    });
+  }
+  if (period === 'weekly') {
+    const mondayOffset = (todayDate.getUTCDay() + 6) % 7;
+    const thisMonday = new Date(todayDate.getTime() - mondayOffset * 86400000);
+    return Array.from({ length: 8 }, (_, index) => {
+      const start = new Date(thisMonday.getTime() - (7 - index) * 7 * 86400000);
+      const end = new Date(start.getTime() + 6 * 86400000);
+      return {
+        key: start.toISOString().slice(0, 10),
+        label: `${format(start, { month: 'short', day: 'numeric' })}–${format(end, { month: 'short', day: 'numeric' })}`,
+      };
+    });
+  }
+  const [year, month] = today.slice(0, 7).split('-').map(Number);
+  return Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(Date.UTC(year, month - 6 + index, 1));
+    const key = date.toISOString().slice(0, 7);
+    return { key, label: format(date, { month: 'short', year: 'numeric' }) };
+  });
+};
+
+const revenueDateKey = (record) => {
+  const date = record.paymentPaidAt || record.confirmedAt || record.updatedAt || record.createdAt;
+  if (!date) return null;
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  const parsed = date instanceof Date ? date : new Date(date);
+  return Number.isNaN(parsed.getTime()) ? null : businessDateKey(parsed);
+};
+
+const aggregateRevenue = (records, amountField, period, buckets) => {
+  const values = new Map(buckets.map(({ key }) => [key, { revenue: 0, count: 0 }]));
+  for (const record of records) {
+    const dateKey = revenueDateKey(record);
+    if (!dateKey) continue;
+    let key = dateKey;
+    if (period === 'weekly') {
+      const date = new Date(`${dateKey}T00:00:00.000Z`);
+      date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+      key = date.toISOString().slice(0, 10);
+    } else if (period === 'monthly') {
+      key = dateKey.slice(0, 7);
+    }
+    const bucket = values.get(key);
+    if (!bucket) continue;
+    bucket.revenue += Number(record[amountField] || 0);
+    bucket.count += 1;
+  }
+  return buckets.map(({ key, label }) => ({ label, ...values.get(key) }));
+};
+
 // GET /api/v1/admin/stats — overview numbers for the admin dashboard.
 const getStats = async (req, res, next) => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = businessDateKey();
 
     const [
       customers,
@@ -127,8 +194,8 @@ const getRecentActivity = async (req, res, next) => {
 // GET /api/v1/admin/occupancy — hotel occupancy for the next 14 days.
 const getOccupancy = async (req, res, next) => {
   try {
-    const today = new Date();
-    const start = today.toISOString().slice(0, 10);
+    const start = businessDateKey();
+    const today = new Date(`${start}T00:00:00.000Z`);
     const endDate = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000);
     const end = endDate.toISOString().slice(0, 10);
 
@@ -149,6 +216,34 @@ const getOccupancy = async (req, res, next) => {
     }
 
     res.json(days);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getRevenueAnalytics = async (req, res, next) => {
+  try {
+    const period = ['daily', 'weekly', 'monthly'].includes(req.query.period) ? req.query.period : 'monthly';
+    const [grooming, hotel] = await Promise.all([
+      findRevenueRecords(GroomingAppointment, REVENUE_GROOMING_STATUSES),
+      findRevenueRecords(HotelReservation, REVENUE_HOTEL_STATUSES),
+    ]);
+    const buckets = createRevenueBuckets(period, businessDateKey());
+    const groomingBuckets = aggregateRevenue(grooming, 'price', period, buckets);
+    const hotelBuckets = aggregateRevenue(hotel, 'totalPrice', period, buckets);
+    const groomingRevenue = groomingBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
+    const hotelRevenue = hotelBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
+
+    res.json({
+      period,
+      grooming: groomingBuckets,
+      hotel: hotelBuckets,
+      totals: {
+        grooming: groomingRevenue,
+        hotel: hotelRevenue,
+        combined: groomingRevenue + hotelRevenue,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -350,6 +445,7 @@ module.exports = {
   getRecentActivity,
   getOccupancy,
   getRevenueBreakdown,
+  getRevenueAnalytics,
   listCashTransactions,
   createCashTransaction,
 };

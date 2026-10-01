@@ -96,6 +96,7 @@ router.get('/admin/stats', adminController.getStats);
 router.get('/admin/activity', adminController.getRecentActivity);
 router.get('/admin/occupancy', adminController.getOccupancy);
 router.get('/admin/revenue-by-service', adminController.getRevenueBreakdown);
+router.get('/admin/revenue-analytics', adminController.getRevenueAnalytics);
 router.get('/admin/cash-transactions', adminController.listCashTransactions);
 router.post('/admin/cash-transactions', adminController.createCashTransaction);
 

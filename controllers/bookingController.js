@@ -12,7 +12,7 @@ const {
   releaseBookingSlots,
   releaseBookingSlotsByIds,
 } = require('../util/bookingLocks');
-const { validateTime } = require('../util/businessHours');
+const { validateTime, validatePickupTime } = require('../util/businessHours');
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -144,7 +144,7 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
     const timeCheck = validateTime(date, time);
     if (!timeCheck.ok) return res.status(400).json({ error: timeCheck.error });
     if (!pickupTime) return res.status(400).json({ error: 'A pickup time is required' });
-    const pickupCheck = validateTime(date, pickupTime);
+    const pickupCheck = validatePickupTime(date, pickupTime);
     if (!pickupCheck.ok) return res.status(400).json({ error: pickupCheck.error });
 
     const existingAppointments = await GroomingAppointment.findAll({ where: { date, time } });

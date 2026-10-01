@@ -6,7 +6,7 @@ const smtpPassword = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
 const hasResendConfig = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
 
 if (!hasMailConfig && !hasResendConfig) {
-  console.warn('Booking emails disabled: configure SMTP_USER and SMTP_PASS or RESEND_API_KEY + RESEND_FROM_EMAIL in .env.');
+  console.warn('Booking emails disabled: configure RESEND_API_KEY + RESEND_FROM_EMAIL or SMTP_USER + SMTP_PASS in .env / Railway variables.');
 }
 
 const transporter = hasMailConfig

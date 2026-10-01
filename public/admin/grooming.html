@@ -177,7 +177,7 @@
       }
       try {
         const result = await apiPut(`/grooming/${id}`, { status: 'confirmed' });
-        if (!result.emailSent) alert('Booking confirmed, but the customer email was not sent. Check SMTP settings in .env.');
+        if (!result.emailSent) alert('Booking confirmed, but the customer email was not sent. Check your email config in .env or Railway variables (Resend or SMTP).');
         await loadAppointments();
       } catch (error) {
         if (button) {

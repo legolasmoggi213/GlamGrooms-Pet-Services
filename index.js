@@ -132,26 +132,34 @@ app.post('/customer/delete-account', async (req, res) => {
       db.GroomingAppointment.findAll({ where: { customerId: customer.id } }),
       db.HotelReservation.findAll({ where: { customerId: customer.id } }),
     ]);
-    // Delete booking records before opening their capacity. If a delete fails,
-    // stale locks are safe whereas released locks could double-book a stay.
+    let firebaseUser = null;
+    try {
+      firebaseUser = customer.uid
+        ? { uid: customer.uid }
+        : await auth.getUserByEmail(customer.email);
+    } catch (authError) {
+      if (authError.code !== 'auth/user-not-found') throw authError;
+    }
+    if (firebaseUser) {
+      try {
+        await auth.deleteUser(firebaseUser.uid);
+      } catch (authError) {
+        if (authError.code !== 'auth/user-not-found') throw authError;
+      }
+    }
+
+    const bookingIds = [...groomingBookings, ...hotelBookings].map((booking) => booking.id);
+    await Promise.all(bookingIds.map((bookingId) => db.CashTransaction.destroy({ where: { bookingId } })));
     await db.GroomingAppointment.destroy({ where: { customerId: customer.id } });
     await db.HotelReservation.destroy({ where: { customerId: customer.id } });
+    await db.Pet.destroy({ where: { customerId: customer.id } });
+    await customer.destroy();
+
+    // Keep capacity locked until the associated records have been removed.
     await Promise.all([
       ...groomingBookings.map((booking) => releaseBookingSlotsByIds(groomingLockIds(booking.date, booking.time))),
       ...hotelBookings.map((booking) => releaseBookingSlotsByIds(hotelLockIds(booking.roomType, booking.checkIn, booking.checkOut))),
     ]);
-    await db.Pet.destroy({ where: { customerId: customer.id } });
-    await customer.destroy();
-
-    // Also delete the Firebase Authentication account so the user cannot
-    // log back in with the same email/password.
-    if (customer.uid) {
-      try {
-        await auth.deleteUser(customer.uid);
-      } catch (authErr) {
-        console.warn('Could not delete Firebase Auth user:', authErr.message);
-      }
-    }
 
     res.clearCookie('customer_token', { path: '/' });
     res.clearCookie('customer_logged_in', { path: '/' });
@@ -346,6 +354,7 @@ app.post('/admin/change-password', (req, res) => {
 app.use((req, res, next) => {
   if (!['GET', 'HEAD'].includes(req.method)) return next();
   if (req.path.startsWith('/api/')) return next();
+  if (req.path.startsWith('/admin/')) return next();
   if (req.path === '/privacy.html' || req.path === '/favicon.ico'
     || req.path.startsWith('/css/') || req.path.startsWith('/js/') || req.path.startsWith('/assets/')) {
     return next();

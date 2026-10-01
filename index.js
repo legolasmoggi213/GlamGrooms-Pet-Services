@@ -382,6 +382,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/api/v1', apiRouter);
 
+app.all('/api/cron/reminders', async (req, res) => {
+  try {
+    const { sendReminders } = require('./util/reminders');
+    const result = await sendReminders();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Manual reminder cron failed:', error);
+    res.status(500).json({ success: false, error: 'Reminder cron failed' });
+  }
+});
+
 // PayMongo webhook — no auth, PayMongo signs the request
 const { handlePayMongoWebhook } = require('./util/paymongoWebhook');
 app.post('/webhooks/paymongo', handlePayMongoWebhook);
@@ -407,5 +418,9 @@ const startServer = async () => {
   }
 };
 
-startServer();
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = app;
 

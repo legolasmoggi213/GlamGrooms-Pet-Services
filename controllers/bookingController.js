@@ -7,8 +7,8 @@ const { parseToken: parseAdminToken } = require('../util/adminAuth');
 const {
   BookingConflictError,
   groomingLockIds,
-  hotelLockIds,
   hotelLockIdsForTypes,
+  areBookingSlotsAvailable,
   claimBookingSlots,
   releaseBookingSlots,
   releaseBookingSlotsByIds,
@@ -273,15 +273,6 @@ const bookHotel = async (req, res, next) => {
     }
 
     const requestedRoomTypes = [...new Set(petRoomTypes)];
-    const existingReservations = await HotelReservation.findAll();
-    const overlapsExisting = existingReservations.some((reservation) => reservation.status !== 'cancelled'
-      && reservationRoomTypes(reservation).some((existingRoomType) => requestedRoomTypes.includes(existingRoomType))
-      && new Date(reservation.checkIn) < new Date(checkOut)
-      && new Date(reservation.checkOut) > new Date(checkIn));
-    if (overlapsExisting) {
-      throw new BookingConflictError('That room schedule is already reserved. The first customer to request it was prioritized. Please choose different dates.');
-    }
-
     const lockRefs = await claimBookingSlots(hotelLockIdsForTypes(requestedRoomTypes, checkIn, checkOut), {
       type: 'hotel', roomTypes: requestedRoomTypes, checkIn, checkOut,
     });
@@ -491,14 +482,10 @@ const getHotelAvailability = async (req, res, next) => {
       return res.status(400).json({ error: 'A valid roomType is required' });
     }
 
-    const existing = (await HotelReservation.findAll()).filter((reservation) => reservationRoomTypes(reservation).includes(roomType));
-    const overlaps = existing.some((reservation) =>
-      reservation.status !== 'cancelled'
-      && new Date(reservation.checkIn) < new Date(checkOut)
-      && new Date(reservation.checkOut) > new Date(checkIn)
-    );
+    const lockIds = hotelLockIdsForTypes([roomType], checkIn, checkOut);
+    const available = await areBookingSlotsAvailable(lockIds);
 
-    res.json({ roomType, checkIn, checkOut, available: !overlaps });
+    res.json({ roomType, checkIn, checkOut, available });
   } catch (error) {
     next(error);
   }

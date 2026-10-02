@@ -7,6 +7,13 @@ const notFoundHandler = (req, res) => {
 
 // Maps Sequelize errors to clean client-facing responses.
 const errorHandler = (err, req, res, next) => {
+  if (Number(err.code) === 8 || err.code === 'RESOURCE_EXHAUSTED') {
+    return res.status(503).json({
+      error: 'The booking database has reached its Firestore quota. Please try again later or contact the administrator.',
+      message: 'The booking database has reached its Firestore quota. Please try again later or contact the administrator.',
+    });
+  }
+
   if (err.name === 'SequelizeValidationError' || err.name === 'SequelizeUniqueConstraintError') {
     return res.status(400).json({
       error: 'Validation failed',

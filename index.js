@@ -10,6 +10,7 @@ const { notFoundHandler, errorHandler } = require('./util/errorHandler');
 
 const app = express();
 const port = process.env.PORT || 3000;
+let databaseConnected = false;
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
 app.use(express.json({
@@ -411,23 +412,28 @@ const { handlePayMongoWebhook } = require('./util/paymongoWebhook');
 app.post('/webhooks/paymongo', handlePayMongoWebhook);
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'PawStay backend is running' });
+  res.status(databaseConnected ? 200 : 503).json({
+    status: databaseConnected ? 'ok' : 'degraded',
+    database: databaseConnected ? 'connected' : 'unavailable',
+    message: databaseConnected ? 'PawStay backend is running' : 'Website is running, but Firestore is unavailable',
+  });
 });
 
 app.use(notFoundHandler);
 app.use(errorHandler);
 
 const startServer = async () => {
+  app.listen(port, () => {
+    console.log(`App connected to port ${port}`);
+  });
+
   try {
     await db.Customer.count();
+    databaseConnected = true;
     console.log('Firebase Firestore connected successfully.');
     require('./util/reminders').startReminderScheduler();
-    app.listen(port, () => {
-      console.log(`App connected to port ${port}`);
-    });
   } catch (error) {
-    console.error('Failed to connect to database:', error);
-    process.exit(1);
+    console.error('Firestore unavailable; starting website in degraded mode:', error.message);
   }
 };
 

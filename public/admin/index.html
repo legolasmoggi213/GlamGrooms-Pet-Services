@@ -93,17 +93,26 @@
 
       async function loadOccupancy() {
         const days = await apiGet('/admin/occupancy');
-        const max = Math.max(1, ...days.map((d) => d.occupied));
-        document.getElementById('occupancy').innerHTML = days
-          .map(
-            (d) => `
-              <div class="occ-row">
-                <span class="date">${fmtDate(d.date)}</span>
-                <div class="bar"><div style="width:${(d.occupied / max) * 100}%"></div></div>
-                <span class="count">${d.occupied}</span>
-              </div>`
-          )
-          .join('');
+        const container = document.getElementById('occupancy');
+        if (!days.length) {
+          container.innerHTML = '<div class="empty">No occupancy data available.</div>';
+          return;
+        }
+        container.innerHTML = `<div class="occupancy-days">${days.map((day) => `
+          <section class="occ-day">
+            <div class="occ-day-header">
+              <strong>${fmtDate(day.date)}</strong>
+              <span>${day.customers} ${day.customers === 1 ? 'customer' : 'customers'} · ${day.reservationCount} ${day.reservationCount === 1 ? 'booking' : 'bookings'}</span>
+              <span class="occ-arrivals">${day.arrivals} arriving</span>
+            </div>
+            ${day.bookings.length ? `<div class="occ-booking-list">${day.bookings.map((booking) => `
+              <article class="occ-booking">
+                <div class="occ-booking-title"><strong>${escapeHtml(booking.customerName)}</strong>${statusBadge(booking.status)}</div>
+                <div class="occ-booking-meta">${escapeHtml((booking.petNames || []).join(', ') || 'No pet listed')}${booking.customerPhone ? ` · ${escapeHtml(booking.customerPhone)}` : ''}</div>
+                <div class="occ-booking-meta">${escapeHtml((booking.roomAssignments || []).join(' · '))}</div>
+                <div class="occ-booking-times">Check-in: ${fmtDate(booking.checkIn)} ${escapeHtml(booking.checkInTime || 'Time not set')} <span>→</span> Check-out: ${fmtDate(booking.checkOut)} ${escapeHtml(booking.checkOutTime || 'Time not set')}</div>
+              </article>`).join('')}</div>` : ''}
+          </section>`).join('')}</div>`;
       }
 
       async function loadActivity() {

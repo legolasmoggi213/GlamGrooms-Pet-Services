@@ -205,20 +205,59 @@ const getOccupancy = async (req, res, next) => {
     const endDate = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000);
     const end = endDate.toISOString().slice(0, 10);
 
-    const reservations = await HotelReservation.findAll({
-      where: {
-        status: ACTIVE_HOTEL_STATUSES,
-        checkIn: { lte: end },
-        checkOut: { gt: start },
-      },
-      attributes: ['checkIn', 'checkOut'],
-    });
+    const [reservations, customers, pets] = await Promise.all([
+      HotelReservation.findAll({
+        where: {
+          status: ACTIVE_HOTEL_STATUSES,
+          checkIn: { lte: end },
+          checkOut: { gt: start },
+        },
+      }),
+      Customer.findAll(),
+      Pet.findAll(),
+    ]);
+    const customerMap = Object.fromEntries(customers.map((customer) => [String(customer.id), customer]));
+    const petMap = Object.fromEntries(pets.map((pet) => [String(pet.id), pet]));
 
     const days = [];
     for (let d = new Date(today); d <= endDate; d = new Date(d.getTime() + 24 * 60 * 60 * 1000)) {
       const day = d.toISOString().slice(0, 10);
-      const occupied = reservations.filter((r) => r.checkIn <= day && r.checkOut > day).length;
-      days.push({ date: day, occupied });
+      const bookings = reservations
+        .filter((reservation) => reservation.checkIn <= day && reservation.checkOut > day)
+        .map((reservation) => {
+          const customer = customerMap[String(reservation.customerId)];
+          const petNames = reservation.petNames && reservation.petNames.length
+            ? reservation.petNames
+            : (reservation.petIds || (reservation.petId ? [reservation.petId] : []))
+              .map((petId) => petMap[String(petId)])
+              .filter(Boolean)
+              .map((pet) => pet.name);
+          const roomAssignments = Array.isArray(reservation.petRooms) && reservation.petRooms.length
+            ? reservation.petRooms.map((petRoom) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`)
+            : [String(reservation.roomType || 'Pet hotel').replace(/^staycation-/, '').replace(/-/g, ' ')];
+          return {
+            id: reservation.id,
+            customerId: reservation.customerId,
+            customerName: customer ? customer.name : 'Customer',
+            customerPhone: customer ? customer.phone : null,
+            petNames,
+            roomAssignments,
+            checkIn: reservation.checkIn,
+            checkInTime: reservation.checkInTime || null,
+            checkOut: reservation.checkOut,
+            checkOutTime: reservation.checkOutTime || null,
+            status: reservation.status,
+          };
+        });
+      const customerCount = new Set(bookings.map((booking) => String(booking.customerId))).size;
+      days.push({
+        date: day,
+        occupied: customerCount,
+        customers: customerCount,
+        reservationCount: bookings.length,
+        arrivals: bookings.filter((booking) => booking.checkIn === day).length,
+        bookings,
+      });
     }
 
     res.json(days);

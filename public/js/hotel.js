@@ -201,7 +201,14 @@ const checkAvailability = async () => {
     }
   } catch (err) {
     console.warn('Could not check availability:', err);
-    if (requestId === availabilityRequest) submitBtn.disabled = true;
+    if (requestId === availabilityRequest) {
+      submitBtn.disabled = true;
+      const badge = document.getElementById('availability-badge');
+      if (badge) {
+        badge.textContent = err.message || 'Could not check room availability. Please try again shortly.';
+        badge.style.color = '#c0392b';
+      }
+    }
   }
 };
 

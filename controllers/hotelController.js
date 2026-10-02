@@ -1,6 +1,6 @@
 const { HotelReservation, Customer, Pet } = require('../models');
 const { sendReservationTicket } = require('../util/mailer');
-const { hotelLockIds, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
+const { hotelLockIds, hotelLockIdsForTypes, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
 const { validateTime } = require('../util/businessHours');
 const catalog = require('../util/serviceCatalog');
 
@@ -46,6 +46,15 @@ const nightsBetween = (checkIn, checkOut) => {
   const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / MS_PER_DAY);
   return Number.isFinite(nights) ? nights : 0;
 };
+
+const reservationRoomTypes = (reservation) => [...new Set(
+  (Array.isArray(reservation.roomTypes) && reservation.roomTypes.length
+    ? reservation.roomTypes
+    : Array.isArray(reservation.petRooms) && reservation.petRooms.length
+      ? reservation.petRooms.map((petRoom) => petRoom.roomType)
+      : [reservation.roomType])
+    .filter(Boolean)
+)];
 
 const listReservations = async (req, res, next) => {
   try {
@@ -167,10 +176,13 @@ const updateReservation = async (req, res, next) => {
       return res.status(400).json({ error: 'A valid petId is required' });
     }
 
-    const nextRoomType = roomType || reservation.roomType;
+    const currentRoomTypes = reservationRoomTypes(reservation);
+    const nextRoomTypes = roomType ? [roomType] : currentRoomTypes;
+    const nextRoomType = nextRoomTypes.length === 1 ? nextRoomTypes[0] : 'multiple-rooms';
     const nextCheckIn = checkIn || reservation.checkIn;
     const nextCheckOut = checkOut || reservation.checkOut;
-    const stayChanged = nextRoomType !== reservation.roomType
+    const stayChanged = nextRoomTypes.length !== currentRoomTypes.length
+      || nextRoomTypes.some((type) => !currentRoomTypes.includes(type))
       || nextCheckIn !== reservation.checkIn
       || nextCheckOut !== reservation.checkOut;
 
@@ -183,22 +195,33 @@ const updateReservation = async (req, res, next) => {
       return res.status(400).json({ error: 'Check-out must be after check-in' });
     }
     if (stayChanged && status !== 'cancelled') {
-      const conflicts = await HotelReservation.findAll({ where: { roomType: nextRoomType } });
+      const conflicts = await HotelReservation.findAll();
       const overlaps = conflicts.some((item) => String(item.id) !== String(reservation.id)
         && item.status !== 'cancelled'
+        && reservationRoomTypes(item).some((type) => nextRoomTypes.includes(type))
         && new Date(item.checkIn) < new Date(nextCheckOut)
         && new Date(item.checkOut) > new Date(nextCheckIn));
       if (overlaps) return res.status(409).json({ error: 'That room is already reserved for those dates.' });
     }
 
-    const pricePerNight = ROOM_PRICES[nextRoomType];
+    const sourcePetRooms = Array.isArray(reservation.petRooms) && reservation.petRooms.length
+      ? reservation.petRooms
+      : (reservation.petIds || [reservation.petId]).filter(Boolean).map((id, index) => ({
+        petId: id,
+        petName: (reservation.petNames || [])[index],
+        roomType: currentRoomTypes[0],
+      }));
+    const nextPetRooms = sourcePetRooms.map((petRoom) => {
+      const petRoomType = roomType || petRoom.roomType || currentRoomTypes[0];
+      return { ...petRoom, roomType: petRoomType, pricePerNight: ROOM_PRICES[petRoomType] };
+    });
+    const pricePerNight = nextRoomTypes.length === 1 ? ROOM_PRICES[nextRoomTypes[0]] : null;
     const needsAdminConfirmation = status === 'confirmed' && !reservation.confirmedAt;
     const shouldSendTicket = status === 'confirmed' && !reservation.reservationTicketEmailSentAt;
-    const oldRoomType = reservation.roomType;
     const oldCheckIn = reservation.checkIn;
     const oldCheckOut = reservation.checkOut;
-    const oldLockIds = hotelLockIds(oldRoomType, oldCheckIn, oldCheckOut);
-    const newLockIds = hotelLockIds(nextRoomType, nextCheckIn, nextCheckOut);
+    const oldLockIds = hotelLockIdsForTypes(currentRoomTypes, oldCheckIn, oldCheckOut);
+    const newLockIds = hotelLockIdsForTypes(nextRoomTypes, nextCheckIn, nextCheckOut);
     let claimedNewLockIds = [];
     if (stayChanged && status !== 'cancelled') {
       claimedNewLockIds = await claimReplacementBookingSlots(oldLockIds, newLockIds, { type: 'hotel', roomType: nextRoomType, checkIn: nextCheckIn, checkOut: nextCheckOut });
@@ -206,6 +229,8 @@ const updateReservation = async (req, res, next) => {
     try {
       const updates = {
       roomType: nextRoomType,
+      roomTypes: nextRoomTypes,
+      petRooms: nextPetRooms,
       checkIn: nextCheckIn,
       checkInTime: checkInTime || reservation.checkInTime || null,
       checkOut: nextCheckOut,
@@ -215,7 +240,9 @@ const updateReservation = async (req, res, next) => {
       customerId: customerId === undefined ? reservation.customerId : customerId,
       petId: petId === undefined ? reservation.petId : petId,
       pricePerNight,
-      totalPrice: pricePerNight * nights * (reservation.petIds && reservation.petIds.length ? reservation.petIds.length : 1),
+      totalPrice: nextPetRooms.reduce((sum, petRoom) => sum + petRoom.pricePerNight * nights, 0),
+      roomDetails: nextRoomTypes.length === 1 ? ROOM_DETAILS[nextRoomTypes[0]] : null,
+      roomDetailsByType: Object.fromEntries(nextRoomTypes.map((type) => [type, ROOM_DETAILS[type]])),
       };
       if (needsAdminConfirmation) updates.confirmedAt = new Date();
       await reservation.update(updates);
@@ -260,7 +287,7 @@ const deleteReservation = async (req, res, next) => {
       return res.status(404).json({ error: 'Reservation not found' });
     }
     await reservation.destroy();
-    await releaseBookingSlotsByIds(hotelLockIds(reservation.roomType, reservation.checkIn, reservation.checkOut));
+    await releaseBookingSlotsByIds(hotelLockIdsForTypes(reservationRoomTypes(reservation), reservation.checkIn, reservation.checkOut));
     res.json({ message: 'Reservation deleted' });
   } catch (error) {
     next(error);

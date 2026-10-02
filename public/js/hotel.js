@@ -86,17 +86,21 @@ const ROOM_PRICES = {
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#39;');
     const pets = collectPets();
-    const roomText = roomSelect.options[roomSelect.selectedIndex]?.textContent || roomSelect.value;
     const nights = Math.round((new Date(checkOutInput.value) - new Date(checkInInput.value)) / 864e5);
-    const petCount = pets.length;
-    const total = nights > 0 ? ROOM_PRICES[roomSelect.value] * nights * petCount : 0;
+    const totalPerNight = pets.reduce((sum, pet) => sum + (ROOM_PRICES[pet.roomType] || 0), 0);
+    const total = nights > 0 ? totalPerNight * nights : 0;
     const petText = pets.map((pet) => `${pet.name || 'Unnamed pet'} (${pet.species}, age ${pet.age ?? 'not entered'}, ${pet.breed || 'breed not entered'})`).join(', ');
     const rows = [
-      ['Room', roomText],
+      ...pets.map((pet, index) => {
+        const roomField = petFields.querySelector(`[name="roomType-${index}"]`);
+        const roomText = roomField?.options[roomField.selectedIndex]?.textContent || pet.roomType;
+        return [`${pet.name || `Pet ${index + 1}`} room`, `${roomText} — ${fmtMoney(ROOM_PRICES[pet.roomType] || 0)} / night`];
+      }),
       ['Pets', petText],
       ['Check-in', `${fmtDate(checkInInput.value)} at ${checkInTime.value}`],
       ['Check-out', `${fmtDate(checkOutInput.value)} at ${checkOutTime.value}`],
-      ['Price', `${fmtMoney(ROOM_PRICES[roomSelect.value])} × ${nights > 0 ? nights : 0} night${nights === 1 ? '' : 's'} × ${petCount} pet${petCount === 1 ? '' : 's'}`],
+      ['Price per night', fmtMoney(totalPerNight)],
+      ['Nights', String(nights > 0 ? nights : 0)],
       ['Special care', form.notes.value || 'Not entered'],
       ['Total', nights > 0 ? fmtMoney(total) : 'Check-out must be after check-in'],
     ];
@@ -113,12 +117,6 @@ const ROOM_PRICES = {
       </div>
     `;
   };
-
-  roomSelect.addEventListener('change', () => {
-    updatePrice();
-    renderOrderSummary();
-    showRoomDetails();
-  });
 
   const localDate = (date) => {
     const copy = new Date(date);
@@ -143,9 +141,9 @@ const ROOM_PRICES = {
     if (!pricePreview) return;
     const nights = Math.round((new Date(checkOutInput.value) - new Date(checkInInput.value)) / 864e5);
     if (nights > 0) {
-      const count = Math.max(1, Math.min(5, Number(petCount.value) || 1));
-      const total = ROOM_PRICES[roomSelect.value] * nights * count;
-      pricePreview.textContent = `${nights} night${nights > 1 ? 's' : ''} × ${fmtMoney(ROOM_PRICES[roomSelect.value])} × ${count} pet${count > 1 ? 's' : ''} = ${fmtMoney(total)}`;
+      const pets = collectPets();
+      const total = pets.reduce((sum, pet) => sum + (ROOM_PRICES[pet.roomType] || 0), 0) * nights;
+      pricePreview.textContent = `${nights} night${nights > 1 ? 's' : ''} × selected room rates = ${fmtMoney(total)}`;
     } else {
       pricePreview.textContent = 'Check-out must be after check-in';
     }
@@ -157,6 +155,7 @@ const ROOM_PRICES = {
       <div class="field"><label for="pet-species-${index}">Species *</label><select id="pet-species-${index}" name="species-${index}"><option value="dog">Dog</option><option value="cat">Cat</option></select></div>
       <div class="field"><label for="pet-breed-${index}">Breed *</label><input id="pet-breed-${index}" name="breed-${index}" required /></div>
       <div class="field"><label for="pet-age-${index}">Age (years) *</label><input id="pet-age-${index}" name="age-${index}" type="number" min="0" max="50" required /></div>
+      <div class="field full"><label for="pet-room-${index}">Room for Pet ${index + 1} *</label><select id="pet-room-${index}" name="roomType-${index}" required>${roomSelect.innerHTML}</select></div>
     `).join('');
   };
   const collectPets = () => Array.from({ length: Math.max(1, Math.min(5, Number(petCount.value) || 1)) }, (_, index) => {
@@ -166,35 +165,38 @@ const ROOM_PRICES = {
       species: petField('species')?.value || 'dog',
       breed: petField('breed')?.value.trim() || null,
       age: petField('age')?.value ? Number(petField('age').value) : null,
+      roomType: petField('roomType')?.value || roomSelect.value,
     };
   });
 
 
 // Real-time room availability check
 const checkAvailability = async () => {
-  const roomType = roomSelect.value;
+  const roomTypes = [...new Set(collectPets().map((pet) => pet.roomType).filter(Boolean))];
   const checkIn = checkInInput.value;
   const checkOut = checkOutInput.value;
   const requestId = ++availabilityRequest;
   roomAvailable = false;
   submitBtn.disabled = true;
-  if (!roomType || !checkIn || !checkOut) return;
+  if (!roomTypes.length || !checkIn || !checkOut) return;
   try {
-    const query = new URLSearchParams({ roomType, checkIn, checkOut });
-    const res = await fetch(`/api/v1/bookings/hotel/availability?${query}`, {
-      credentials: 'include'
-    });
-    const data = await res.json();
+    const results = await Promise.all(roomTypes.map(async (roomType) => {
+      const query = new URLSearchParams({ roomType, checkIn, checkOut });
+      const res = await fetch(`/api/v1/bookings/hotel/availability?${query}`, { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not check room availability');
+      return data;
+    }));
     if (requestId !== availabilityRequest) return;
     const badge = document.getElementById('availability-badge');
-    roomAvailable = Boolean(data.available);
+    roomAvailable = results.every((result) => result.available);
     submitBtn.disabled = !roomAvailable;
     if (!badge) return;
-    if (data.available) {
-      badge.textContent = '✓ Room available';
+    if (roomAvailable) {
+      badge.textContent = '✓ All selected rooms are available';
       badge.style.color = '#1a6b4a';
     } else {
-      badge.textContent = data.error ? `✗ ${data.error}` : '✗ Room not available for these dates';
+      badge.textContent = '✗ One or more selected room types are unavailable for these dates';
       badge.style.color = '#c0392b';
     }
   } catch (err) {
@@ -203,8 +205,9 @@ const checkAvailability = async () => {
   }
 };
 
-[roomSelect, checkInTime, checkOutTime].forEach((el) => el.addEventListener('change', renderOrderSummary));
+[checkInTime, checkOutTime].forEach((el) => el.addEventListener('change', renderOrderSummary));
   form.addEventListener('input', renderOrderSummary);
+  petFields.addEventListener('change', () => { updatePrice(); checkAvailability(); renderOrderSummary(); });
   checkInInput.addEventListener('change', () => { updatePrice(); checkAvailability(); renderOrderSummary(); });
   checkOutInput.addEventListener('change', () => {
     if (checkInInput.value && checkOutInput.value && checkOutInput.value <= checkInInput.value) applyCheckInDates();
@@ -213,7 +216,7 @@ const checkAvailability = async () => {
     renderOrderSummary();
   });
   checkInInput.addEventListener('change', applyCheckInDates);
-  petCount.addEventListener('change', () => { renderPetFields(); updatePrice(); renderOrderSummary(); });
+  petCount.addEventListener('change', () => { renderPetFields(); updatePrice(); checkAvailability(); renderOrderSummary(); });
   populateTimeOptions(checkInTime, '14:00');
   populateTimeOptions(checkOutTime, '12:00');
   renderPetFields();
@@ -296,7 +299,7 @@ const checkAvailability = async () => {
         address: form.address.value.trim() || null,
       },
       pets: collectPets(),
-      roomType: roomSelect.value,
+      roomType: collectPets()[0]?.roomType || roomSelect.value,
       checkIn: checkInInput.value,
       checkInTime: checkInTime.value,
       checkOut: checkOutInput.value,

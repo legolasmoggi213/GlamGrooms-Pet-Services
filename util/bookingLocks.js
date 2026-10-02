@@ -20,6 +20,9 @@ const hotelLockIds = (roomType, checkIn, checkOut) => {
   return locks;
 };
 
+const hotelLockIdsForTypes = (roomTypes, checkIn, checkOut) => [...new Set(roomTypes.filter(Boolean))]
+  .flatMap((roomType) => hotelLockIds(roomType, checkIn, checkOut));
+
 const claimBookingSlots = async (lockIds, details) => {
   const refs = lockIds.map((id) => lockCollection.doc(id));
   await firestore.runTransaction(async (transaction) => {
@@ -60,4 +63,4 @@ const claimReplacementBookingSlots = async (oldLockIds, newLockIds, details) => 
   return newLockIds.filter((id) => !oldIds.has(id));
 };
 
-module.exports = { BookingConflictError, groomingLockIds, hotelLockIds, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds };
+module.exports = { BookingConflictError, groomingLockIds, hotelLockIds, hotelLockIdsForTypes, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds };

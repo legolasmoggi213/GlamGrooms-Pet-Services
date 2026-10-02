@@ -110,7 +110,9 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
     ? Array.isArray(booking.petServices) && booking.petServices.length
       ? booking.petServices.map((assignment) => `${assignment.petName || 'Pet'}: ${formatServiceName(assignment.service)} (${formatCurrency(assignment.price)})`)
       : [formatServiceName(booking.service)]
-    : [`${booking.roomType || 'Pet hotel'} (${formatCurrency(booking.pricePerNight)} per night)`];
+    : Array.isArray(booking.petRooms) && booking.petRooms.length
+      ? booking.petRooms.map((petRoom) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || 'Pet hotel').replace(/^staycation-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())} (${formatCurrency(petRoom.pricePerNight)} per night)`)
+      : [`${booking.roomType || 'Pet hotel'} (${formatCurrency(booking.pricePerNight)} per night)`];
   const rows = [
     ['Booking reference', booking.id],
     ['Customer', customer.name],
@@ -118,7 +120,7 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
     ['Phone', customer.phone],
     ['Address', customer.address],
     ['Pet(s)', petDetails.length ? petDetails.join('\n') : (booking.petNames || []).join(', ')],
-    [isGrooming ? 'Service(s)' : 'Room', serviceDetails.join('\n')],
+    [isGrooming ? 'Service(s)' : 'Room(s)', serviceDetails.join('\n')],
   ];
 
   if (isGrooming) {
@@ -137,7 +139,12 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
   );
   if (paid && booking.paymentReference) rows.push(['PayMongo reference', booking.paymentReference]);
   if (paid && booking.paymentPaidAt) rows.push(['Paid at', new Date(booking.paymentPaidAt).toLocaleString('en-PH')]);
-  if (!isGrooming && booking.pricePerNight) rows.push(['Price per night', formatCurrency(booking.pricePerNight)]);
+  if (!isGrooming) {
+    const nightlyTotal = Array.isArray(booking.petRooms) && booking.petRooms.length
+      ? booking.petRooms.reduce((sum, petRoom) => sum + Number(petRoom.pricePerNight || 0), 0)
+      : Number(booking.pricePerNight || 0) * Math.max(1, (booking.petIds || []).length);
+    if (nightlyTotal) rows.push(['Total per night', formatCurrency(nightlyTotal)]);
+  }
   rows.push(['Total', formatCurrency(isGrooming ? booking.price : booking.totalPrice)]);
 
   const title = receipt ? 'Payment receipt' : 'Reservation ticket';

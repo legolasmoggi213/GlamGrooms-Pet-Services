@@ -163,10 +163,13 @@
 
         const hotel = (data.hotel || []).map(item => {
           const statusClass = item.status === 'checked-out' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
+          const roomSummary = Array.isArray(item.petRooms) && item.petRooms.length
+            ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ')
+            : `${item.roomType || 'Room'} stay`;
           return `
             <li>
               <div>
-                <strong>${escapeHtml(item.roomType || 'Room')} stay</strong>
+                <strong>${escapeHtml(roomSummary)}</strong>
                 <div class="transaction-meta">Check-in: ${formatDate(item.checkIn)} at ${escapeHtml(item.checkInTime || 'Time TBA')} • Check-out: ${formatDate(item.checkOut)} at ${escapeHtml(item.checkOutTime || 'Time TBA')} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.totalPrice)}</div>
                 ${paymentReceiptLink(item)}
                 ${reservationTicketMarkup(item, 'hotel', pets, p)}
@@ -178,7 +181,7 @@
 
         const recent = [
           ...(data.grooming || []).map(item => ({ type: 'Grooming', date: item.date, createdAt: item.createdAt, label: Array.isArray(item.petServices) && item.petServices.length ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ') : (item.service || 'Grooming'), details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'), receiptLink: paymentReceiptLink(item) })),
-          ...(data.hotel || []).map(item => ({ type: 'Hotel', date: item.checkIn, createdAt: item.createdAt, label: `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'), receiptLink: paymentReceiptLink(item) })),
+          ...(data.hotel || []).map(item => ({ type: 'Hotel', date: item.checkIn, createdAt: item.createdAt, label: Array.isArray(item.petRooms) && item.petRooms.length ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ') : `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'), receiptLink: paymentReceiptLink(item) })),
         ].sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)).slice(0, 5);
         const recentHtml = recent.length
           ? `<ul class="transaction-list">${recent.map(item => {
@@ -239,7 +242,9 @@
         ? Array.isArray(item.petServices) && item.petServices.length
           ? item.petServices.map(service => `${service.petName || 'Pet'}: ${String(service.service || '').replace(/^grooming-/, '').replace(/^ayurveda-herb-/, '').replace(/^ayurveda-pkg-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()).replace(/\bXl\b/g, 'XL')} (${formatMoney(service.price)})`).join('\n')
           : (item.service || 'Grooming')
-        : `${item.roomType || 'Pet hotel'}${item.pricePerNight ? ` — ${formatMoney(item.pricePerNight)} per night` : ''}`;
+        : Array.isArray(item.petRooms) && item.petRooms.length
+          ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')} — ${formatMoney(petRoom.pricePerNight)} per night`).join('\n')
+          : `${item.roomType || 'Pet hotel'}${item.pricePerNight ? ` — ${formatMoney(item.pricePerNight)} per night` : ''}`;
       const schedule = type === 'grooming'
         ? `Date: ${formatDate(item.date)}; Time: ${item.time || 'Not set'}${item.pickupTime ? `; Pickup: ${item.pickupTime}` : ''}`
         : `Check-in: ${formatDate(item.checkIn)} ${item.checkInTime || ''}; Check-out: ${formatDate(item.checkOut)} ${item.checkOutTime || ''}`;

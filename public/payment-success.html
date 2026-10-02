@@ -38,9 +38,11 @@
         const pets = Array.isArray(receipt.petNames) && receipt.petNames.length
           ? receipt.petNames.map(escapeHtml).join(', ')
           : '—';
-        const services = Array.isArray(receipt.petServices) && receipt.petServices.length
-          ? receipt.petServices.map((assignment) => `${escapeHtml(assignment.petName || 'Pet')}: ${escapeHtml(String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()))}`).join('<br>')
-          : escapeHtml(service);
+        const services = isHotel && Array.isArray(receipt.petRooms) && receipt.petRooms.length
+          ? receipt.petRooms.map((assignment) => `${escapeHtml(assignment.petName || 'Pet')}: ${escapeHtml(String(assignment.roomType || 'Room').replace(/^staycation-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()))} — ${fmtMoney(assignment.pricePerNight)} per night`).join('<br>')
+          : !isHotel && Array.isArray(receipt.petServices) && receipt.petServices.length
+            ? receipt.petServices.map((assignment) => `${escapeHtml(assignment.petName || 'Pet')}: ${escapeHtml(String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()))}`).join('<br>')
+            : escapeHtml(service);
         receiptElement.innerHTML = `
           <div class="receipt-heading">
             <div class="receipt-mark">GG</div>

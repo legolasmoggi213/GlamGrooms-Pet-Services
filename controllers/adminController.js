@@ -176,12 +176,15 @@ const getRecentActivity = async (req, res, next) => {
       ...hotel.map((r) => {
         const pet = petMap[String(r.petId)];
         const customer = customerMap[String(r.customerId)];
+        const roomSummary = Array.isArray(r.petRooms) && r.petRooms.length
+          ? r.petRooms.map((petRoom) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(', ')
+          : `${r.roomType} stay for ${pet ? pet.name : 'pet'}`;
         return {
           type: 'hotel',
           id: r.id,
           createdAt: r.createdAt,
           status: r.status,
-          summary: `${r.roomType} stay for ${pet ? pet.name : 'pet'} (${customer ? customer.name : 'customer'})`,
+          summary: `${roomSummary} (${customer ? customer.name : 'customer'})`,
         };
       }),
     ]

@@ -37,6 +37,9 @@
     renderSidebar('Hotel');
 
     const rowsEl = document.getElementById('rows');
+    const roomSummary = (reservation) => Array.isArray(reservation.petRooms) && reservation.petRooms.length
+      ? reservation.petRooms.map((petRoom) => `${escapeHtml(petRoom.petName || 'Pet')}: ${escapeHtml(String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' '))}`).join('<br>')
+      : escapeHtml(capitalize(reservation.roomType));
 
     async function loadReservations() {
       const items = await apiGet('/hotel');
@@ -51,8 +54,8 @@
           <td>${r.id}</td>
           <td>${fmtDate(r.checkIn)}</td>
           <td>${fmtDate(r.checkOut)}</td>
-          <td>${capitalize(r.roomType)}</td>
-          <td>${r.Pet ? escapeHtml(r.Pet.name) : '—'}</td>
+          <td>${roomSummary(r)}</td>
+          <td>${escapeHtml(Array.isArray(r.petNames) && r.petNames.length ? r.petNames.join(', ') : (r.Pet ? r.Pet.name : '—'))}</td>
           <td>${r.Customer ? escapeHtml(r.Customer.name) : '—'}</td>
           <td>${fmtMoney(r.totalPrice)}</td>
           <td>${statusBadge(r.status)}</td>
@@ -72,12 +75,15 @@
       const customer = r.Customer ? escapeHtml(r.Customer.name) : '—';
       const petInfo = r.Pet ? `Species: ${escapeHtml(r.Pet.species || '—')}, Breed: ${escapeHtml(r.Pet.breed || '—')}, Age: ${r.Pet.age != null ? r.Pet.age : '—'}` : '';
       const customerInfo = r.Customer ? `Email: ${escapeHtml(r.Customer.email || '—')}, Phone: ${escapeHtml(r.Customer.phone || '—')}` : '';
+      const roomInfo = Array.isArray(r.petRooms) && r.petRooms.length
+        ? r.petRooms.map((petRoom) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}, ${fmtMoney(petRoom.pricePerNight)} per night`).join('\n')
+        : capitalize(r.roomType);
       openModal('Reservation Details', `
         <div class="form-grid">
           <div class="field"><label>Reservation ID</label><input type="text" readonly value="${escapeHtml(r.id)}" /></div>
           <div class="field"><label>Customer</label><input type="text" readonly value="${customer}" /></div>
           <div class="field"><label>Pet</label><input type="text" readonly value="${pet}" /></div>
-          <div class="field"><label>Room Type</label><input type="text" readonly value="${escapeHtml(r.roomType)}" /></div>
+          <div class="field full"><label>Room Assignment(s)</label><textarea rows="${Math.max(2, r.petRooms?.length || 1)}" readonly>${escapeHtml(roomInfo)}</textarea></div>
           <div class="field"><label>Check-in</label><input type="text" readonly value="${escapeHtml(r.checkIn)}" /></div>
           <div class="field"><label>Check-in Time</label><input type="text" readonly value="${escapeHtml(r.checkInTime || '—')}" /></div>
           <div class="field"><label>Check-out</label><input type="text" readonly value="${escapeHtml(r.checkOut)}" /></div>

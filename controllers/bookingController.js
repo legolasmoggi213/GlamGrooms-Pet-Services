@@ -8,6 +8,7 @@ const {
   BookingConflictError,
   groomingLockIds,
   hotelLockIds,
+  hotelLockIdsForTypes,
   claimBookingSlots,
   releaseBookingSlots,
   releaseBookingSlotsByIds,
@@ -25,6 +26,16 @@ const normalizeRoomType = (roomType) => {
   const value = String(roomType || '').trim().toLowerCase();
   return aliases[value] || value;
 };
+
+const reservationRoomTypes = (reservation) => [...new Set(
+  (Array.isArray(reservation.roomTypes) && reservation.roomTypes.length
+    ? reservation.roomTypes
+    : Array.isArray(reservation.petRooms) && reservation.petRooms.length
+      ? reservation.petRooms.map((petRoom) => petRoom.roomType)
+      : [reservation.roomType])
+    .map(normalizeRoomType)
+    .filter(Boolean)
+)];
 
 const getCookie = (req, name) => {
   const part = (req.headers.cookie || '').split(';').map((item) => item.trim())
@@ -98,7 +109,7 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
       const isOwner = customerId && String(resv.customerId) === String(customerId);
       const isExpired = resv.createdAt && (now - new Date(resv.createdAt).getTime() > EXPIRY_MS);
       if (isOwner || isExpired) {
-        const lockIds = hotelLockIds(resv.roomType, resv.checkIn, resv.checkOut);
+        const lockIds = hotelLockIdsForTypes(reservationRoomTypes(resv), resv.checkIn, resv.checkOut);
         await releaseBookingSlotsByIds(lockIds);
         await resv.destroy();
       }
@@ -222,6 +233,7 @@ const bookHotel = async (req, res, next) => {
     const { customer: customerData, pet: petData, pets: submittedPets, roomType: submittedRoomType, checkIn, checkInTime, checkOut, checkOutTime, notes, paymentMethod } = req.body;
     const roomType = normalizeRoomType(submittedRoomType);
     const petsData = Array.isArray(submittedPets) && submittedPets.length ? submittedPets : [petData];
+    const petRoomTypes = petsData.map((pet) => normalizeRoomType(pet?.roomType || submittedRoomType));
 
     if (!customerData || !petsData[0]) {
       return res.status(400).json({ error: 'Customer and pet information are required' });
@@ -241,8 +253,8 @@ const bookHotel = async (req, res, next) => {
     if (petsData.some((pet) => !String(pet.breed || '').trim() || pet.age === undefined || pet.age === null || String(pet.age).trim() === '' || !Number.isFinite(Number(pet.age)) || Number(pet.age) < 0)) {
       return res.status(400).json({ error: 'Each pet needs a breed and valid age' });
     }
-    if (!Object.prototype.hasOwnProperty.call(ROOM_PRICES, roomType)) {
-      return res.status(400).json({ error: 'A valid roomType is required' });
+    if (petRoomTypes.some((petRoomType) => !Object.prototype.hasOwnProperty.call(ROOM_PRICES, petRoomType))) {
+      return res.status(400).json({ error: 'A valid room type is required for every pet' });
     }
 
     const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / MS_PER_DAY);
@@ -260,24 +272,37 @@ const bookHotel = async (req, res, next) => {
       return res.status(503).json({ error: 'Online GCash payment is not configured. Please choose counter cash or contact the administrator.' });
     }
 
-    const existingReservations = (await HotelReservation.findAll()).filter((reservation) => normalizeRoomType(reservation.roomType) === roomType);
+    const requestedRoomTypes = [...new Set(petRoomTypes)];
+    const existingReservations = await HotelReservation.findAll();
     const overlapsExisting = existingReservations.some((reservation) => reservation.status !== 'cancelled'
+      && reservationRoomTypes(reservation).some((existingRoomType) => requestedRoomTypes.includes(existingRoomType))
       && new Date(reservation.checkIn) < new Date(checkOut)
       && new Date(reservation.checkOut) > new Date(checkIn));
     if (overlapsExisting) {
       throw new BookingConflictError('That room schedule is already reserved. The first customer to request it was prioritized. Please choose different dates.');
     }
 
-    const lockRefs = await claimBookingSlots(hotelLockIds(roomType, checkIn, checkOut), { type: 'hotel', roomType, checkIn, checkOut });
+    const lockRefs = await claimBookingSlots(hotelLockIdsForTypes(requestedRoomTypes, checkIn, checkOut), {
+      type: 'hotel', roomTypes: requestedRoomTypes, checkIn, checkOut,
+    });
     let reservationCreated = false;
     let reservationRecord = null;
     try {
       const { customer, pets } = await findOrCreateCustomerWithPets(customerData, petsData);
       const primaryPet = pets[0];
 
-      const pricePerNight = ROOM_PRICES[roomType];
+      const petRooms = pets.map((pet, index) => ({
+        petId: pet.id,
+        petName: pet.name,
+        roomType: petRoomTypes[index],
+        pricePerNight: ROOM_PRICES[petRoomTypes[index]],
+      }));
+      const pricePerNight = requestedRoomTypes.length === 1 ? ROOM_PRICES[requestedRoomTypes[0]] : null;
+      const totalPrice = petRooms.reduce((sum, petRoom) => sum + petRoom.pricePerNight * nights, 0);
       const reservation = await HotelReservation.create({
-        roomType,
+        roomType: requestedRoomTypes.length === 1 ? requestedRoomTypes[0] : 'multiple-rooms',
+        roomTypes: requestedRoomTypes,
+        petRooms,
         customerDetails: {
           name: customerData.name || customer.name,
           email: customerData.email || customer.email,
@@ -296,8 +321,9 @@ const bookHotel = async (req, res, next) => {
         petTypes: pets.map((pet) => pet.type || 'adult'), // Include pet type in the record
         status: 'pending',
         pricePerNight,
-        totalPrice: pricePerNight * nights * pets.length,
-        roomDetails: ROOM_DETAILS[roomType] || { category: 'Standard', size: 'Medium', occupancy: 2, amenities: [], description: 'Standard room' },
+        totalPrice,
+        roomDetails: requestedRoomTypes.length === 1 ? ROOM_DETAILS[requestedRoomTypes[0]] : null,
+        roomDetailsByType: Object.fromEntries(requestedRoomTypes.map((type) => [type, ROOM_DETAILS[type]])),
         ...paymentDetails(paymentMethod),
       });
       reservationRecord = reservation;
@@ -379,6 +405,8 @@ const verifyPayment = async (req, res, next) => {
     if (metadata.bookingType === 'hotel') {
       Object.assign(receipt, {
         service: booking.roomType,
+        roomTypes: booking.roomTypes || [booking.roomType],
+        petRooms: booking.petRooms || [],
         checkIn: booking.checkIn,
         checkInTime: booking.checkInTime,
         checkOut: booking.checkOut,
@@ -411,7 +439,7 @@ const cancelPayment = async (req, res, next) => {
     if (!(await canAccessBooking(req, booking))) return res.status(403).json({ error: 'You are not allowed to cancel this booking.' });
     if (booking.paymentStatus === 'pending') {
       const lockIds = bookingType === 'hotel'
-        ? hotelLockIds(booking.roomType, booking.checkIn, booking.checkOut)
+        ? hotelLockIdsForTypes(reservationRoomTypes(booking), booking.checkIn, booking.checkOut)
         : groomingLockIds(booking.date, booking.time);
       await releaseBookingSlotsByIds(lockIds);
       await booking.destroy();
@@ -463,7 +491,7 @@ const getHotelAvailability = async (req, res, next) => {
       return res.status(400).json({ error: 'A valid roomType is required' });
     }
 
-    const existing = (await HotelReservation.findAll()).filter((reservation) => normalizeRoomType(reservation.roomType) === roomType);
+    const existing = (await HotelReservation.findAll()).filter((reservation) => reservationRoomTypes(reservation).includes(roomType));
     const overlaps = existing.some((reservation) =>
       reservation.status !== 'cancelled'
       && new Date(reservation.checkIn) < new Date(checkOut)

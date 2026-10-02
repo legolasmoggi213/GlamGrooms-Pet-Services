@@ -1,5 +1,5 @@
 const { HotelReservation, Customer, Pet } = require('../models');
-const { sendBookingConfirmation } = require('../util/mailer');
+const { sendReservationTicket } = require('../util/mailer');
 const { hotelLockIds, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
 const { validateTime } = require('../util/businessHours');
 const catalog = require('../util/serviceCatalog');
@@ -192,7 +192,8 @@ const updateReservation = async (req, res, next) => {
     }
 
     const pricePerNight = ROOM_PRICES[nextRoomType];
-    const wasConfirmed = reservation.status === 'confirmed';
+    const needsAdminConfirmation = status === 'confirmed' && !reservation.confirmedAt;
+    const shouldSendTicket = status === 'confirmed' && !reservation.reservationTicketEmailSentAt;
     const oldRoomType = reservation.roomType;
     const oldCheckIn = reservation.checkIn;
     const oldCheckOut = reservation.checkOut;
@@ -216,7 +217,7 @@ const updateReservation = async (req, res, next) => {
       pricePerNight,
       totalPrice: pricePerNight * nights * (reservation.petIds && reservation.petIds.length ? reservation.petIds.length : 1),
       };
-      if (status === 'confirmed' && !wasConfirmed) updates.confirmedAt = new Date();
+      if (needsAdminConfirmation) updates.confirmedAt = new Date();
       await reservation.update(updates);
     } catch (error) {
       if (claimedNewLockIds.length) await releaseBookingSlotsByIds(claimedNewLockIds);
@@ -229,23 +230,21 @@ const updateReservation = async (req, res, next) => {
     }
     const full = await HotelReservation.findByPk(reservation.id, { include: includeAll });
     let emailSent = false;
-    if (status === 'confirmed' && !wasConfirmed) {
-      const [customer, pet] = await Promise.all([
+    if (shouldSendTicket) {
+      const [customer, pets] = await Promise.all([
         Customer.findByPk(full.customerId),
-        Pet.findByPk(full.petId),
+        Promise.all((full.petIds || (full.petId ? [full.petId] : [])).map((id) => Pet.findByPk(id))),
       ]);
       try {
-        emailSent = await sendBookingConfirmation({
-          to: customer && customer.email,
-          customerName: customer && customer.name,
+        if (customer) emailSent = await sendReservationTicket({
+          bookingRecord: full,
           type: 'hotel',
-          service: full.roomType,
-          date: full.checkIn,
-          time: `${full.checkOut} ${full.checkOutTime || ''}`.trim(),
-          petName: pet && pet.name,
+          to: customer.email,
+          customer: full.customerDetails || customer,
+          pets: pets.filter(Boolean),
         });
       } catch (mailError) {
-        console.error('Booking confirmation email failed:', mailError);
+        console.error('Hotel reservation ticket email failed:', mailError);
       }
     }
     res.json({ ...(await addRelatedRecords(full)), emailSent });

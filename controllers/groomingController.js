@@ -1,5 +1,5 @@
 const { GroomingAppointment, Customer, Pet } = require('../models');
-const { sendBookingConfirmation } = require('../util/mailer');
+const { sendReservationTicket } = require('../util/mailer');
 const { groomingLockIds, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
 const { validateTime, validatePickupTime } = require('../util/businessHours');
 const catalog = require('../util/serviceCatalog');
@@ -14,7 +14,6 @@ Object.entries(GROOMING).forEach(([tier, sizes]) => {
     SERVICE_PRICES[`grooming-${tier.toLowerCase()}-${size.toLowerCase()}`] = price;
   });
 });
-
 Object.entries(A_LA_CARTE).forEach(([name, price]) => {
   const key = `grooming-a-la-carte-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
   SERVICE_PRICES[key] = typeof price === 'object' ? price.max : price;
@@ -196,8 +195,9 @@ const updateAppointment = async (req, res, next) => {
         updates.price = SERVICE_PRICES[service];
       }
     }
-    const wasConfirmed = appointment.status === 'confirmed';
-    if (status === 'confirmed' && !wasConfirmed) updates.confirmedAt = new Date();
+    const needsAdminConfirmation = status === 'confirmed' && !appointment.confirmedAt;
+    const shouldSendTicket = status === 'confirmed' && !appointment.reservationTicketEmailSentAt;
+    if (needsAdminConfirmation) updates.confirmedAt = new Date();
     const oldDate = appointment.date;
     const oldTime = appointment.time;
     const oldLockIds = groomingLockIds(oldDate, oldTime);
@@ -219,26 +219,21 @@ const updateAppointment = async (req, res, next) => {
     }
     const full = await GroomingAppointment.findByPk(appointment.id, { include: includeAll });
     let emailSent = false;
-    if (updates.status === 'confirmed' && !wasConfirmed) {
-      const [customer, pet] = await Promise.all([
+    if (shouldSendTicket) {
+      const [customer, pets] = await Promise.all([
         Customer.findByPk(full.customerId),
-        Pet.findByPk(full.petId),
+        Promise.all((full.petIds || (full.petId ? [full.petId] : [])).map((id) => Pet.findByPk(id))),
       ]);
       try {
-        emailSent = await sendBookingConfirmation({
-          to: customer && customer.email,
-          customerName: customer && customer.name,
+        if (customer) emailSent = await sendReservationTicket({
+          bookingRecord: full,
           type: 'grooming',
-          service: Array.isArray(full.petServices) && full.petServices.length
-            ? full.petServices.map((assignment) => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())}`).join('\n')
-            : full.service,
-          date: full.date,
-          time: full.time,
-          pickupTime: full.pickupTime || null,
-          petName: Array.isArray(full.petNames) && full.petNames.length ? full.petNames.join(', ') : (pet && pet.name),
+          to: customer.email,
+          customer: full.customerDetails || customer,
+          pets: pets.filter(Boolean),
         });
       } catch (mailError) {
-        console.error('Booking confirmation email failed:', mailError);
+        console.error('Grooming reservation ticket email failed:', mailError);
       }
     }
     res.json({ ...(await addRelatedRecords(full)), emailSent });

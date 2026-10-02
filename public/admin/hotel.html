@@ -57,7 +57,7 @@
           <td>${fmtMoney(r.totalPrice)}</td>
           <td>${statusBadge(r.status)}</td>
           <td>
-            ${r.status !== 'confirmed' && r.status !== 'checked-in' && r.status !== 'checked-out' && r.status !== 'cancelled' ? `<button class="btn btn-success btn-sm" onclick="confirmRes('${r.id}', this)">Confirm</button>` : ''}
+            ${r.status !== 'cancelled' && ((!r.confirmedAt && r.status !== 'checked-in' && r.status !== 'checked-out') || (r.confirmedAt && !r.reservationTicketEmailSentAt)) ? `<button class="btn btn-success btn-sm" onclick="confirmRes('${r.id}', this)">${r.confirmedAt ? 'Send Ticket' : 'Confirm'}</button>` : ''}
             <button class="btn btn-outline btn-sm" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})'>View</button>
             <button class="btn btn-danger btn-sm" onclick='removeRes(${escapeHtml(JSON.stringify(r.id))})'>Delete</button>
           </td>

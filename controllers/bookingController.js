@@ -13,6 +13,7 @@ const {
   releaseBookingSlotsByIds,
 } = require('../util/bookingLocks');
 const { validateTime, validatePickupTime } = require('../util/businessHours');
+const { sendPayMongoReceipt } = require('../util/mailer');
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -171,6 +172,12 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
       const appointment = await GroomingAppointment.create({
         service: distinctServices.length === 1 ? distinctServices[0] : 'multiple-services',
         petServices,
+        customerDetails: {
+          name: customerData.name || customer.name,
+          email: customerData.email || customer.email,
+          phone: customerData.phone || customer.phone,
+          address: customerData.address || customer.address,
+        },
         date,
         time,
         pickupTime: pickupTime || null,
@@ -271,6 +278,12 @@ const bookHotel = async (req, res, next) => {
       const pricePerNight = ROOM_PRICES[roomType];
       const reservation = await HotelReservation.create({
         roomType,
+        customerDetails: {
+          name: customerData.name || customer.name,
+          email: customerData.email || customer.email,
+          phone: customerData.phone || customer.phone,
+          address: customerData.address || customer.address,
+        },
         checkIn,
         checkInTime,
         checkOut,
@@ -352,6 +365,17 @@ const verifyPayment = async (req, res, next) => {
       paidAt: booking.paymentPaidAt || booking.updatedAt || new Date(),
       amount: Number(metadata.bookingType === 'hotel' ? booking.totalPrice : booking.price),
     };
+    try {
+      await sendPayMongoReceipt({
+        bookingRecord: booking,
+        type: metadata.bookingType,
+        to: customer && customer.email,
+        customer: booking.customerDetails || customer || {},
+        pets: pets.filter(Boolean),
+      });
+    } catch (emailError) {
+      console.error('PayMongo payment receipt email failed:', emailError);
+    }
     if (metadata.bookingType === 'hotel') {
       Object.assign(receipt, {
         service: booking.roomType,

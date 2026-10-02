@@ -154,6 +154,7 @@
                 <strong>${escapeHtml(serviceSummary)}</strong>
                 <div class="transaction-meta">${formatDate(item.date)} • ${escapeHtml(item.time || 'Time TBA')}${item.pickupTime ? ` • Pickup ${escapeHtml(item.pickupTime)}` : ''} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.price)}</div>
                 ${paymentReceiptLink(item)}
+                ${reservationTicketMarkup(item, 'grooming', pets, p)}
               </div>
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
@@ -168,6 +169,7 @@
                 <strong>${escapeHtml(item.roomType || 'Room')} stay</strong>
                 <div class="transaction-meta">Check-in: ${formatDate(item.checkIn)} at ${escapeHtml(item.checkInTime || 'Time TBA')} • Check-out: ${formatDate(item.checkOut)} at ${escapeHtml(item.checkOutTime || 'Time TBA')} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.totalPrice)}</div>
                 ${paymentReceiptLink(item)}
+                ${reservationTicketMarkup(item, 'hotel', pets, p)}
               </div>
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
@@ -220,6 +222,53 @@
     function paymentReceiptLink(item) {
       if (item.paymentMethod !== 'qrph' || item.paymentStatus !== 'paid' || !item.paymentReference) return '';
       return `<a class="receipt-link" href="/payment-success.html?session_id=${encodeURIComponent(item.paymentReference)}">View / print receipt</a>`;
+    }
+
+    function reservationTicketMarkup(item, type, pets, profile) {
+      if (item.status === 'cancelled') return '';
+      if (!item.confirmedAt) return '<div class="transaction-meta">Reservation ticket available after admin confirmation.</div>';
+
+      const customer = item.customerDetails || profile || {};
+      const linkedPets = (item.petIds || (item.petId ? [item.petId] : []))
+        .map(id => pets.find(pet => String(pet.id) === String(id)))
+        .filter(Boolean);
+      const petDetails = linkedPets.length
+        ? linkedPets.map(pet => `${pet.name || 'Pet'} — ${pet.species || 'Species not set'}, ${pet.breed || 'Breed not set'}, ${pet.age == null ? 'Age not set' : `${pet.age} yrs`}`).join('\n')
+        : (item.petNames || []).join(', ');
+      const serviceDetails = type === 'grooming'
+        ? Array.isArray(item.petServices) && item.petServices.length
+          ? item.petServices.map(service => `${service.petName || 'Pet'}: ${String(service.service || '').replace(/^grooming-/, '').replace(/^ayurveda-herb-/, '').replace(/^ayurveda-pkg-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()).replace(/\bXl\b/g, 'XL')} (${formatMoney(service.price)})`).join('\n')
+          : (item.service || 'Grooming')
+        : `${item.roomType || 'Pet hotel'}${item.pricePerNight ? ` — ${formatMoney(item.pricePerNight)} per night` : ''}`;
+      const schedule = type === 'grooming'
+        ? `Date: ${formatDate(item.date)}; Time: ${item.time || 'Not set'}${item.pickupTime ? `; Pickup: ${item.pickupTime}` : ''}`
+        : `Check-in: ${formatDate(item.checkIn)} ${item.checkInTime || ''}; Check-out: ${formatDate(item.checkOut)} ${item.checkOutTime || ''}`;
+      const payment = item.paymentMethod === 'qrph'
+        ? (item.paymentStatus === 'paid' ? 'Paid online via GCash' : 'GCash payment pending')
+        : (item.paymentStatus === 'paid' ? 'Cash paid' : 'Cash due at counter');
+      const rows = [
+        ['Booking reference', item.id],
+        ['Status', item.status],
+        ['Customer', customer.name],
+        ['Email', customer.email || profile.email],
+        ['Phone', customer.phone || profile.phone],
+        ['Address', customer.address || profile.address],
+        ['Pet(s)', petDetails],
+        [type === 'grooming' ? 'Service(s)' : 'Room', serviceDetails],
+        ['Schedule', schedule],
+        ['Payment', payment],
+        ['Total', formatMoney(type === 'grooming' ? item.price : item.totalPrice)],
+      ];
+      if (item.notes) rows.splice(rows.length - 2, 0, ['Special requests', item.notes]);
+
+      return `
+        <details class="reservation-ticket">
+          <summary class="receipt-link">View reservation ticket</summary>
+          <div class="info-list" style="margin-top:0.75rem">
+            ${rows.map(([label, value]) => `<div class="info-row"><strong>${escapeHtml(label)}</strong><span style="white-space:pre-line">${escapeHtml(value || 'Not provided')}</span></div>`).join('')}
+          </div>
+        </details>
+      `;
     }
 
     function escapeHtml(s) {

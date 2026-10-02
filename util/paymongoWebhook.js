@@ -2,8 +2,8 @@
 
 const crypto = require('crypto');
 const { GroomingAppointment, HotelReservation } = require('../models');
-const { sendBookingConfirmation } = require('./mailer');
-const { sendBookingSms } = require('./sms');
+const { sendPayMongoReceipt } = require('./mailer');
+const { sendSms } = require('./sms');
 
 const isValidSignature = (rawBody, signature, secret) => {
   if (!Buffer.isBuffer(rawBody) || !secret || !/^[a-f\d]{64}$/i.test(String(signature || ''))) return false;
@@ -49,61 +49,40 @@ const handlePayMongoWebhook = async (req, res) => {
       return res.json({ received: true, skipped: true });
     }
 
-    if (booking.paymentStatus === 'paid') {
-      return res.json({ received: true, alreadyPaid: true });
+    const alreadyPaid = booking.paymentStatus === 'paid';
+    if (!alreadyPaid) {
+      const updatePayload = {
+        paymentStatus: 'paid',
+        paymentReference: sessionId,
+        paymentPaidAt: new Date(),
+      };
+      await booking.update(updatePayload);
     }
 
-    const updatePayload = {
-      paymentStatus: 'paid',
-      paymentReference: sessionId,
-      paymentPaidAt: new Date(),
-    };
-    if (booking.status === 'pending') updatePayload.status = 'confirmed';
-    await booking.update(updatePayload);
-
-    // Fetch customer + pet for notifications
+    // Fetch booking details for the receipt and payment notification.
     const { Customer, Pet } = require('../models');
     const customer = await Customer.findByPk(booking.customerId);
-    const pet = await Pet.findByPk(booking.petId);
+    const pets = await Promise.all((booking.petIds || (booking.petId ? [booking.petId] : [])).map((petId) => Pet.findByPk(petId)));
 
-    // Send email + SMS confirmation
+    // The verification endpoint and webhook may both run; the mailer claims delivery once.
     if (customer) {
-      const bookingDetails = bookingType === 'grooming'
-        ? {
-          service: Array.isArray(booking.petServices) && booking.petServices.length
-            ? booking.petServices.map((assignment) => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())}`).join('\n')
-            : booking.service,
-          date: booking.date,
-          time: booking.time,
-          pickupTime: booking.pickupTime,
-        }
-        : { service: booking.roomType, date: booking.checkIn, time: booking.checkOut };
-
-      await sendBookingConfirmation({
+      await sendPayMongoReceipt({
+        bookingRecord: booking,
+        type: bookingType,
         to: customer.email,
-        customerName: customer.name,
-        type: bookingType,
-        service: bookingDetails.service,
-        date: bookingDetails.date,
-        time: bookingDetails.time,
-        pickupTime: bookingDetails.pickupTime,
-        petName: bookingType === 'grooming' && Array.isArray(booking.petNames) && booking.petNames.length
-          ? booking.petNames.join(', ')
-          : (pet ? pet.name : undefined),
+        customer: booking.customerDetails || customer,
+        pets: pets.filter(Boolean),
       });
 
-      await sendBookingSms({
-        to: customer.phone,
-        customerName: customer.name,
-        type: bookingType,
-        service: bookingDetails.service,
-        date: bookingDetails.date,
-        time: bookingDetails.time,
-        petName: pet ? pet.name : undefined,
-      });
+      if (!alreadyPaid) {
+        await sendSms({
+          to: customer.phone,
+          message: `Hello ${customer.name || 'Customer'}, your GCash payment for Glam Grooms booking #${booking.id} has been received. The reservation ticket will be available in My Account after an admin confirms your booking.`,
+        });
+      }
     }
 
-    return res.json({ received: true, bookingId, status: 'paid' });
+    return res.json({ received: true, bookingId, status: 'paid', alreadyPaid });
   } catch (error) {
     console.error('PayMongo webhook error:', error);
     return res.status(500).json({ error: 'Webhook processing failed' });

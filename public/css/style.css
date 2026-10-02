@@ -930,6 +930,8 @@ a:hover { color: var(--primary-dark); text-decoration: none; }
 .payment-options label:hover { background: #faf8f0; border-color: var(--gold-dark); }
 .payment-options input { width: auto; accent-color: var(--primary); transform: scale(1.1); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+.stay-details-grid { row-gap: 0.45rem; }
+.stay-details-grid .field { margin-bottom: 0.3rem; }
 .form-grid[hidden] { display: none; }
 .form-grid .full { grid-column: 1 / -1; }
 .field label {

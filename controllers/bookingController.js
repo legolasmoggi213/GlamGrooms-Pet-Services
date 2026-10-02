@@ -113,6 +113,7 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
   try {
     const { customer: customerData, pet: petData, pets: submittedPets, service, date, time, pickupTime, notes, paymentMethod } = req.body;
     const petsData = Array.isArray(submittedPets) && submittedPets.length ? submittedPets : [petData];
+    const petServiceKeys = petsData.map((pet) => String(pet?.service || service || ''));
 
     if (!customerData || !petsData[0]) {
       return res.status(400).json({ error: 'Customer and pet information are required' });
@@ -132,8 +133,8 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
     if (petsData.some((pet) => !String(pet.breed || '').trim() || pet.age === undefined || pet.age === null || String(pet.age).trim() === '' || !Number.isFinite(Number(pet.age)) || Number(pet.age) < 0)) {
       return res.status(400).json({ error: 'Each pet needs a breed and valid age' });
     }
-    if (!Object.prototype.hasOwnProperty.call(SERVICE_PRICES, service)) {
-      return res.status(400).json({ error: 'A valid service is required' });
+    if (petServiceKeys.some((petService) => !Object.prototype.hasOwnProperty.call(SERVICE_PRICES, petService))) {
+      return res.status(400).json({ error: 'A valid service is required for every pet' });
     }
     if (!date || !time) {
       return res.status(400).json({ error: 'A valid date and time are required' });
@@ -158,9 +159,18 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
     try {
       const { customer, pets } = await findOrCreateCustomerWithPets(customerData, petsData);
       const primaryPet = pets[0];
+      const petServices = pets.map((pet, index) => ({
+        petId: pet.id,
+        petName: pet.name,
+        service: petServiceKeys[index],
+        price: SERVICE_PRICES[petServiceKeys[index]],
+      }));
+      const distinctServices = [...new Set(petServiceKeys)];
+      const totalPrice = petServices.reduce((sum, item) => sum + item.price, 0);
 
       const appointment = await GroomingAppointment.create({
-        service,
+        service: distinctServices.length === 1 ? distinctServices[0] : 'multiple-services',
+        petServices,
         date,
         time,
         pickupTime: pickupTime || null,
@@ -171,7 +181,7 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
         petNames: pets.map((pet) => pet.name),
         petTypes: pets.map((pet) => pet.type || 'adult'), // Include pet type in the record
         status: 'pending',
-        price: SERVICE_PRICES[service] * pets.length,
+        price: totalPrice,
         ...paymentDetails(paymentMethod),
       });
       appointmentRecord = appointment;
@@ -182,7 +192,7 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
           bookingType: 'grooming',
           bookingId: appointment.id,
           amount: appointment.price,
-          description: `Glam Grooms grooming - ${service}`,
+          description: `Glam Grooms grooming for ${pets.length} pet${pets.length === 1 ? '' : 's'}`,
         });
         if (!checkout.checkoutUrl) throw new Error('PayMongo did not return a checkout URL.');
       }
@@ -353,6 +363,7 @@ const verifyPayment = async (req, res, next) => {
     } else {
       Object.assign(receipt, {
         service: booking.service,
+        petServices: booking.petServices || [],
         date: booking.date,
         time: booking.time,
         pickupTime: booking.pickupTime || null,

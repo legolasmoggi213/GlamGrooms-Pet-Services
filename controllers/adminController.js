@@ -162,12 +162,15 @@ const getRecentActivity = async (req, res, next) => {
       ...grooming.map((a) => {
         const pet = petMap[String(a.petId)];
         const customer = customerMap[String(a.customerId)];
+        const serviceSummary = Array.isArray(a.petServices) && a.petServices.length
+          ? a.petServices.map((assignment) => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())}`).join(', ')
+          : `${a.service} for ${pet ? pet.name : 'pet'}`;
         return {
           type: 'grooming',
           id: a.id,
           createdAt: a.createdAt,
           status: a.status,
-          summary: `${a.service} for ${pet ? pet.name : 'pet'} (${customer ? customer.name : 'customer'})`,
+          summary: `${serviceSummary} (${customer ? customer.name : 'customer'})`,
         };
       }),
       ...hotel.map((r) => {

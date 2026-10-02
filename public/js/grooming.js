@@ -144,6 +144,7 @@
       <div class="field"><label for="pet-species-${index}">Species *</label><select id="pet-species-${index}" name="species-${index}"><option value="dog">Dog</option><option value="cat">Cat</option></select></div>
       <div class="field"><label for="pet-breed-${index}">Breed *</label><input id="pet-breed-${index}" name="breed-${index}" required /></div>
       <div class="field"><label for="pet-age-${index}">Age (years) *</label><input id="pet-age-${index}" name="age-${index}" type="number" min="0" max="50" required /></div>
+      <div class="field full"><label for="pet-service-${index}">Service for Pet ${index + 1} *</label><select id="pet-service-${index}" name="service-${index}" required>${serviceSelect.innerHTML}</select></div>
     `).join('');
     updatePrice();
   };
@@ -153,6 +154,7 @@
     species: String(field(`species-${index}`)?.value || 'dog').trim().toLowerCase(),
     breed: String(field(`breed-${index}`)?.value || '').trim() || null,
     age: field(`age-${index}`)?.value ? Number(field(`age-${index}`).value) : null,
+    service: String(field(`service-${index}`)?.value || ''),
   }));
 
   const formatDate = (value) => {
@@ -201,8 +203,7 @@
 
   const updatePrice = () => {
     if (!pricePreview) return;
-    const count = Math.max(1, Math.min(5, Number(petCountSelect.value) || 1));
-    const total = (PRICES[serviceSelect.value] || 0) * count;
+    const total = collectPets().reduce((sum, pet) => sum + (PRICES[pet.service] || 0), 0);
     pricePreview.textContent = `Total: ${formatMoney(total)}`;
   };
 
@@ -283,15 +284,14 @@
   const renderSummary = () => {
     if (!summaryBox) return;
     const pets = collectPets();
-    const serviceText = serviceSelect.options[serviceSelect.selectedIndex]?.textContent || serviceSelect.value;
-    const rows = [
-      ['Service', serviceText],
-      ['Number of pets', String(pets.length)],
-      ['Price per pet', formatMoney(PRICES[serviceSelect.value] || 0)],
-      ['Date', formatDate(dateInput.value)],
-    ];
+    const rows = pets.map((pet, index) => {
+      const selectedService = field(`service-${index}`);
+      const serviceText = selectedService?.options[selectedService.selectedIndex]?.textContent || pet.service;
+      return [`Pet ${index + 1}: ${pet.name || 'Pet'}`, `${serviceText} · ${formatMoney(PRICES[pet.service] || 0)}`];
+    });
+    rows.push(['Date', formatDate(dateInput.value)]);
     if (pickupTimeInput.value) rows.push(['Pickup time', pickupTimeInput.value]);
-    rows.push(['Total', formatMoney((PRICES[serviceSelect.value] || 0) * pets.length)]);
+    rows.push(['Total', formatMoney(pets.reduce((sum, pet) => sum + (PRICES[pet.service] || 0), 0))]);
 
     summaryBox.innerHTML = `
       <div class="form-section-label">Order Summary</div>
@@ -320,7 +320,7 @@
           address: String(field('address')?.value || '').trim() || null,
         },
         pets: collectPets(),
-        service: serviceSelect.value,
+        service: field('service-0')?.value,
         date: dateInput.value,
         time: timeSelect.value,
         pickupTime: pickupTimeInput.value.trim() || null,
@@ -328,14 +328,13 @@
         paymentMethod: String(form.querySelector('input[name="paymentMethod"]:checked')?.value || 'cash'),
       };
       const bookingKey = JSON.stringify({
-        service: payload.service,
+        services: payload.pets.map((pet) => pet.service),
         date: payload.date,
         time: payload.time,
-        pets: payload.pets.map((pet) => pet.name.toLowerCase()),
+        pets: payload.pets.map((pet) => `${pet.name.toLowerCase()}:${pet.service}`),
       });
       if (bookingKey === lastSuccessfulBookingKey) {
-        const serviceName = serviceSelect.options[serviceSelect.selectedIndex]?.textContent || payload.service;
-        const confirmed = window.confirm(`You already booked ${serviceName} for ${formatDate(payload.date)} at ${payload.time}. Are you sure you want to book the same service again?`);
+        const confirmed = window.confirm(`You already booked these services for ${formatDate(payload.date)} at ${payload.time}. Are you sure you want to book them again?`);
         if (!confirmed) return;
       }
 
@@ -390,10 +389,11 @@
   };
 
   form.addEventListener('submit', submitBooking, { capture: true });
-  serviceSelect.addEventListener('change', () => {
+  petFields.addEventListener('change', () => {
     updatePrice();
     renderSummary();
   });
+  petFields.addEventListener('input', renderSummary);
   petCountSelect.addEventListener('change', () => {
     renderPetFields();
     renderSummary();

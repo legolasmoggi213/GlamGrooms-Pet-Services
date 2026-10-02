@@ -69,7 +69,14 @@ const handlePayMongoWebhook = async (req, res) => {
     // Send email + SMS confirmation
     if (customer) {
       const bookingDetails = bookingType === 'grooming'
-        ? { service: booking.service, date: booking.date, time: booking.time, pickupTime: booking.pickupTime }
+        ? {
+          service: Array.isArray(booking.petServices) && booking.petServices.length
+            ? booking.petServices.map((assignment) => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())}`).join('\n')
+            : booking.service,
+          date: booking.date,
+          time: booking.time,
+          pickupTime: booking.pickupTime,
+        }
         : { service: booking.roomType, date: booking.checkIn, time: booking.checkOut };
 
       await sendBookingConfirmation({
@@ -80,7 +87,9 @@ const handlePayMongoWebhook = async (req, res) => {
         date: bookingDetails.date,
         time: bookingDetails.time,
         pickupTime: bookingDetails.pickupTime,
-        petName: pet ? pet.name : undefined,
+        petName: bookingType === 'grooming' && Array.isArray(booking.petNames) && booking.petNames.length
+          ? booking.petNames.join(', ')
+          : (pet ? pet.name : undefined),
       });
 
       await sendBookingSms({

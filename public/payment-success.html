@@ -38,6 +38,9 @@
         const pets = Array.isArray(receipt.petNames) && receipt.petNames.length
           ? receipt.petNames.map(escapeHtml).join(', ')
           : '—';
+        const services = Array.isArray(receipt.petServices) && receipt.petServices.length
+          ? receipt.petServices.map((assignment) => `${escapeHtml(assignment.petName || 'Pet')}: ${escapeHtml(String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()))}`).join('<br>')
+          : escapeHtml(service);
         receiptElement.innerHTML = `
           <div class="receipt-heading">
             <div class="receipt-mark">GG</div>
@@ -49,7 +52,7 @@
           <div class="receipt-details">
             <div><span>Customer</span><strong>${escapeHtml(receipt.customerName || 'Customer')}</strong></div>
             <div><span>Pet${receipt.petNames && receipt.petNames.length === 1 ? '' : 's'}</span><strong>${pets}</strong></div>
-            <div><span>${isHotel ? 'Stay' : 'Service'}</span><strong>${escapeHtml(service)}</strong></div>
+            <div><span>${isHotel ? 'Stay' : 'Services'}</span><strong>${services}</strong></div>
             <div><span>Schedule</span><strong>${schedule}</strong></div>
             <div><span>Payment method</span><strong>GCash · PayMongo QR Ph</strong></div>
             <div><span>Payment reference</span><strong>${escapeHtml(receipt.paymentReference)}</strong></div>

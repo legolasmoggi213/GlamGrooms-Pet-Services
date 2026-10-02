@@ -179,13 +179,23 @@
         const allAyurveda = data.grooming.filter(s => s.name.startsWith('ayurveda-'));
         const herbs = allAyurveda.filter(s => s.name.includes('herb'));
         const packages = allAyurveda.filter(s => s.name.includes('pkg'));
+        const formatServiceName = (name) => {
+          const words = name.replace(/^ayurveda-(herb|pkg)-/, '').split('-');
+          const size = words.pop().toUpperCase();
+          const category = words
+            .map(word => word === 'doctors' ? "Doctor's" : `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+            .join(' ')
+            .replace(/\bDoctor S\b/g, "Doctor's")
+            .replace(/\bBeauty Moisture\b/g, 'Beauty/Moisture');
+          return `${category} ${size}`;
+        };
         
         container.innerHTML = `
           <div class="card" style="grid-column: 1 / -1; margin-bottom: 2rem;">
             <h3 style="color: var(--primary); margin-bottom: 1rem;">Ayurveda Herbs</h3>
             <div class="card-grid">
               ${herbs.map(service => {
-                const serviceName = service.name.replace(/^ayurveda-herb-/, '').replace(/-/g, ' ');
+                const serviceName = formatServiceName(service.name);
                 return `
                   <div class="card">
                     <h4 style="font-size: 1.1rem; margin-bottom: 0.5rem;">${serviceName}</h4>
@@ -199,7 +209,7 @@
             <h3 style="color: var(--primary); margin-bottom: 1rem;">Ayurveda Packages</h3>
             <div class="card-grid">
               ${packages.map(service => {
-                const serviceName = service.name.replace(/^ayurveda-pkg-/, '').replace(/-/g, ' ');
+                const serviceName = formatServiceName(service.name);
                 return `
                   <div class="card">
                     <h4 style="font-size: 1.1rem; margin-bottom: 0.5rem;">${serviceName}</h4>

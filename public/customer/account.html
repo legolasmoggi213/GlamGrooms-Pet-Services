@@ -145,10 +145,13 @@
 
         const grooming = (data.grooming || []).map(item => {
           const statusClass = item.status === 'completed' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
+          const serviceSummary = Array.isArray(item.petServices) && item.petServices.length
+            ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ')
+            : (item.service || 'Grooming');
           return `
             <li>
               <div>
-                <strong>${escapeHtml(item.service || 'Grooming')}</strong>
+                <strong>${escapeHtml(serviceSummary)}</strong>
                 <div class="transaction-meta">${formatDate(item.date)} • ${escapeHtml(item.time || 'Time TBA')}${item.pickupTime ? ` • Pickup ${escapeHtml(item.pickupTime)}` : ''} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.price)}</div>
                 ${paymentReceiptLink(item)}
               </div>
@@ -172,7 +175,7 @@
         }).join('') || '<div class="empty-state">No hotel reservations yet.</div>';
 
         const recent = [
-          ...(data.grooming || []).map(item => ({ type: 'Grooming', date: item.date, createdAt: item.createdAt, label: item.service || 'Grooming', details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'), receiptLink: paymentReceiptLink(item) })),
+          ...(data.grooming || []).map(item => ({ type: 'Grooming', date: item.date, createdAt: item.createdAt, label: Array.isArray(item.petServices) && item.petServices.length ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ') : (item.service || 'Grooming'), details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'), receiptLink: paymentReceiptLink(item) })),
           ...(data.hotel || []).map(item => ({ type: 'Hotel', date: item.checkIn, createdAt: item.createdAt, label: `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'), receiptLink: paymentReceiptLink(item) })),
         ].sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)).slice(0, 5);
         const recentHtml = recent.length

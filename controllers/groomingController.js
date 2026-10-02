@@ -175,8 +175,26 @@ const updateAppointment = async (req, res, next) => {
       petId: petId === undefined ? appointment.petId : petId,
     };
     if (service && Object.prototype.hasOwnProperty.call(SERVICE_PRICES, service)) {
-      updates.service = service;
-      updates.price = SERVICE_PRICES[service];
+      if (Array.isArray(appointment.petServices) && appointment.petServices.length) {
+        let updatedAssignment = false;
+        updates.petServices = appointment.petServices.map((assignment, index) => {
+          if (!updatedAssignment && String(assignment.petId) === String(updates.petId)) {
+            updatedAssignment = true;
+            return { ...assignment, service, price: SERVICE_PRICES[service] };
+          }
+          if (!updatedAssignment && index === 0) {
+            updatedAssignment = true;
+            return { ...assignment, service, price: SERVICE_PRICES[service] };
+          }
+          return assignment;
+        });
+        const distinctServices = [...new Set(updates.petServices.map((assignment) => assignment.service))];
+        updates.service = distinctServices.length === 1 ? distinctServices[0] : 'multiple-services';
+        updates.price = updates.petServices.reduce((sum, assignment) => sum + Number(assignment.price || 0), 0);
+      } else {
+        updates.service = service;
+        updates.price = SERVICE_PRICES[service];
+      }
     }
     const wasConfirmed = appointment.status === 'confirmed';
     if (status === 'confirmed' && !wasConfirmed) updates.confirmedAt = new Date();
@@ -211,11 +229,13 @@ const updateAppointment = async (req, res, next) => {
           to: customer && customer.email,
           customerName: customer && customer.name,
           type: 'grooming',
-          service: full.service,
+          service: Array.isArray(full.petServices) && full.petServices.length
+            ? full.petServices.map((assignment) => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())}`).join('\n')
+            : full.service,
           date: full.date,
           time: full.time,
           pickupTime: full.pickupTime || null,
-          petName: pet && pet.name,
+          petName: Array.isArray(full.petNames) && full.petNames.length ? full.petNames.join(', ') : (pet && pet.name),
         });
       } catch (mailError) {
         console.error('Booking confirmation email failed:', mailError);

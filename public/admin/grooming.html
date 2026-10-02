@@ -43,6 +43,10 @@
 
     const SERVICES = ['bath', 'nail-trim', 'haircut', 'deshedding', 'full-groom'];
     const STATUSES = ['pending', 'scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled'];
+    const serviceLabel = (value) => String(value || 'Grooming').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+    const bookingServices = (appointment) => Array.isArray(appointment.petServices) && appointment.petServices.length
+      ? appointment.petServices.map((item) => `${escapeHtml(item.petName || 'Pet')}: ${escapeHtml(serviceLabel(item.service))}`).join('<br>')
+      : escapeHtml(serviceLabel(appointment.service));
 
     async function loadAppointments() {
       const items = await apiGet('/grooming');
@@ -58,8 +62,8 @@
           <td>${fmtDate(a.date)}</td>
           <td>${escapeHtml(a.time)}</td>
           <td>${escapeHtml(a.pickupTime || '—')}</td>
-          <td>${capitalize(a.service)}</td>
-          <td>${a.Pet ? escapeHtml(a.Pet.name) : '—'}</td>
+          <td>${bookingServices(a)}</td>
+          <td>${escapeHtml(Array.isArray(a.petNames) && a.petNames.length ? a.petNames.join(', ') : (a.Pet ? a.Pet.name : '—'))}</td>
           <td>${a.Customer ? escapeHtml(a.Customer.name) : '—'}</td>
           <td>${fmtMoney(a.price)}</td>
           <td>${statusBadge(a.status)}</td>
@@ -152,12 +156,15 @@
       const customer = a.Customer ? escapeHtml(a.Customer.name) : '—';
       const petInfo = a.Pet ? `Species: ${escapeHtml(a.Pet.species || '—')}, Breed: ${escapeHtml(a.Pet.breed || '—')}, Age: ${a.Pet.age != null ? a.Pet.age : '—'}` : '';
       const customerInfo = a.Customer ? `Email: ${escapeHtml(a.Customer.email || '—')}, Phone: ${escapeHtml(a.Customer.phone || '—')}` : '';
+      const serviceInfo = Array.isArray(a.petServices) && a.petServices.length
+        ? a.petServices.map((item) => `${item.petName || 'Pet'}: ${serviceLabel(item.service)}`).join('\n')
+        : serviceLabel(a.service);
       openModal('Appointment Details', `
         <div class="form-grid">
           <div class="field"><label>Appointment ID</label><input type="text" readonly value="${escapeHtml(a.id)}" /></div>
           <div class="field"><label>Customer</label><input type="text" readonly value="${customer}" /></div>
           <div class="field"><label>Pet</label><input type="text" readonly value="${pet}" /></div>
-          <div class="field"><label>Service</label><input type="text" readonly value="${escapeHtml(a.service)}" /></div>
+          <div class="field full"><label>Services</label><textarea rows="${Math.max(2, a.petServices?.length || 1)}" readonly>${escapeHtml(serviceInfo)}</textarea></div>
           <div class="field"><label>Date</label><input type="text" readonly value="${escapeHtml(a.date)}" /></div>
           <div class="field"><label>Time</label><input type="text" readonly value="${escapeHtml(a.time)}" /></div>
           <div class="field"><label>Pickup Time</label><input type="text" readonly value="${escapeHtml(a.pickupTime || '—')}" /></div>

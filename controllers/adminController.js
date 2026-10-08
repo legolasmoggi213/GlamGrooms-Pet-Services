@@ -165,12 +165,16 @@ const getRecentActivity = async (req, res, next) => {
         const serviceSummary = Array.isArray(a.petServices) && a.petServices.length
           ? a.petServices.map((assignment) => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())}`).join(', ')
           : `${a.service} for ${pet ? pet.name : 'pet'}`;
+        const summary = `${serviceSummary} (${customer ? customer.name : 'customer'})`;
         return {
           type: 'grooming',
           id: a.id,
-          createdAt: a.createdAt,
+          createdAt: a.paymentPaidAt || a.createdAt,
           status: a.status,
-          summary: `${serviceSummary} (${customer ? customer.name : 'customer'})`,
+          paymentStatus: a.paymentStatus,
+          summary: a.paymentStatus === 'paid'
+            ? `Advance paid — automatically confirmed: ${summary}, ${a.date} at ${a.time}`
+            : summary,
         };
       }),
       ...hotel.map((r) => {
@@ -179,12 +183,16 @@ const getRecentActivity = async (req, res, next) => {
         const roomSummary = Array.isArray(r.petRooms) && r.petRooms.length
           ? r.petRooms.map((petRoom) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(', ')
           : `${r.roomType} stay for ${pet ? pet.name : 'pet'}`;
+        const summary = `${roomSummary} (${customer ? customer.name : 'customer'})`;
         return {
           type: 'hotel',
           id: r.id,
-          createdAt: r.createdAt,
+          createdAt: r.paymentPaidAt || r.createdAt,
           status: r.status,
-          summary: `${roomSummary} (${customer ? customer.name : 'customer'})`,
+          paymentStatus: r.paymentStatus,
+          summary: r.paymentStatus === 'paid'
+            ? `Advance paid — automatically confirmed: ${summary}, ${r.checkIn} to ${r.checkOut}`
+            : summary,
         };
       }),
     ]

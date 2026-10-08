@@ -14,7 +14,8 @@ const {
   releaseBookingSlotsByIds,
 } = require('../util/bookingLocks');
 const { validateTime, validatePickupTime } = require('../util/businessHours');
-const { sendPayMongoReceipt } = require('../util/mailer');
+const { sendPayMongoReceipt, sendReservationTicket } = require('../util/mailer');
+const { markBookingPaidAndConfirmed } = require('../util/paymentConfirmation');
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -363,7 +364,7 @@ const verifyPayment = async (req, res, next) => {
     if (!alreadyVerified && (booking.paymentStatus !== 'pending' || booking.status === 'cancelled')) {
       return res.status(409).json({ error: 'This booking is no longer available for payment.' });
     }
-    if (!alreadyVerified) await booking.update({ paymentStatus: 'paid', paymentReference: sessionId, paymentPaidAt: new Date() });
+    await markBookingPaidAndConfirmed(booking, sessionId);
 
     const [customer, pets] = await Promise.all([
       Customer.findByPk(booking.customerId),
@@ -392,6 +393,17 @@ const verifyPayment = async (req, res, next) => {
       });
     } catch (emailError) {
       console.error('PayMongo payment receipt email failed:', emailError);
+    }
+    try {
+      await sendReservationTicket({
+        bookingRecord: booking,
+        type: metadata.bookingType,
+        to: customer && customer.email,
+        customer: booking.customerDetails || customer || {},
+        pets: pets.filter(Boolean),
+      });
+    } catch (emailError) {
+      console.error('PayMongo reservation ticket email failed:', emailError);
     }
     if (metadata.bookingType === 'hotel') {
       Object.assign(receipt, {

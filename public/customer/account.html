@@ -61,6 +61,7 @@
   <script>
     const params = new URLSearchParams(location.search);
     const showSuccessToast = params.get('justRegistered') === '1';
+    const paymentSuccess = params.get('payment_success') === '1';
     const deleteBtn = document.getElementById('delete-account-btn');
     const deleteModal = document.getElementById('confirm-delete');
     const cancelDelete = document.getElementById('cancel-delete');
@@ -75,6 +76,15 @@
         nextUrl.searchParams.delete('justRegistered');
         history.replaceState(null, '', nextUrl);
       }, 1000);
+    }
+
+    if (paymentSuccess) {
+      const toast = document.getElementById('toast');
+      toast.textContent = 'Payment confirmed. Your recent booking summary is ready.';
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2500);
     }
 
     deleteBtn.addEventListener('click', () => deleteModal.classList.remove('hidden'));
@@ -157,7 +167,7 @@
               <div>
                 <strong>${escapeHtml(serviceSummary)}</strong>
                 <div class="transaction-meta">${formatDate(item.date)} • ${escapeHtml(item.time || 'Time TBA')}${item.pickupTime ? ` • Pickup ${escapeHtml(item.pickupTime)}` : ''} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.price)}</div>
-                ${paymentReceiptLink(item)}
+                ${paymentReceiptMarkup(item, 'grooming', p)}
                 ${reservationTicketMarkup(item, 'grooming', pets, p)}
               </div>
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
@@ -175,7 +185,7 @@
               <div>
                 <strong>${escapeHtml(roomSummary)}</strong>
                 <div class="transaction-meta">Check-in: ${formatDate(item.checkIn)} at ${escapeHtml(item.checkInTime || 'Time TBA')} • Check-out: ${formatDate(item.checkOut)} at ${escapeHtml(item.checkOutTime || 'Time TBA')} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.totalPrice)}</div>
-                ${paymentReceiptLink(item)}
+                ${paymentReceiptMarkup(item, 'hotel', p)}
                 ${reservationTicketMarkup(item, 'hotel', pets, p)}
               </div>
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
@@ -184,13 +194,13 @@
         }).join('') || '<div class="empty-state">No hotel reservations yet.</div>';
 
         const recent = [
-          ...(data.grooming || []).map(item => ({ type: 'Grooming', date: item.date, createdAt: item.createdAt, label: Array.isArray(item.petServices) && item.petServices.length ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ') : (item.service || 'Grooming'), details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'), receiptLink: paymentReceiptLink(item) })),
-          ...(data.hotel || []).map(item => ({ type: 'Hotel', date: item.checkIn, createdAt: item.createdAt, label: Array.isArray(item.petRooms) && item.petRooms.length ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ') : `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'), receiptLink: paymentReceiptLink(item) })),
+          ...(data.grooming || []).map(item => ({ type: 'Grooming', bookingType: 'grooming', booking: item, date: item.date, createdAt: item.createdAt, label: Array.isArray(item.petServices) && item.petServices.length ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ') : (item.service || 'Grooming'), details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
+          ...(data.hotel || []).map(item => ({ type: 'Hotel', bookingType: 'hotel', booking: item, date: item.checkIn, createdAt: item.createdAt, label: Array.isArray(item.petRooms) && item.petRooms.length ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ') : `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
         ].sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)).slice(0, 5);
         const recentHtml = recent.length
           ? `<ul class="transaction-list">${recent.map(item => {
               const statusClass = ['completed', 'checked-out'].includes(item.status) ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
-              return `<li><div><strong>${escapeHtml(item.type)}: ${escapeHtml(item.label)}</strong><div class="transaction-meta">${escapeHtml(item.details)} • ${escapeHtml(item.pets)}</div>${item.receiptLink || ''}</div><span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span></li>`;
+              return `<li><div><strong>${escapeHtml(item.type)}: ${escapeHtml(item.label)}</strong><div class="transaction-meta">${escapeHtml(item.details)} • ${escapeHtml(item.pets)}</div>${paymentReceiptMarkup(item.booking, item.bookingType, p)}</div><span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span></li>`;
             }).join('')}</ul>`
           : '<div class="empty-state">No recent transactions yet.</div>';
 
@@ -210,6 +220,8 @@
             </div>
           </div>
         `;
+
+        if (paymentSuccess) openLatestPaymentSummary();
       } catch (e) {
         document.getElementById('content').innerHTML = '<div class="card">Failed to load profile.</div>';
       }
@@ -226,9 +238,35 @@
       return `PHP ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
 
-    function paymentReceiptLink(item) {
+    function paymentReceiptMarkup(item, type, profile) {
       if (item.paymentMethod !== 'qrph' || item.paymentStatus !== 'paid' || !item.paymentReference) return '';
-      return `<a class="receipt-link" href="/payment-success.html?session_id=${encodeURIComponent(item.paymentReference)}">View / print receipt</a>`;
+      const isHotel = type === 'hotel';
+      const services = isHotel
+        ? (item.petRooms || []).map(room => `${room.petName || 'Pet'}: ${room.roomType || 'Room'}${room.pricePerNight ? ` (${formatMoney(room.pricePerNight)} per night)` : ''}`).join('\n') || item.roomType || 'Pet hotel stay'
+        : (item.petServices || []).map(service => `${service.petName || 'Pet'}: ${service.service || 'Grooming'}${service.price != null ? ` (${formatMoney(service.price)})` : ''}`).join('\n') || item.service || 'Grooming service';
+      const schedule = isHotel
+        ? `Check-in: ${formatDate(item.checkIn)}${item.checkInTime ? ` at ${item.checkInTime}` : ''}; Check-out: ${formatDate(item.checkOut)}${item.checkOutTime ? ` at ${item.checkOutTime}` : ''}`
+        : `Appointment: ${formatDate(item.date)} at ${item.time || 'Time TBA'}${item.pickupTime ? `; Pickup: ${item.pickupTime}` : ''}`;
+      const amount = isHotel ? item.totalPrice : item.price;
+      const paidAt = item.paymentPaidAt || item.updatedAt;
+      return `
+        <details class="reservation-ticket payment-receipt-summary" data-payment-receipt data-booking-id="${escapeHtml(String(item.id))}" data-booking-type="${escapeHtml(type)}">
+          <summary class="receipt-link">View payment receipt</summary>
+          <div class="info-list" style="margin-top:0.75rem">
+            <div class="info-row"><strong>Receipt</strong><span>Paid receipt #${escapeHtml(String(item.id))}</span></div>
+            <div class="info-row"><strong>Customer</strong><span>${escapeHtml(profile.name || 'Customer')}</span></div>
+            <div class="info-row"><strong>Email</strong><span>${escapeHtml(profile.email || 'Not set')}</span></div>
+            <div class="info-row"><strong>Pet(s)</strong><span>${escapeHtml((item.petNames || []).join(', ') || (item.Pet && item.Pet.name) || 'Not provided')}</span></div>
+            <div class="info-row"><strong>${isHotel ? 'Room(s)' : 'Service(s)'}</strong><span style="white-space:pre-line">${escapeHtml(services)}</span></div>
+            <div class="info-row"><strong>Schedule</strong><span>${escapeHtml(schedule)}</span></div>
+            <div class="info-row"><strong>Payment</strong><span>Paid online via GCash (PayMongo)</span></div>
+            <div class="info-row"><strong>Payment reference</strong><span>${escapeHtml(item.paymentReference)}</span></div>
+            <div class="info-row"><strong>Paid at</strong><span>${escapeHtml(paidAt ? new Date(paidAt).toLocaleString() : 'Confirmed')}</span></div>
+            <div class="info-row"><strong>Total paid</strong><span>${formatMoney(amount)}</span></div>
+          </div>
+          <button class="btn btn-outline btn-sm print-payment-receipt" type="button">Print receipt</button>
+        </details>
+      `;
     }
 
     function reservationTicketMarkup(item, type, pets, profile) {
@@ -271,7 +309,7 @@
       if (item.notes) rows.splice(rows.length - 2, 0, ['Special requests', item.notes]);
 
       return `
-        <details class="reservation-ticket">
+        <details class="reservation-ticket" data-booking-id="${escapeHtml(String(item.id))}" data-booking-type="${escapeHtml(type)}">
           <summary class="receipt-link">View reservation ticket</summary>
           <div class="info-list" style="margin-top:0.75rem">
             ${rows.map(([label, value]) => `<div class="info-row"><strong>${escapeHtml(label)}</strong><span style="white-space:pre-line">${escapeHtml(value || 'Not provided')}</span></div>`).join('')}
@@ -279,6 +317,39 @@
         </details>
       `;
     }
+
+    function openLatestPaymentSummary() {
+      const bookingType = params.get('bookingType');
+      const bookingId = params.get('bookingId');
+      if (!paymentSuccess || !['grooming', 'hotel'].includes(bookingType) || !bookingId) return;
+
+      const target = Array.from(document.querySelectorAll('details[data-payment-receipt]'))
+        .find(receipt => receipt.dataset.bookingType === bookingType && receipt.dataset.bookingId === bookingId);
+      if (!target) return;
+
+      target.open = true;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      clearInterval(autoRefresh);
+
+      const nextUrl = new URL(location.href);
+      nextUrl.searchParams.delete('payment_success');
+      nextUrl.searchParams.delete('bookingType');
+      nextUrl.searchParams.delete('bookingId');
+      history.replaceState(null, '', nextUrl);
+    }
+
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.print-payment-receipt')) return;
+      const receipt = event.target.closest('details[data-payment-receipt]');
+      if (!receipt) return;
+      receipt.classList.add('printing-receipt');
+      document.body.classList.add('printing-payment-receipt');
+      window.addEventListener('afterprint', () => {
+        receipt.classList.remove('printing-receipt');
+        document.body.classList.remove('printing-payment-receipt');
+      }, { once: true });
+      window.print();
+    });
 
     function escapeHtml(s) {
       if (!s) return '';

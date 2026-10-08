@@ -39,10 +39,13 @@
             <h3>Revenue Analytics</h3>
             <p class="text-muted" id="revenue-period-label">Last 6 months</p>
           </div>
-          <div class="revenue-periods" role="group" aria-label="Revenue period">
-            <button type="button" data-period="daily" aria-pressed="false">Daily</button>
-            <button type="button" data-period="weekly" aria-pressed="false">Weekly</button>
-            <button type="button" data-period="monthly" aria-pressed="true">Monthly</button>
+          <div class="analytics-actions">
+            <div class="revenue-periods" role="group" aria-label="Revenue period">
+              <button type="button" data-period="daily" aria-pressed="false">Daily</button>
+              <button type="button" data-period="weekly" aria-pressed="false">Weekly</button>
+              <button type="button" data-period="monthly" aria-pressed="true">Monthly</button>
+            </div>
+            <button type="button" class="btn btn-primary" id="export-revenue-pdf">Export PDF</button>
           </div>
         </div>
         <div id="revenue-combined" class="revenue-combined" aria-live="polite">Loading revenue…</div>
@@ -70,6 +73,8 @@
 
   <script src="/js/api.js"></script>
   <script src="/js/admin.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script>
     const initDashboard = () => {
       renderSidebar('Dashboard');
@@ -102,11 +107,15 @@
           container.innerHTML = '<div class="empty">No occupancy data available.</div>';
           return;
         }
-        container.innerHTML = `<div class="occupancy-days">${days.map((day) => `
+        container.innerHTML = `<div class="occupancy-days">${days.map((day) => {
+          const statusText = day.bookings.length ? 'Active' : 'Available';
+          const statusClass = day.bookings.length ? 'active' : 'available';
+          return `
           <section class="occ-day">
             <div class="occ-day-header">
               <strong>${fmtDate(day.date)}</strong>
               <span>${day.customers} ${day.customers === 1 ? 'customer' : 'customers'} · ${day.reservationCount} ${day.reservationCount === 1 ? 'booking' : 'bookings'}</span>
+              <span class="occ-status-badge ${statusClass}">${statusText}</span>
               <span class="occ-arrivals">${day.arrivals} arriving</span>
             </div>
             ${day.bookings.length ? `<div class="occ-booking-list">${day.bookings.map((booking) => `
@@ -115,8 +124,9 @@
                 <div class="occ-booking-meta">${escapeHtml((booking.petNames || []).join(', ') || 'No pet listed')}${booking.customerPhone ? ` · ${escapeHtml(booking.customerPhone)}` : ''}</div>
                 <div class="occ-booking-meta">${escapeHtml((booking.roomAssignments || []).join(' · '))}</div>
                 <div class="occ-booking-times">Check-in: ${fmtDate(booking.checkIn)} ${escapeHtml(booking.checkInTime || 'Time not set')} <span>→</span> Check-out: ${fmtDate(booking.checkOut)} ${escapeHtml(booking.checkOutTime || 'Time not set')}</div>
-              </article>`).join('')}</div>` : ''}
-          </section>`).join('')}</div>`;
+              </article>`).join('')}</div>` : '<div class="occ-empty">No active hotel bookings. Room is available.</div>'}
+          </section>`;
+        }).join('')}</div>`;
       }
 
       async function loadActivity() {
@@ -130,7 +140,7 @@
           .map(
             (a) => `
               <div class="activity-item">
-                <span class="dot">${a.type === 'grooming' ? 'Grooming' : 'Hotel'}</span>
+                <span class="dot">${a.paymentStatus === 'paid' ? 'Advance paid' : (a.type === 'grooming' ? 'Grooming' : 'Hotel')}</span>
                 <div>
                   <div>${escapeHtml(a.summary)} ${statusBadge(a.status)}</div>
                   <div class="meta">${fmtDateTime(a.createdAt)}</div>
@@ -138,6 +148,50 @@
               </div>`
           )
           .join('');
+      }
+
+      async function exportRevenuePdf() {
+        const revenueSection = document.getElementById('revenue');
+        if (!revenueSection) return;
+        if (!window.html2canvas || !window.jspdf) {
+          alert('PDF export is unavailable right now. Please refresh and try again.');
+          return;
+        }
+
+        try {
+          const canvas = await window.html2canvas(revenueSection, {
+            scale: 2,
+            backgroundColor: '#f7f3ee',
+            useCORS: true,
+          });
+
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+          const imageData = canvas.toDataURL('image/png');
+          const margin = 10;
+          const imageWidth = pageWidth - (margin * 2);
+          const imageHeight = (canvas.height * imageWidth) / canvas.width;
+
+          let position = margin;
+          let remainingHeight = imageHeight;
+          pdf.addImage(imageData, 'PNG', margin, position, imageWidth, imageHeight);
+          remainingHeight -= pageHeight - (margin * 2);
+
+          while (remainingHeight > 0) {
+            pdf.addPage();
+            position = margin - (pageHeight - (margin * 2));
+            pdf.addImage(imageData, 'PNG', margin, position, imageWidth, imageHeight);
+            remainingHeight -= pageHeight - (margin * 2);
+          }
+
+          const period = document.querySelector('.revenue-periods button[aria-pressed="true"]')?.dataset.period || 'monthly';
+          pdf.save(`revenue-analytics-${period}.pdf`);
+        } catch (error) {
+          console.error('Unable to export revenue PDF:', error);
+          alert('Unable to export the PDF at the moment. Please try again.');
+        }
       }
 
       async function loadRevenue() {
@@ -271,6 +325,7 @@
         });
         runDashboardLoader(loadRevenue, 'revenue');
       });
+      document.getElementById('export-revenue-pdf')?.addEventListener('click', exportRevenuePdf);
       runDashboardLoader(loadStats, 'stats');
       runDashboardLoader(loadOccupancy, 'occupancy');
       runDashboardLoader(loadActivity, 'activity');

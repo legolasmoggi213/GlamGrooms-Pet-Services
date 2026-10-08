@@ -31,14 +31,10 @@
           <button type="button" class="toggle-password" data-target="password" aria-label="Show password">👁</button>
         </div>
       </div>
-      <div class="field"><label for="phone">Phone *</label><input id="phone" name="phone" required placeholder="0917-555-0123" /></div>
+      <div class="field"><label for="phone">Phone *</label><input id="phone" name="phone" type="tel" inputmode="numeric" pattern="[0-9+()\-\s]*" required placeholder="0917-555-0123" /></div>
       <div class="field"><label for="address">Address *</label><input id="address" name="address" required placeholder="Street, City" /></div>
       <div class="field terms">
-        <input id="accept-terms" name="acceptTerms" type="checkbox" required />
-        <div class="terms-copy">
-          <label for="accept-terms">I have reviewed and agree to the</label>
-          <button class="terms-link" id="toggle-privacy-terms" type="button" aria-expanded="false" aria-controls="privacy-terms-panel">privacy terms and conditions</button>.
-        </div>
+        <button class="terms-link" id="toggle-privacy-terms" type="button" aria-expanded="false" aria-controls="privacy-terms-panel">Review privacy terms and conditions</button>
       </div>
       <section id="privacy-terms-panel" class="terms-panel" hidden aria-labelledby="privacy-terms-title">
         <h3 id="privacy-terms-title">Privacy Terms &amp; Conditions</h3>
@@ -62,7 +58,7 @@
           <li>You may contact the business to ask about or update your information.</li>
         </ul>
         <div class="terms-panel-actions">
-          <label class="terms-panel-accept"><input type="checkbox" id="privacy-panel-accept" /> I accept these terms and conditions.</label>
+          <label class="terms-panel-accept"><input type="checkbox" id="privacy-panel-accept" required /> I accept these terms and conditions.</label>
           <button class="btn btn-primary btn-sm" id="privacy-panel-close" type="button" disabled>Accept and close</button>
         </div>
       </section>
@@ -77,12 +73,18 @@
     const ret = params.get('return') || '/';
     document.getElementById('return-field').value = ret;
 
-    // Expand the terms inline and keep consent linked to the required form checkbox.
+    // Expand the privacy terms panel and keep the checkbox within it as the required consent.
     const privacyPanel = document.getElementById('privacy-terms-panel');
     const privacyToggle = document.getElementById('toggle-privacy-terms');
     const privacyAcceptCheckbox = document.getElementById('privacy-panel-accept');
     const privacyCloseBtn = document.getElementById('privacy-panel-close');
-    const termsCheckbox = document.getElementById('accept-terms');
+    const phoneInput = document.getElementById('phone');
+
+    if (phoneInput) {
+      phoneInput.addEventListener('input', () => {
+        phoneInput.value = phoneInput.value.replace(/[^0-9+()\-\s]/g, '');
+      });
+    }
 
     const setPrivacyPanelOpen = (isOpen) => {
       privacyPanel.hidden = !isOpen;
@@ -96,7 +98,6 @@
 
     privacyAcceptCheckbox.addEventListener('change', () => {
       privacyCloseBtn.disabled = !privacyAcceptCheckbox.checked;
-      termsCheckbox.checked = privacyAcceptCheckbox.checked;
     });
 
     privacyCloseBtn.addEventListener('click', () => {

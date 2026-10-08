@@ -2,8 +2,9 @@
 
 const crypto = require('crypto');
 const { GroomingAppointment, HotelReservation } = require('../models');
-const { sendPayMongoReceipt } = require('./mailer');
+const { sendPayMongoReceipt, sendReservationTicket } = require('./mailer');
 const { sendSms } = require('./sms');
+const { markBookingPaidAndConfirmed } = require('./paymentConfirmation');
 
 const isValidSignature = (rawBody, signature, secret) => {
   if (!Buffer.isBuffer(rawBody) || !secret || !/^[a-f\d]{64}$/i.test(String(signature || ''))) return false;
@@ -50,14 +51,7 @@ const handlePayMongoWebhook = async (req, res) => {
     }
 
     const alreadyPaid = booking.paymentStatus === 'paid';
-    if (!alreadyPaid) {
-      const updatePayload = {
-        paymentStatus: 'paid',
-        paymentReference: sessionId,
-        paymentPaidAt: new Date(),
-      };
-      await booking.update(updatePayload);
-    }
+    await markBookingPaidAndConfirmed(booking, sessionId);
 
     // Fetch booking details for the receipt and payment notification.
     const { Customer, Pet } = require('../models');
@@ -73,11 +67,18 @@ const handlePayMongoWebhook = async (req, res) => {
         customer: booking.customerDetails || customer,
         pets: pets.filter(Boolean),
       });
+      await sendReservationTicket({
+        bookingRecord: booking,
+        type: bookingType,
+        to: customer.email,
+        customer: booking.customerDetails || customer,
+        pets: pets.filter(Boolean),
+      });
 
       if (!alreadyPaid) {
         await sendSms({
           to: customer.phone,
-          message: `Hello ${customer.name || 'Customer'}, your GCash payment for Glam Grooms booking #${booking.id} has been received. The reservation ticket will be available in My Account after an admin confirms your booking.`,
+          message: `Hello ${customer.name || 'Customer'}, your GCash payment for Glam Grooms booking #${booking.id} has been received and your booking is confirmed.`,
         });
       }
     }

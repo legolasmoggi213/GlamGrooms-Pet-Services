@@ -32,6 +32,13 @@
         const result = await apiPost('/payments/verify', { sessionId });
         if (!result.receipt) throw new Error('Payment was verified, but the receipt is unavailable. Please contact the business.');
         const receipt = result.receipt;
+        const redirectTarget = `/customer/account.html?payment_success=1&bookingType=${encodeURIComponent(receipt.bookingType)}&bookingId=${encodeURIComponent(receipt.bookingId)}`;
+
+        document.getElementById('payment-title').textContent = 'Payment received';
+        message.textContent = 'Your payment is confirmed. Redirecting you back to your account…';
+
+        window.location.replace(redirectTarget);
+
         const receiptElement = document.getElementById('payment-receipt');
         const isHotel = receipt.bookingType === 'hotel';
         const service = String(receipt.service || (isHotel ? 'Pet hotel stay' : 'Grooming service'))
@@ -68,8 +75,6 @@
             <button class="btn btn-primary" type="button" id="print-receipt">Print receipt</button>
           </div>`;
         receiptElement.hidden = false;
-        document.getElementById('payment-title').textContent = 'Payment received';
-        message.textContent = 'Your payment is confirmed. Here is your receipt.';
         document.getElementById('print-receipt').addEventListener('click', () => window.print());
       } catch (error) {
         message.textContent = error.message || 'We could not verify the payment yet. Please contact the business if you were charged.';

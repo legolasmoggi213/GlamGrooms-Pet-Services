@@ -127,7 +127,14 @@ form.addEventListener('submit', async (event) => {
       return;
     }
     if (form.action.endsWith('/customer/register')) {
-      if (!form.elements.acceptTerms.checked) {
+      const phoneInput = form.elements.phone;
+      if (phoneInput && /[^0-9+()\-\s]/.test(phoneInput.value)) {
+        phoneInput.focus();
+        showAuthError({ message: 'Phone number must contain only numbers and valid formatting characters.' });
+        return;
+      }
+      const termsCheckbox = document.getElementById('privacy-panel-accept');
+      if (!termsCheckbox || !termsCheckbox.checked) {
         if (typeof window.openPrivacyModal === 'function') {
           window.openPrivacyModal();
         } else {

@@ -277,15 +277,20 @@ app.put('/customer/profile', async (req, res) => {
 
 const findAdminAccount = async () => {
   if (!db.Admin) return null;
-  let admin = await db.Admin.findOne({ where: { username: ADMIN_USERNAME } });
-  if (!admin) {
-    const admins = await db.Admin.findAll();
-    if (admins.length === 1) {
-      admin = admins[0];
-      await admin.update({ username: ADMIN_USERNAME });
+  try {
+    let admin = await db.Admin.findOne({ where: { username: ADMIN_USERNAME } });
+    if (!admin) {
+      const admins = await db.Admin.findAll();
+      if (admins.length === 1) {
+        admin = admins[0];
+        await admin.update({ username: ADMIN_USERNAME });
+      }
     }
+    return admin;
+  } catch (error) {
+    console.warn('Admin account lookup unavailable; using environment-based admin credentials only.', error.message || error);
+    return null;
   }
-  return admin;
 };
 
 const getAdminFromRequest = async (req) => {
@@ -299,14 +304,15 @@ const getAdminFromRequest = async (req) => {
 // Admin login handler (placed before admin protection)
 app.post('/admin/login', (req, res) => {
   (async () => {
-    const { password } = req.body || {};
-    const username = String(req.body && req.body.username || '').trim();
-    if (username !== ADMIN_USERNAME || !password) return res.redirect('/admin/login.html?error=1');
+    const rawPassword = String(req.body && req.body.password || '');
+    const normalizedPassword = rawPassword.replace(/\s+/g, '');
+    const username = String(req.body && req.body.username || '').trim().toUpperCase();
+    if (username !== ADMIN_USERNAME || !normalizedPassword) return res.redirect('/admin/login.html?error=1');
     try {
       const admin = await findAdminAccount();
-      const envPass = process.env.ADMIN_PASS;
-      const dbMatch = admin && admin.passwordHash && bcrypt.compareSync(password, admin.passwordHash);
-      const envMatch = Boolean(envPass && password === envPass);
+      const envPass = process.env.ADMIN_PASS ? String(process.env.ADMIN_PASS).replace(/\s+/g, '') : '';
+      const dbMatch = admin && admin.passwordHash && bcrypt.compareSync(normalizedPassword, admin.passwordHash);
+      const envMatch = Boolean(envPass && normalizedPassword === envPass);
 
       if (dbMatch || envMatch) {
         const token = createToken(ADMIN_USERNAME);

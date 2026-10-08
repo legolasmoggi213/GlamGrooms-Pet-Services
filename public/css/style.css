@@ -1215,6 +1215,30 @@ tr:hover td { background: #f5f1e5; }
 .occ-day-header { display: flex; align-items: center; gap: 0.5rem 0.8rem; flex-wrap: wrap; margin-bottom: 0.4rem; font-size: 0.85rem; }
 .occ-day-header > strong { min-width: 92px; color: var(--admin-text); }
 .occ-day-header > span { color: var(--admin-muted); }
+.occ-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.occ-status-badge.active {
+  background: rgba(41, 118, 111, 0.12);
+  color: #1d6d66;
+}
+.occ-status-badge.available {
+  background: rgba(144, 155, 61, 0.12);
+  color: #606b1a;
+}
+.occ-empty {
+  margin-top: 0.45rem;
+  color: var(--admin-muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
 .occ-day-header .occ-arrivals { margin-left: auto; color: var(--gold-dark); font-weight: 700; }
 .occ-booking-list { display: grid; gap: 0.4rem; }
 .occ-booking { padding: 0.55rem 0.65rem; border-left: 3px solid var(--gold-dark); border-radius: 4px; background: var(--admin-surface); }
@@ -1903,4 +1927,20 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
   body.receipt-page .receipt-actions { display: none; }
   body.receipt-page .receipt-details span,
   body.receipt-page .receipt-meta { color: #555; }
+}
+@media print {
+  body.printing-payment-receipt * { visibility: hidden !important; }
+  body.printing-payment-receipt details.printing-receipt,
+  body.printing-payment-receipt details.printing-receipt * { visibility: visible !important; }
+  body.printing-payment-receipt details.printing-receipt {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    border: 0;
+    color: #111;
+    background: #fff;
+  }
+  body.printing-payment-receipt details.printing-receipt summary,
+  body.printing-payment-receipt details.printing-receipt button { display: none !important; }
 }

@@ -17,7 +17,11 @@ async function api(path, options = {}) {
 
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
-      window.location.href = '/admin/login.html';
+      const currentPath = window.location.pathname;
+      const isAdminPage = currentPath.startsWith('/admin') || currentPath.includes('/admin/');
+      const loginPage = isAdminPage ? '/admin/login.html' : '/customer/login.html';
+      const returnPath = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+      window.location.href = `${loginPage}?return=${returnPath}`;
     }
 
     const message =

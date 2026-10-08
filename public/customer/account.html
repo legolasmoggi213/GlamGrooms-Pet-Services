@@ -151,6 +151,7 @@
                 <div>
                   <strong>${escapeHtml(pt.name || 'Pet')}</strong><br>
                   <span class="transaction-meta">${escapeHtml(pt.species || 'Unknown')} • ${escapeHtml(pt.breed || 'Mixed')} • ${escapeHtml(pt.age != null ? pt.age + ' yrs' : 'Age not set')}</span>
+                  ${pt.medicalHistory ? `<div class="transaction-meta"><strong>Medical history:</strong> ${escapeHtml(pt.medicalHistory)}</div>` : ''}
                 </div>
                 <span class="status-pill secondary">${escapeHtml(pt.status || 'Active')}</span>
               </li>

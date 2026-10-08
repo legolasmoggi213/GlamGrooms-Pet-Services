@@ -3,6 +3,7 @@ const { sendReservationTicket } = require('../util/mailer');
 const { hotelLockIds, hotelLockIdsForTypes, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
 const { validateTime } = require('../util/businessHours');
 const catalog = require('../util/serviceCatalog');
+const { quoteHotelStay, validateFutureDate, validateFutureBookingTime, getStayNights } = require('../util/bookingCalculations');
 
 // Exact hotel menus from the Glam Grooms flyers.
 const { HOTEL, HOTEL_POLICIES } = catalog;
@@ -43,8 +44,22 @@ const addRelatedRecords = async (reservation) => {
 };
 
 const nightsBetween = (checkIn, checkOut) => {
-  const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / MS_PER_DAY);
-  return Number.isFinite(nights) ? nights : 0;
+  return getStayNights(checkIn, checkOut);
+};
+
+const getReservationQuote = async (req, res, next) => {
+  try {
+    const checkInDate = validateFutureDate(req.query.checkIn, 'Check-in');
+    if (!checkInDate.ok) return res.status(400).json({ error: checkInDate.error });
+    const checkOutDate = validateFutureDate(req.query.checkOut, 'Check-out');
+    if (!checkOutDate.ok) return res.status(400).json({ error: checkOutDate.error });
+    const roomTypes = Array.isArray(req.query.roomType) ? req.query.roomType : [req.query.roomType].filter(Boolean);
+    const quote = quoteHotelStay({ petRoomTypes: roomTypes, checkIn: req.query.checkIn, checkOut: req.query.checkOut });
+    if (!quote.ok) return res.status(400).json({ error: quote.error });
+    res.json(quote);
+  } catch (error) {
+    next(error);
+  }
 };
 
 const reservationRoomTypes = (reservation) => [...new Set(
@@ -101,19 +116,27 @@ const createReservation = async (req, res, next) => {
     if (req.body.status && !VALID_STATUSES.includes(req.body.status)) {
       return res.status(400).json({ error: 'A valid status is required' });
     }
+    if (!checkInTime || !checkOutTime) {
+      return res.status(400).json({ error: 'Check-in and check-out times are required' });
+    }
     if (checkInTime) {
       const check = validateTime(checkIn, checkInTime);
       if (!check.ok) return res.status(400).json({ error: check.error });
+      const futureCheck = validateFutureBookingTime(checkIn, checkInTime, 'Check-in');
+      if (!futureCheck.ok) return res.status(400).json({ error: futureCheck.error });
     }
     if (checkOutTime) {
       const check = validateTime(checkOut, checkOutTime);
       if (!check.ok) return res.status(400).json({ error: check.error });
     }
 
-    const nights = nightsBetween(checkIn, checkOut);
-    if (nights < 1) {
-      return res.status(400).json({ error: 'Check-out must be after check-in' });
-    }
+    const checkInDate = validateFutureDate(checkIn, 'Check-in');
+    if (!checkInDate.ok) return res.status(400).json({ error: checkInDate.error });
+    const checkOutDate = validateFutureDate(checkOut, 'Check-out');
+    if (!checkOutDate.ok) return res.status(400).json({ error: checkOutDate.error });
+    const quote = quoteHotelStay({ petRoomTypes: [roomType], checkIn, checkOut });
+    if (!quote.ok) return res.status(400).json({ error: quote.error });
+    const nights = quote.nights;
 
     const existingReservations = await HotelReservation.findAll({ where: { roomType } });
     const overlapsExisting = existingReservations.some((item) => item.status !== 'cancelled'
@@ -121,7 +144,7 @@ const createReservation = async (req, res, next) => {
       && new Date(item.checkOut) > new Date(checkIn));
     if (overlapsExisting) return res.status(409).json({ error: 'That room is already reserved for those dates.' });
 
-    const pricePerNight = ROOM_PRICES[roomType];
+    const pricePerNight = quote.petQuotes[0].effectiveNightlyRate;
     const lockRefs = status === 'cancelled' ? [] : await claimBookingSlots(hotelLockIds(roomType, checkIn, checkOut), { type: 'hotel', roomType, checkIn, checkOut });
     let created = false;
     let reservation;
@@ -137,7 +160,8 @@ const createReservation = async (req, res, next) => {
         petId,
         status: status || 'pending',
         pricePerNight,
-        totalPrice: pricePerNight * nights,
+        totalPrice: quote.total,
+        pricingBreakdown: quote,
       });
       created = true;
     } finally {
@@ -190,11 +214,25 @@ const updateReservation = async (req, res, next) => {
       return res.status(400).json({ error: 'A valid roomType is required' });
     }
 
-    const nights = nightsBetween(nextCheckIn, nextCheckOut);
-    if (nights < 1) {
-      return res.status(400).json({ error: 'Check-out must be after check-in' });
-    }
+    const sourcePetRooms = Array.isArray(reservation.petRooms) && reservation.petRooms.length
+      ? reservation.petRooms
+      : (reservation.petIds || [reservation.petId]).filter(Boolean).map((id, index) => ({
+        petId: id,
+        petName: (reservation.petNames || [])[index],
+        roomType: currentRoomTypes[0],
+      }));
+    const nextPetRoomTypes = sourcePetRooms.map((petRoom) => roomType || petRoom.roomType || currentRoomTypes[0]);
+    const quote = quoteHotelStay({
+      petRoomTypes: nextPetRoomTypes,
+      checkIn: nextCheckIn,
+      checkOut: nextCheckOut,
+      minimumNights: stayChanged ? undefined : 1,
+    });
+    if (!quote.ok) return res.status(400).json({ error: quote.error });
+    const nights = quote.nights;
     if (stayChanged && status !== 'cancelled') {
+      const futureCheck = validateFutureBookingTime(nextCheckIn, checkInTime || reservation.checkInTime, 'Check-in');
+      if (!futureCheck.ok) return res.status(400).json({ error: futureCheck.error });
       const conflicts = await HotelReservation.findAll();
       const overlaps = conflicts.some((item) => String(item.id) !== String(reservation.id)
         && item.status !== 'cancelled'
@@ -203,19 +241,11 @@ const updateReservation = async (req, res, next) => {
         && new Date(item.checkOut) > new Date(nextCheckIn));
       if (overlaps) return res.status(409).json({ error: 'That room is already reserved for those dates.' });
     }
-
-    const sourcePetRooms = Array.isArray(reservation.petRooms) && reservation.petRooms.length
-      ? reservation.petRooms
-      : (reservation.petIds || [reservation.petId]).filter(Boolean).map((id, index) => ({
-        petId: id,
-        petName: (reservation.petNames || [])[index],
-        roomType: currentRoomTypes[0],
-      }));
-    const nextPetRooms = sourcePetRooms.map((petRoom) => {
-      const petRoomType = roomType || petRoom.roomType || currentRoomTypes[0];
-      return { ...petRoom, roomType: petRoomType, pricePerNight: ROOM_PRICES[petRoomType] };
+    const nextPetRooms = sourcePetRooms.map((petRoom, index) => {
+      const petRoomType = nextPetRoomTypes[index];
+      return { ...petRoom, roomType: petRoomType, pricePerNight: quote.petQuotes[index]?.effectiveNightlyRate || 0 };
     });
-    const pricePerNight = nextRoomTypes.length === 1 ? ROOM_PRICES[nextRoomTypes[0]] : null;
+    const pricePerNight = quote.total / nights;
     const needsAdminConfirmation = status === 'confirmed' && !reservation.confirmedAt;
     const shouldSendTicket = status === 'confirmed' && !reservation.reservationTicketEmailSentAt;
     const oldCheckIn = reservation.checkIn;
@@ -240,7 +270,8 @@ const updateReservation = async (req, res, next) => {
       customerId: customerId === undefined ? reservation.customerId : customerId,
       petId: petId === undefined ? reservation.petId : petId,
       pricePerNight,
-      totalPrice: nextPetRooms.reduce((sum, petRoom) => sum + petRoom.pricePerNight * nights, 0),
+      totalPrice: quote.total,
+      pricingBreakdown: quote,
       roomDetails: nextRoomTypes.length === 1 ? ROOM_DETAILS[nextRoomTypes[0]] : null,
       roomDetailsByType: Object.fromEntries(nextRoomTypes.map((type) => [type, ROOM_DETAILS[type]])),
       };
@@ -298,6 +329,7 @@ module.exports = {
   ROOM_PRICES,
   ROOM_DETAILS,
   HOTEL_POLICIES,
+  getReservationQuote,
   listReservations,
   getReservation,
   createReservation,

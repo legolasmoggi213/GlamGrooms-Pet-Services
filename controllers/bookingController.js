@@ -8,14 +8,24 @@ const {
   BookingConflictError,
   groomingLockIds,
   hotelLockIdsForTypes,
+  releaseGroomingBookingSlots,
   areBookingSlotsAvailable,
   claimBookingSlots,
   releaseBookingSlots,
   releaseBookingSlotsByIds,
 } = require('../util/bookingLocks');
-const { validateTime, validatePickupTime } = require('../util/businessHours');
+const { validateTime, validatePickupTime, validateAppointmentDuration } = require('../util/businessHours');
 const { sendPayMongoReceipt, sendReservationTicket } = require('../util/mailer');
 const { markBookingPaidAndConfirmed } = require('../util/paymentConfirmation');
+const {
+  quoteHotelStay,
+  validateFutureDate,
+  validateFutureBookingTime,
+  timeToMinutes,
+  groomingBookingDuration,
+  groomingRecordDuration,
+  getStayNights,
+} = require('../util/bookingCalculations');
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -97,8 +107,7 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
       const isOwner = customerId && String(appt.customerId) === String(customerId);
       const isExpired = appt.createdAt && (now - new Date(appt.createdAt).getTime() > EXPIRY_MS);
       if (isOwner || isExpired) {
-        const lockIds = groomingLockIds(appt.date, appt.time);
-        await releaseBookingSlotsByIds(lockIds);
+        await releaseGroomingBookingSlots(appt.date, appt.time, groomingRecordDuration(appt));
         await appt.destroy();
       }
     }
@@ -152,21 +161,37 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
     if (!date || !time) {
       return res.status(400).json({ error: 'A valid date and time are required' });
     }
+    const dateCheck = validateFutureDate(date, 'Appointment date');
+    if (!dateCheck.ok) return res.status(400).json({ error: dateCheck.error });
+    const durationMinutes = groomingBookingDuration(petServiceKeys);
+    if (!durationMinutes) return res.status(400).json({ error: 'A valid service is required for every pet.' });
     if (paymentMethod === 'qrph' && !getPayMongoKey()) {
       return res.status(503).json({ error: 'Online GCash payment is not configured. Please choose counter cash or contact the administrator.' });
     }
-    const timeCheck = validateTime(date, time);
+    const timeCheck = validateFutureBookingTime(date, time, 'Appointment');
     if (!timeCheck.ok) return res.status(400).json({ error: timeCheck.error });
+    const durationCheck = validateAppointmentDuration(date, time, durationMinutes);
+    if (!durationCheck.ok) return res.status(400).json({ error: durationCheck.error });
     if (!pickupTime) return res.status(400).json({ error: 'A pickup time is required' });
     const pickupCheck = validatePickupTime(date, pickupTime);
     if (!pickupCheck.ok) return res.status(400).json({ error: pickupCheck.error });
+    if (timeToMinutes(pickupTime) < timeToMinutes(durationCheck.pickupEarliest)) {
+      return res.status(400).json({ error: `Pickup must be at or after ${durationCheck.pickupEarliest}, when the selected services are complete.` });
+    }
 
-    const existingAppointments = await GroomingAppointment.findAll({ where: { date, time } });
-    if (existingAppointments.some((appointment) => appointment.status !== 'cancelled')) {
+    const requestedStart = timeToMinutes(time);
+    const requestedEnd = requestedStart + durationMinutes;
+    const existingAppointments = await GroomingAppointment.findAll({ where: { date } });
+    if (existingAppointments.some((appointment) => {
+      if (appointment.status === 'cancelled') return false;
+      const existingStart = timeToMinutes(appointment.time);
+      if (existingStart === null) return false;
+      return existingStart < requestedEnd && existingStart + groomingRecordDuration(appointment) > requestedStart;
+    })) {
       throw new BookingConflictError('That schedule is already booked. The first customer to request it was prioritized. Please choose another time or date.');
     }
 
-    const lockRefs = await claimBookingSlots(groomingLockIds(date, time), { type: 'grooming', date, time });
+    const lockRefs = await claimBookingSlots(groomingLockIds(date, time, durationMinutes), { type: 'grooming', date, time, durationMinutes });
     let appointmentCreated = false;
     let appointmentRecord = null;
     try {
@@ -258,15 +283,20 @@ const bookHotel = async (req, res, next) => {
       return res.status(400).json({ error: 'A valid room type is required for every pet' });
     }
 
-    const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / MS_PER_DAY);
-    if (nights < 1) {
-      return res.status(400).json({ error: 'Check-out must be after check-in' });
-    }
+    const checkInDate = validateFutureDate(checkIn, 'Check-in');
+    if (!checkInDate.ok) return res.status(400).json({ error: checkInDate.error });
+    const checkOutDate = validateFutureDate(checkOut, 'Check-out');
+    if (!checkOutDate.ok) return res.status(400).json({ error: checkOutDate.error });
+    const quote = quoteHotelStay({ petRoomTypes, checkIn, checkOut });
+    if (!quote.ok) return res.status(400).json({ error: quote.error });
+    const nights = quote.nights;
     if (!checkInTime || !checkOutTime) {
       return res.status(400).json({ error: 'Check-in and check-out times are required' });
     }
     const checkInCheck = validateTime(checkIn, checkInTime);
     if (!checkInCheck.ok) return res.status(400).json({ error: checkInCheck.error });
+    const futureCheckInTime = validateFutureBookingTime(checkIn, checkInTime, 'Check-in');
+    if (!futureCheckInTime.ok) return res.status(400).json({ error: futureCheckInTime.error });
     const checkOutCheck = validateTime(checkOut, checkOutTime);
     if (!checkOutCheck.ok) return res.status(400).json({ error: checkOutCheck.error });
     if (paymentMethod === 'qrph' && !getPayMongoKey()) {
@@ -287,10 +317,10 @@ const bookHotel = async (req, res, next) => {
         petId: pet.id,
         petName: pet.name,
         roomType: petRoomTypes[index],
-        pricePerNight: ROOM_PRICES[petRoomTypes[index]],
+        pricePerNight: quote.petQuotes[index].effectiveNightlyRate,
       }));
-      const pricePerNight = requestedRoomTypes.length === 1 ? ROOM_PRICES[requestedRoomTypes[0]] : null;
-      const totalPrice = petRooms.reduce((sum, petRoom) => sum + petRoom.pricePerNight * nights, 0);
+      const pricePerNight = quote.total / nights;
+      const totalPrice = quote.total;
       const reservation = await HotelReservation.create({
         roomType: requestedRoomTypes.length === 1 ? requestedRoomTypes[0] : 'multiple-rooms',
         roomTypes: requestedRoomTypes,
@@ -314,6 +344,7 @@ const bookHotel = async (req, res, next) => {
         status: 'pending',
         pricePerNight,
         totalPrice,
+        pricingBreakdown: quote,
         roomDetails: requestedRoomTypes.length === 1 ? ROOM_DETAILS[requestedRoomTypes[0]] : null,
         roomDetailsByType: Object.fromEntries(requestedRoomTypes.map((type) => [type, ROOM_DETAILS[type]])),
         ...paymentDetails(paymentMethod),
@@ -443,8 +474,9 @@ const cancelPayment = async (req, res, next) => {
     if (booking.paymentStatus === 'pending') {
       const lockIds = bookingType === 'hotel'
         ? hotelLockIdsForTypes(reservationRoomTypes(booking), booking.checkIn, booking.checkOut)
-        : groomingLockIds(booking.date, booking.time);
-      await releaseBookingSlotsByIds(lockIds);
+        : null;
+      if (lockIds) await releaseBookingSlotsByIds(lockIds);
+      else await releaseGroomingBookingSlots(booking.date, booking.time, groomingRecordDuration(booking));
       await booking.destroy();
     }
     res.json({ success: true, bookingId, deleted: true });
@@ -459,23 +491,39 @@ const getGroomingAvailability = async (req, res, next) => {
   try {
     const { date } = req.query;
     if (!date) return res.status(400).json({ error: 'A date is required' });
+    const dateCheck = validateFutureDate(date, 'Appointment date');
+    if (!dateCheck.ok) return res.status(400).json({ error: dateCheck.error });
 
     const { validHoursFor, fmtHour } = require('../util/businessHours');
+    const services = Array.isArray(req.query.service) ? req.query.service : [req.query.service].filter(Boolean);
+    const durationMinutes = services.length ? groomingBookingDuration(services) : 60;
+    if (!durationMinutes) return res.status(400).json({ error: 'A valid grooming service is required.' });
     const hours = validHoursFor(date);
-
-    const existing = await GroomingAppointment.findAll({ where: { date } });
-    const bookedTimes = new Set(
-      existing
-        .filter((a) => a.status !== 'cancelled')
-        .map((a) => a.time)
-    );
-
-    const slots = hours.map((h) => ({
-      time: fmtHour(h),
-      available: !bookedTimes.has(fmtHour(h)),
+    const existing = (await GroomingAppointment.findAll({ where: { date } })).filter((booking) => booking.status !== 'cancelled');
+    const slots = await Promise.all(hours.map(async (hour) => {
+      const time = fmtHour(hour);
+      const start = timeToMinutes(time);
+      const schedule = validateAppointmentDuration(date, time, durationMinutes);
+      const future = validateFutureBookingTime(date, time, 'Appointment');
+      const end = start + durationMinutes;
+      const overlaps = existing.some((booking) => {
+        const existingStart = timeToMinutes(booking.time);
+        return existingStart !== null
+          && existingStart < end
+          && existingStart + groomingRecordDuration(booking) > start;
+      });
+      const lockAvailable = schedule.ok
+        ? await areBookingSlotsAvailable(groomingLockIds(date, time, durationMinutes))
+        : false;
+      return {
+        time,
+        endTime: schedule.ok ? schedule.endTime : null,
+        pickupEarliest: schedule.ok ? schedule.pickupEarliest : null,
+        available: schedule.ok && future.ok && !overlaps && lockAvailable,
+      };
     }));
 
-    res.json({ date, slots });
+    res.json({ date, durationMinutes, slots });
   } catch (error) {
     next(error);
   }
@@ -493,6 +541,12 @@ const getHotelAvailability = async (req, res, next) => {
     if (!Object.prototype.hasOwnProperty.call(ROOM_PRICES, roomType)) {
       return res.status(400).json({ error: 'A valid roomType is required' });
     }
+    const checkInDate = validateFutureDate(checkIn, 'Check-in');
+    if (!checkInDate.ok) return res.status(400).json({ error: checkInDate.error });
+    const checkOutDate = validateFutureDate(checkOut, 'Check-out');
+    if (!checkOutDate.ok) return res.status(400).json({ error: checkOutDate.error });
+    const nights = getStayNights(checkIn, checkOut);
+    if (nights < 3) return res.status(400).json({ error: 'Hotel stays require at least 3 nights.' });
 
     const lockIds = hotelLockIdsForTypes([roomType], checkIn, checkOut);
     const available = await areBookingSlotsAvailable(lockIds);

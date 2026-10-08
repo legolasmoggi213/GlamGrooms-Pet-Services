@@ -6,6 +6,7 @@ const hotelController = require('../controllers/hotelController');
 const bookingController = require('../controllers/bookingController');
 const adminController = require('../controllers/adminController');
 const { parseToken } = require('../util/adminAuth');
+const { groomingServiceDuration } = require('../util/bookingCalculations');
 
 const router = express.Router();
 
@@ -14,12 +15,15 @@ const getServices = async (req, res, next) => {
     const { SERVICE_PRICES: groomingPrices, SERVICE_DETAILS: groomingDetails } = require('../controllers/groomingController');
     const { ROOM_PRICES: hotelPrices, ROOM_DETAILS: hotelDetails, HOTEL_POLICIES: hotelPolicies } = require('../controllers/hotelController');
 
-    const groomingServices = Object.entries(groomingPrices).map(([name, price]) => ({
-      name,
-      type: 'grooming',
-      price,
-      details: (groomingDetails && (groomingDetails[name] || groomingDetails[name.replace(/^grooming-/, '').replace(/-/g, '')])) || { category: 'Standard', duration: 60, includes: [], suitable: [] }
-    }));
+    const groomingServices = Object.entries(groomingPrices).map(([name, price]) => {
+      const details = (groomingDetails && (groomingDetails[name] || groomingDetails[name.replace(/^grooming-/, '').replace(/-/g, '')])) || { category: 'Standard', includes: [], suitable: [] };
+      return {
+        name,
+        type: 'grooming',
+        price,
+        details: { ...details, duration: groomingServiceDuration(name) || details.duration || 60 },
+      };
+    });
 
     const roomServices = Object.entries(hotelPrices).map(([name, price]) => ({
       name,
@@ -85,6 +89,7 @@ router.delete('/hotel/:id', hotelController.deleteReservation);
 // Public one-shot bookings (customer + pet + booking in a single request)
 router.post('/bookings/grooming', bookingController.bookGrooming);
 router.post('/bookings/hotel', bookingController.bookHotel);
+router.get('/bookings/hotel/quote', hotelController.getReservationQuote);
 router.post('/payments/verify', bookingController.verifyPayment);
 router.post('/payments/cancel', bookingController.cancelPayment);
 router.get('/bookings/grooming/availability', bookingController.getGroomingAvailability);

@@ -1,9 +1,4 @@
 // Hotel reservation page logic
-const ROOM_PRICES = {
-  'staycation-standard': 500,
-  'staycation-deluxe': 800,
-};
-
   const ROOM_DETAILS = {
     'day-care-standard': { category: 'Day Care', size: 'Small', occupancy: 1, amenities: ['Play area', 'Air Conditioning', 'Treats'], description: 'Standard hourly day care — weekday ₱55 / weekend ₱76 per hour' },
     'day-care-deluxe': { category: 'Day Care', size: 'Medium', occupancy: 1, amenities: ['Play area', 'Air Conditioning', 'Treats', 'Enrichment toys'], description: 'Deluxe hourly day care — weekday ₱80 / weekend ₱100 per hour' },
@@ -62,17 +57,26 @@ const ROOM_PRICES = {
   const form = document.getElementById('hotel-form');
   let roomAvailable = false;
   let availabilityRequest = 0;
+  let quoteRequest = 0;
+  let latestQuote = null;
+  let latestQuoteKey = '';
+  let latestQuoteMessage = 'Select dates to calculate the total (3-night minimum).';
 
-  const populateTimeOptions = (select, selectedValue) => {
-    const openHour = 9;
+  const populateTimeOptions = (select, date, selectedValue) => {
+    const day = date ? new Date(`${date}T00:00:00.000Z`).getUTCDay() : -1;
+    const openHour = day === 0 ? 6 : 9;
     const closeHour = 18;
-    select.innerHTML = Array.from({ length: closeHour - openHour }, (_, index) => {
+    const previous = select.value;
+    const options = Array.from({ length: closeHour - openHour }, (_, index) => {
       const hour = openHour + index;
       const value = `${String(hour).padStart(2, '0')}:00`;
       const labelHour = hour % 12 || 12;
       const period = hour >= 12 ? 'PM' : 'AM';
-      return `<option value="${value}"${value === selectedValue ? ' selected' : ''}>${labelHour}:00 ${period}</option>`;
-    }).join('');
+      return new Option(`${labelHour}:00 ${period}`, value);
+    });
+    select.replaceChildren(...options);
+    const preferred = [previous, selectedValue].find((value) => options.some((option) => option.value === value));
+    if (preferred) select.value = preferred;
   };
 
   const renderOrderSummary = () => {
@@ -87,22 +91,28 @@ const ROOM_PRICES = {
       .replaceAll("'", '&#39;');
     const pets = collectPets();
     const nights = Math.round((new Date(checkOutInput.value) - new Date(checkInInput.value)) / 864e5);
-    const totalPerNight = pets.reduce((sum, pet) => sum + (ROOM_PRICES[pet.roomType] || 0), 0);
-    const total = nights > 0 ? totalPerNight * nights : 0;
     const petText = pets.map((pet) => `${pet.name || 'Unnamed pet'} (${pet.species}, age ${pet.age ?? 'not entered'}, ${pet.breed || 'breed not entered'})`).join(', ');
+    const quoteKey = JSON.stringify({ checkIn: checkInInput.value, checkOut: checkOutInput.value, roomTypes: pets.map((pet) => pet.roomType) });
+    const quote = latestQuoteKey === quoteKey ? latestQuote : null;
     const rows = [
       ...pets.map((pet, index) => {
         const roomField = petFields.querySelector(`[name="roomType-${index}"]`);
         const roomText = roomField?.options[roomField.selectedIndex]?.textContent || pet.roomType;
-        return [`${pet.name || `Pet ${index + 1}`} room`, `${roomText} — ${fmtMoney(ROOM_PRICES[pet.roomType] || 0)} / night`];
+        const petQuote = quote && quote.petQuotes[index];
+        return [`${pet.name || `Pet ${index + 1}`} room`, `${roomText}${petQuote ? ` — ${fmtMoney(petQuote.baseAmount)} before discounts` : ''}`];
       }),
       ['Pets', petText],
       ['Check-in', `${fmtDate(checkInInput.value)} at ${checkInTime.value}`],
       ['Check-out', `${fmtDate(checkOutInput.value)} at ${checkOutTime.value}`],
-      ['Price per night', fmtMoney(totalPerNight)],
-      ['Nights', String(nights > 0 ? nights : 0)],
+      ['Nights', quote ? String(quote.nights) : (nights > 0 ? String(nights) : '3-night minimum')],
+      ...(quote ? [
+        ['Room subtotal', fmtMoney(quote.baseAmount)],
+        ['Multi-pet discount', `−${fmtMoney(quote.multiPetDiscount)}`],
+        ...(quote.longStayDiscount ? [['5+ night discount', `−${fmtMoney(quote.longStayDiscount)}`]] : []),
+        ...(quote.complimentaryBath ? [['Complimentary bath & dry', 'Included']] : []),
+      ] : []),
       ['Special care', form.notes.value || 'Not entered'],
-      ['Total', nights > 0 ? fmtMoney(total) : 'Check-out must be after check-in'],
+      ['Total', quote ? fmtMoney(quote.total) : latestQuoteMessage],
     ];
 
     summaryBox.innerHTML = `
@@ -128,25 +138,53 @@ const ROOM_PRICES = {
   const applyCheckInDates = () => {
     checkInInput.min = today;
     const checkIn = checkInInput.value;
-    checkOutInput.min = checkIn || today;
-    if (checkIn && checkOutInput.value && checkOutInput.value <= checkIn) {
-      const nextNight = new Date(`${checkIn}T00:00:00`);
-      nextNight.setDate(nextNight.getDate() + 1);
-      checkOutInput.value = localDate(nextNight);
+    const minimumCheckOut = checkIn ? new Date(`${checkIn}T00:00:00`) : new Date(`${today}T00:00:00`);
+    minimumCheckOut.setDate(minimumCheckOut.getDate() + 3);
+    checkOutInput.min = localDate(minimumCheckOut);
+    if (checkIn && checkOutInput.value && checkOutInput.value < checkOutInput.min) {
+      checkOutInput.value = checkOutInput.min;
     }
   };
+  const updateDateTimes = () => {
+    populateTimeOptions(checkInTime, checkInInput.value, '14:00');
+    populateTimeOptions(checkOutTime, checkOutInput.value, '12:00');
+  };
   applyCheckInDates();
+  updateDateTimes();
 
-  const updatePrice = () => {
-    if (!pricePreview) return;
-    const nights = Math.round((new Date(checkOutInput.value) - new Date(checkInInput.value)) / 864e5);
-    if (nights > 0) {
-      const pets = collectPets();
-      const total = pets.reduce((sum, pet) => sum + (ROOM_PRICES[pet.roomType] || 0), 0) * nights;
-      pricePreview.textContent = `${nights} night${nights > 1 ? 's' : ''} × selected room rates = ${fmtMoney(total)}`;
-    } else {
-      pricePreview.textContent = 'Check-out must be after check-in';
+  const updatePrice = async () => {
+    const requestId = ++quoteRequest;
+    latestQuote = null;
+    const pets = collectPets();
+    const quoteKey = JSON.stringify({ checkIn: checkInInput.value, checkOut: checkOutInput.value, roomTypes: pets.map((pet) => pet.roomType) });
+    latestQuoteKey = quoteKey;
+    if (!checkInInput.value || !checkOutInput.value) {
+      latestQuoteMessage = 'Select valid dates (3-night minimum).';
+      if (pricePreview) pricePreview.textContent = latestQuoteMessage;
+      renderOrderSummary();
+      return;
     }
+    latestQuoteMessage = 'Calculating quote…';
+    if (pricePreview) pricePreview.textContent = latestQuoteMessage;
+    renderOrderSummary();
+    const query = new URLSearchParams({ checkIn: checkInInput.value, checkOut: checkOutInput.value });
+    pets.forEach((pet) => query.append('roomType', pet.roomType));
+    try {
+      const response = await fetch(`/api/v1/bookings/hotel/quote?${query}`, { credentials: 'include', cache: 'no-store' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to calculate the stay total.');
+      if (requestId !== quoteRequest) return;
+      latestQuote = result;
+      if (pricePreview) {
+        const discounts = result.multiPetDiscount + result.longStayDiscount;
+        pricePreview.textContent = `${result.nights} nights · Total ${fmtMoney(result.total)}${discounts ? ` · Discounts ${fmtMoney(discounts)}` : ''}`;
+      }
+    } catch (error) {
+      if (requestId !== quoteRequest) return;
+      if (pricePreview) pricePreview.textContent = error.message;
+      latestQuoteMessage = error.message;
+    }
+    renderOrderSummary();
   };
   const renderPetFields = () => {
     petFields.innerHTML = Array.from({ length: Math.max(1, Math.min(5, Number(petCount.value) || 1)) }, (_, index) => `
@@ -217,17 +255,21 @@ const checkAvailability = async () => {
 [checkInTime, checkOutTime].forEach((el) => el.addEventListener('change', renderOrderSummary));
   form.addEventListener('input', renderOrderSummary);
   petFields.addEventListener('change', () => { updatePrice(); checkAvailability(); renderOrderSummary(); });
-  checkInInput.addEventListener('change', () => { updatePrice(); checkAvailability(); renderOrderSummary(); });
-  checkOutInput.addEventListener('change', () => {
-    if (checkInInput.value && checkOutInput.value && checkOutInput.value <= checkInInput.value) applyCheckInDates();
+  checkInInput.addEventListener('change', () => {
+    applyCheckInDates();
+    updateDateTimes();
     updatePrice();
     checkAvailability();
     renderOrderSummary();
   });
-  checkInInput.addEventListener('change', applyCheckInDates);
+  checkOutInput.addEventListener('change', () => {
+    if (checkInInput.value && checkOutInput.value && checkOutInput.value < checkOutInput.min) applyCheckInDates();
+    updateDateTimes();
+    updatePrice();
+    checkAvailability();
+    renderOrderSummary();
+  });
   petCount.addEventListener('change', () => { renderPetFields(); updatePrice(); checkAvailability(); renderOrderSummary(); });
-  populateTimeOptions(checkInTime, '14:00');
-  populateTimeOptions(checkOutTime, '12:00');
   renderPetFields();
   updatePrice();
   checkAvailability();

@@ -10,7 +10,31 @@ class BookingConflictError extends Error {
 
 const lockCollection = firestore.collection('bookingSlots');
 
-const groomingLockIds = (date, time) => [`grooming_${date}_${time}`];
+const groomingLockIds = (date, time, durationMinutes = 60) => {
+  const [hour, minute] = String(time || '').split(':').map(Number);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return [];
+  const startMinute = hour * 60 + minute;
+  const endMinute = startMinute + Math.max(1, Number(durationMinutes) || 60);
+  const firstHour = Math.floor(startMinute / 60);
+  const lastHour = Math.ceil(endMinute / 60);
+  return Array.from({ length: Math.max(1, lastHour - firstHour) }, (_, index) =>
+    `grooming_${date}_${String(firstHour + index).padStart(2, '0')}:00`);
+};
+
+const releaseGroomingLockIds = async (lockIds, date, time) => {
+  if (!lockIds.length) return;
+  const refs = lockIds.map((id) => lockCollection.doc(id));
+  const snapshots = await firestore.getAll(...refs);
+  const ownedRefs = refs.filter((ref, index) => {
+    if (!snapshots[index].exists) return false;
+    const details = snapshots[index].data() || {};
+    return details.type === 'grooming' && details.date === date && details.time === time;
+  });
+  if (ownedRefs.length) await releaseBookingSlots(ownedRefs);
+};
+
+const releaseGroomingBookingSlots = (date, time, durationMinutes = 60) =>
+  releaseGroomingLockIds(groomingLockIds(date, time, durationMinutes), date, time);
 
 const hotelLockIds = (roomType, checkIn, checkOut) => {
   const locks = [];
@@ -55,19 +79,30 @@ const releaseBookingSlotsByIds = async (lockIds) => {
 // Claims a replacement schedule before the caller changes its booking record.
 // Keeping the old locks until this succeeds prevents an update from exposing a
 // slot that is still represented by the existing booking.
-const claimReplacementBookingSlots = async (oldLockIds, newLockIds, details) => {
+const claimReplacementBookingSlots = async (oldLockIds, newLockIds, details, oldOwner = null) => {
   const oldIds = new Set(oldLockIds);
   const newRefs = newLockIds.map((id) => lockCollection.doc(id));
-  await firestore.runTransaction(async (transaction) => {
+  const createdIds = await firestore.runTransaction(async (transaction) => {
     const snapshots = await Promise.all(newRefs.map((ref) => transaction.get(ref)));
-    if (snapshots.some((snapshot, index) => snapshot.exists && !oldIds.has(newLockIds[index]))) {
+    const belongsToOld = (snapshot, id) => {
+      if (!oldIds.has(id) || !snapshot.exists) return false;
+      if (!oldOwner) return true;
+      const data = snapshot.data() || {};
+      return data.type === oldOwner.type && data.date === oldOwner.date && data.time === oldOwner.time;
+    };
+    if (snapshots.some((snapshot, index) => snapshot.exists && !belongsToOld(snapshot, newLockIds[index]))) {
       throw new BookingConflictError('That schedule is already booked. Please choose another time or date.');
     }
+    const created = [];
     newRefs.forEach((ref, index) => {
-      if (!oldIds.has(newLockIds[index])) transaction.create(ref, { ...details, createdAt: new Date() });
+      if (!snapshots[index].exists) {
+        transaction.create(ref, { ...details, createdAt: new Date() });
+        created.push(newLockIds[index]);
+      }
     });
+    return created;
   });
-  return newLockIds.filter((id) => !oldIds.has(id));
+  return createdIds;
 };
 
-module.exports = { BookingConflictError, groomingLockIds, hotelLockIds, hotelLockIdsForTypes, areBookingSlotsAvailable, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds };
+module.exports = { BookingConflictError, groomingLockIds, releaseGroomingBookingSlots, releaseGroomingLockIds, hotelLockIds, hotelLockIdsForTypes, areBookingSlotsAvailable, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds };

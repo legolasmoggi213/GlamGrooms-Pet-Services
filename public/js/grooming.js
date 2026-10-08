@@ -133,6 +133,7 @@
 
   let submitting = false;
   let slotRequest = 0;
+  let availableSlotsCache = [];
   let lastSuccessfulBookingKey = null;
 
   const field = (name) => form.querySelector(`[name="${name}"]`);
@@ -214,15 +215,26 @@
     return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
   };
 
-  const formatSlotLabel = (time) => {
-    const [hour] = time.split(':').map(Number);
-    const endTime = `${String(hour + 1).padStart(2, '0')}:00`;
-    return `${formatTimeLabel(time)} – ${formatTimeLabel(endTime)}`;
+  const formatSlotLabel = (time, endTime) => `${formatTimeLabel(time)} – ${formatTimeLabel(endTime || time)}`;
+
+  const updatePickupTimeBounds = (slots) => {
+    const selectedSlot = slots.find((slot) => slot.time === timeSelect.value && slot.available);
+    pickupTimeInput.value = '';
+    pickupTimeInput.disabled = !selectedSlot;
+    if (!selectedSlot) {
+      pickupTimeInput.removeAttribute('min');
+      pickupTimeInput.removeAttribute('max');
+      return;
+    }
+    pickupTimeInput.min = selectedSlot.pickupEarliest;
+    pickupTimeInput.max = '18:00';
+    pickupTimeInput.step = '3600';
   };
 
   const loadAvailability = async () => {
     const requestId = ++slotRequest;
     if (!dateInput.value) {
+      availableSlotsCache = [];
       timeSelect.replaceChildren(new Option('Select a date first', ''));
       timeSelect.disabled = true;
       pickupTimeInput.value = '';
@@ -235,7 +247,11 @@
     timeSelect.disabled = true;
     pickupTimeInput.disabled = true;
     try {
-      const response = await fetch(`/api/v1/bookings/grooming/availability?date=${encodeURIComponent(dateInput.value)}`, {
+      const query = new URLSearchParams({ date: dateInput.value });
+      collectPets().forEach((pet) => {
+        if (pet.service) query.append('service', pet.service);
+      });
+      const response = await fetch(`/api/v1/bookings/grooming/availability?${query}`, {
         credentials: 'include',
         cache: 'no-store',
       });
@@ -244,33 +260,25 @@
       if (requestId !== slotRequest) return;
 
       const slots = Array.isArray(data.slots) ? data.slots : [];
+      availableSlotsCache = slots;
       const availableSlots = slots.filter((slot) => slot.available);
       const previousTime = timeSelect.value;
-      const slotOptions = slots.map((slot) => new Option(
-        `${formatSlotLabel(slot.time)}${slot.available ? '' : ' — Slot taken'}`,
-        slot.time,
-        false,
-        false,
-      ));
+      const slotOptions = slots.map((slot) => {
+        const option = new Option(
+          `${formatSlotLabel(slot.time, slot.endTime)}${slot.available ? '' : ' — Unavailable'}`,
+          slot.time,
+          false,
+          false,
+        );
+        option.disabled = !slot.available;
+        return option;
+      });
       timeSelect.replaceChildren(new Option('Select an available time', ''), ...slotOptions);
       timeSelect.value = availableSlots.some((slot) => slot.time === previousTime)
         ? previousTime
         : (availableSlots[0]?.time || '');
-      timeSelect.disabled = slots.length === 0;
-
-      const openingTime = slots[0]?.time;
-      const lastPickupTime = slots[slots.length - 1]?.time;
-      const lastSlotHour = lastPickupTime ? Number(lastPickupTime.split(':')[0]) : NaN;
-      const pickupClosingTime = Number.isFinite(lastSlotHour)
-        ? `${String(lastSlotHour + 1).padStart(2, '0')}:00`
-        : null;
-      pickupTimeInput.value = '';
-      pickupTimeInput.disabled = !openingTime;
-      if (openingTime && pickupClosingTime) {
-        pickupTimeInput.min = openingTime;
-        pickupTimeInput.max = pickupClosingTime;
-        pickupTimeInput.step = '3600';
-      }
+      timeSelect.disabled = availableSlots.length === 0;
+      updatePickupTimeBounds(slots);
       renderSummary();
     } catch (error) {
       console.warn('Unable to load grooming availability:', error);
@@ -394,17 +402,22 @@
   petFields.addEventListener('change', () => {
     updatePrice();
     renderSummary();
+    loadAvailability();
   });
   petFields.addEventListener('input', renderSummary);
   petCountSelect.addEventListener('change', () => {
     renderPetFields();
     renderSummary();
+    loadAvailability();
   });
   dateInput.addEventListener('change', () => {
     renderSummary();
     loadAvailability();
   });
-  timeSelect.addEventListener('change', renderSummary);
+  timeSelect.addEventListener('change', () => {
+    updatePickupTimeBounds(availableSlotsCache);
+    renderSummary();
+  });
   pickupTimeInput.addEventListener('change', renderSummary);
 
   renderPetFields();

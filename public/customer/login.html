@@ -44,6 +44,7 @@
     const params = new URLSearchParams(location.search);
     const ret = params.get('return') || '/';
     document.getElementById('return-field').value = ret;
+    document.getElementById('email').value = params.get('email') || '';
     if (params.get('registered') === '1') {
       document.getElementById('verification-message').hidden = false;
     }

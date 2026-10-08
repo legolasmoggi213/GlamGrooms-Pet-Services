@@ -165,7 +165,16 @@ form.addEventListener('submit', async (event) => {
         } catch (createError) {
           if (createError.code !== 'auth/email-already-in-use') throw createError;
 
-          const existingResult = await firebaseAuth.signInWithEmailAndPassword(data.email, data.password);
+          let existingResult;
+          try {
+            existingResult = await firebaseAuth.signInWithEmailAndPassword(data.email, data.password);
+          } catch (recoveryError) {
+            if (!['auth/invalid-credential', 'auth/wrong-password'].includes(recoveryError.code)) throw recoveryError;
+            const passwordError = new Error('Firebase already has an account for this email, but the password entered does not match. Reset the password, then return here to finish registration.');
+            passwordError.code = 'auth/registration-password-mismatch';
+            passwordError.resetUrl = `/customer/login.html?${new URLSearchParams({ email: data.email })}`;
+            throw passwordError;
+          }
           user = existingResult.user;
           await user.reload();
           if (user.emailVerified) {
@@ -220,7 +229,11 @@ form.addEventListener('submit', async (event) => {
         'auth/too-many-requests': 'Too many attempts. Please wait a moment and try again.',
         'auth/email-not-verified': 'Please verify your email before signing in. Check your inbox.',
       };
-      const msg = code === 'auth/account-already-verified' ? error.message : (authMessages[code] || error.message);
+      const msg = code === 'auth/account-already-verified'
+        ? error.message
+        : code === 'auth/registration-password-mismatch'
+          ? `${error.message} <a href="${error.resetUrl}">Open customer login</a>.`
+          : (authMessages[code] || error.message);
 showAuthStatus('error', `<span style="color:#9c3a2e; font-weight:700;">✗ ${msg}</span>`);
     }
   });

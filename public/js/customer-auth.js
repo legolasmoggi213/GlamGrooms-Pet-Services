@@ -159,8 +159,22 @@ form.addEventListener('submit', async (event) => {
     try {
       let user;
       if (form.action.endsWith('/customer/register')) {
-        const result = await firebaseAuth.createUserWithEmailAndPassword(data.email, data.password);
-        user = result.user;
+        try {
+          const result = await firebaseAuth.createUserWithEmailAndPassword(data.email, data.password);
+          user = result.user;
+        } catch (createError) {
+          if (createError.code !== 'auth/email-already-in-use') throw createError;
+
+          const existingResult = await firebaseAuth.signInWithEmailAndPassword(data.email, data.password);
+          user = existingResult.user;
+          await user.reload();
+          if (user.emailVerified) {
+            await firebaseAuth.signOut();
+            const accountError = new Error('This email already has a verified account. Sign in instead, or reset your password if needed.');
+            accountError.code = 'auth/account-already-verified';
+            throw accountError;
+          }
+        }
         const idToken = await user.getIdToken();
         const profileResponse = await fetch('/customer/register-profile', {
           method: 'POST',
@@ -199,17 +213,14 @@ form.addEventListener('submit', async (event) => {
       window.location.href = data.return && data.return !== '/' ? data.return : '/customer/account.html';
     } catch (error) {
       const code = error.code || '';
-      const msg = code === 'auth/invalid-credential'
-        ? 'The email or password is incorrect.'
-        : code === 'auth/email-already-in-use'
-          ? 'That email is already registered.'
-          : code === 'auth/operation-not-allowed'
-            ? 'Email/password sign-in is disabled in Firebase Authentication settings.'
-          : code === 'auth/too-many-requests'
-            ? 'Too many attempts. Please wait a moment and try again.'
-          : code === 'auth/email-not-verified'
-            ? 'Please verify your email before signing in. Check your inbox.'
-          : error.message;
+      const authMessages = {
+        'auth/invalid-credential': 'The email or password is incorrect.',
+        'auth/email-already-in-use': 'An account already uses this email. Check the address, or sign in and use Forgot password if this is your account.',
+        'auth/operation-not-allowed': 'Email/password sign-in is disabled in Firebase Authentication settings.',
+        'auth/too-many-requests': 'Too many attempts. Please wait a moment and try again.',
+        'auth/email-not-verified': 'Please verify your email before signing in. Check your inbox.',
+      };
+      const msg = code === 'auth/account-already-verified' ? error.message : (authMessages[code] || error.message);
 showAuthStatus('error', `<span style="color:#9c3a2e; font-weight:700;">✗ ${msg}</span>`);
     }
   });

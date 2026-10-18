@@ -1,6 +1,7 @@
 const { HotelReservation, Customer, Pet } = require('../models');
 const { sendReservationTicket } = require('../util/mailer');
-const { hotelLockIds, hotelLockIdsForTypes, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
+const { hotelReservationLockIds, releaseBookingSlotsByIds } = require('../util/bookingLocks');
+const { claimHotelStayCapacity, HOTEL_PET_CAPACITY } = require('../util/hotelCapacity');
 const { validateTime } = require('../util/businessHours');
 const catalog = require('../util/serviceCatalog');
 const { quoteHotelStay, validateFutureDate, validateFutureBookingTime, getStayNights } = require('../util/bookingCalculations');
@@ -138,14 +139,11 @@ const createReservation = async (req, res, next) => {
     if (!quote.ok) return res.status(400).json({ error: quote.error });
     const nights = quote.nights;
 
-    const existingReservations = await HotelReservation.findAll({ where: { roomType } });
-    const overlapsExisting = existingReservations.some((item) => item.status !== 'cancelled'
-      && new Date(item.checkIn) < new Date(checkOut)
-      && new Date(item.checkOut) > new Date(checkIn));
-    if (overlapsExisting) return res.status(409).json({ error: 'That room is already reserved for those dates.' });
-
     const pricePerNight = quote.petQuotes[0].effectiveNightlyRate;
-    const lockRefs = status === 'cancelled' ? [] : await claimBookingSlots(hotelLockIds(roomType, checkIn, checkOut), { type: 'hotel', roomType, checkIn, checkOut });
+    const inactiveStatus = ['cancelled', 'checked-out'].includes(status);
+    const capacityClaim = inactiveStatus
+      ? { lockIds: [], createdLockIds: [] }
+      : await claimHotelStayCapacity({ petCount: 1, checkIn, checkOut });
     let created = false;
     let reservation;
     try {
@@ -158,6 +156,8 @@ const createReservation = async (req, res, next) => {
         notes,
         customerId,
         petId,
+        capacityManaged: true,
+        capacityLockIds: capacityClaim.lockIds,
         status: status || 'pending',
         pricePerNight,
         totalPrice: quote.total,
@@ -165,7 +165,7 @@ const createReservation = async (req, res, next) => {
       });
       created = true;
     } finally {
-      if (!created) await releaseBookingSlots(lockRefs);
+      if (!created) await releaseBookingSlotsByIds(capacityClaim.createdLockIds);
     }
     const full = await HotelReservation.findByPk(reservation.id, { include: includeAll });
     res.status(201).json(await addRelatedRecords(full));
@@ -230,17 +230,29 @@ const updateReservation = async (req, res, next) => {
     });
     if (!quote.ok) return res.status(400).json({ error: quote.error });
     const nights = quote.nights;
-    if (stayChanged && status !== 'cancelled') {
+    const nextStatus = status || reservation.status;
+    const inactiveStatus = ['cancelled', 'checked-out'].includes(nextStatus);
+    const wasInactive = ['cancelled', 'checked-out'].includes(reservation.status);
+    const shouldClaimCapacity = !inactiveStatus && (stayChanged || wasInactive
+      || !reservation.capacityManaged
+      || !Array.isArray(reservation.capacityLockIds)
+      || !reservation.capacityLockIds.length);
+    if (stayChanged && !inactiveStatus) {
       const futureCheck = validateFutureBookingTime(nextCheckIn, checkInTime || reservation.checkInTime, 'Check-in');
       if (!futureCheck.ok) return res.status(400).json({ error: futureCheck.error });
-      const conflicts = await HotelReservation.findAll();
-      const overlaps = conflicts.some((item) => String(item.id) !== String(reservation.id)
-        && item.status !== 'cancelled'
-        && reservationRoomTypes(item).some((type) => nextRoomTypes.includes(type))
-        && new Date(item.checkIn) < new Date(nextCheckOut)
-        && new Date(item.checkOut) > new Date(nextCheckIn));
-      if (overlaps) return res.status(409).json({ error: 'That room is already reserved for those dates.' });
     }
+    const oldLockIds = hotelReservationLockIds(reservation);
+    let capacityClaim = { lockIds: reservation.capacityLockIds || [], createdLockIds: [] };
+    if (shouldClaimCapacity) {
+      capacityClaim = await claimHotelStayCapacity({
+        petCount: sourcePetRooms.length,
+        checkIn: nextCheckIn,
+        checkOut: nextCheckOut,
+        excludeReservationId: reservation.id,
+        oldLockIds,
+      });
+    }
+    if (inactiveStatus) capacityClaim = { lockIds: [], createdLockIds: [] };
     const nextPetRooms = sourcePetRooms.map((petRoom, index) => {
       const petRoomType = nextPetRoomTypes[index];
       return { ...petRoom, roomType: petRoomType, pricePerNight: quote.petQuotes[index]?.effectiveNightlyRate || 0 };
@@ -248,14 +260,6 @@ const updateReservation = async (req, res, next) => {
     const pricePerNight = quote.total / nights;
     const needsAdminConfirmation = status === 'confirmed' && !reservation.confirmedAt;
     const shouldSendTicket = status === 'confirmed' && !reservation.reservationTicketEmailSentAt;
-    const oldCheckIn = reservation.checkIn;
-    const oldCheckOut = reservation.checkOut;
-    const oldLockIds = hotelLockIdsForTypes(currentRoomTypes, oldCheckIn, oldCheckOut);
-    const newLockIds = hotelLockIdsForTypes(nextRoomTypes, nextCheckIn, nextCheckOut);
-    let claimedNewLockIds = [];
-    if (stayChanged && status !== 'cancelled') {
-      claimedNewLockIds = await claimReplacementBookingSlots(oldLockIds, newLockIds, { type: 'hotel', roomType: nextRoomType, checkIn: nextCheckIn, checkOut: nextCheckOut });
-    }
     try {
       const updates = {
       roomType: nextRoomType,
@@ -265,7 +269,7 @@ const updateReservation = async (req, res, next) => {
       checkInTime: checkInTime || reservation.checkInTime || null,
       checkOut: nextCheckOut,
       checkOutTime: checkOutTime || reservation.checkOutTime || null,
-      status: status || reservation.status,
+      status: nextStatus,
       notes: notes === undefined ? reservation.notes : notes,
       customerId: customerId === undefined ? reservation.customerId : customerId,
       petId: petId === undefined ? reservation.petId : petId,
@@ -274,17 +278,19 @@ const updateReservation = async (req, res, next) => {
       pricingBreakdown: quote,
       roomDetails: nextRoomTypes.length === 1 ? ROOM_DETAILS[nextRoomTypes[0]] : null,
       roomDetailsByType: Object.fromEntries(nextRoomTypes.map((type) => [type, ROOM_DETAILS[type]])),
+      capacityManaged: true,
+      capacityLockIds: capacityClaim.lockIds,
       };
       if (needsAdminConfirmation) updates.confirmedAt = new Date();
       await reservation.update(updates);
     } catch (error) {
-      if (claimedNewLockIds.length) await releaseBookingSlotsByIds(claimedNewLockIds);
+      if (capacityClaim.createdLockIds.length) await releaseBookingSlotsByIds(capacityClaim.createdLockIds);
       throw error;
     }
-    if (status === 'cancelled') {
+    if (inactiveStatus) {
       await releaseBookingSlotsByIds(oldLockIds);
-    } else if (stayChanged) {
-      await releaseBookingSlotsByIds(oldLockIds.filter((id) => !newLockIds.includes(id)));
+    } else if (shouldClaimCapacity) {
+      await releaseBookingSlotsByIds(oldLockIds.filter((id) => !capacityClaim.lockIds.includes(id)));
     }
     const full = await HotelReservation.findByPk(reservation.id, { include: includeAll });
     let emailSent = false;
@@ -318,7 +324,7 @@ const deleteReservation = async (req, res, next) => {
       return res.status(404).json({ error: 'Reservation not found' });
     }
     await reservation.destroy();
-    await releaseBookingSlotsByIds(hotelLockIdsForTypes(reservationRoomTypes(reservation), reservation.checkIn, reservation.checkOut));
+    await releaseBookingSlotsByIds(hotelReservationLockIds(reservation));
     res.json({ message: 'Reservation deleted' });
   } catch (error) {
     next(error);

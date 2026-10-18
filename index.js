@@ -24,7 +24,7 @@ const bcrypt = require('bcryptjs');
 const { createToken, parseToken } = require('./util/adminAuth');
 const { createToken: createCustomerToken, parseToken: parseCustomerToken } = require('./util/customerAuth');
 const { isStrongPassword } = require('./util/passwordPolicy');
-const { releaseGroomingBookingSlots, hotelLockIdsForTypes, releaseBookingSlotsByIds } = require('./util/bookingLocks');
+const { releaseGroomingBookingSlots, hotelReservationLockIds, releaseBookingSlotsByIds } = require('./util/bookingLocks');
 const { groomingRecordDuration } = require('./util/bookingCalculations');
 const ADMIN_USERNAME = 'ADMIN';
 const safeReturnPath = (value, fallback) => {
@@ -160,11 +160,7 @@ app.post('/customer/delete-account', async (req, res) => {
     // Keep capacity locked until the associated records have been removed.
     await Promise.all([
       ...groomingBookings.map((booking) => releaseGroomingBookingSlots(booking.date, booking.time, groomingRecordDuration(booking))),
-      ...hotelBookings.map((booking) => releaseBookingSlotsByIds(hotelLockIdsForTypes(
-        booking.roomTypes || booking.petRooms?.map((petRoom) => petRoom.roomType) || [booking.roomType],
-        booking.checkIn,
-        booking.checkOut,
-      ))),
+      ...hotelBookings.map((booking) => releaseBookingSlotsByIds(hotelReservationLockIds(booking))),
     ]);
 
     res.clearCookie('customer_token', { path: '/' });

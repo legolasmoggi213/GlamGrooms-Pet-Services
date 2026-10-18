@@ -9,6 +9,7 @@ class BookingConflictError extends Error {
 }
 
 const lockCollection = firestore.collection('bookingSlots');
+const HOTEL_PET_CAPACITY = 35;
 
 const groomingLockIds = (date, time, durationMinutes = 60) => {
   const [hour, minute] = String(time || '').split(':').map(Number);
@@ -47,6 +48,129 @@ const hotelLockIds = (roomType, checkIn, checkOut) => {
 const hotelLockIdsForTypes = (roomTypes, checkIn, checkOut) => [...new Set(roomTypes.filter(Boolean))]
   .flatMap((roomType) => hotelLockIds(roomType, checkIn, checkOut));
 
+const hotelCapacityDates = (checkIn, checkOut) => {
+  const dates = [];
+  for (let day = new Date(`${checkIn}T00:00:00.000Z`); day < new Date(`${checkOut}T00:00:00.000Z`); day.setUTCDate(day.getUTCDate() + 1)) {
+    dates.push(day.toISOString().slice(0, 10));
+  }
+  return dates;
+};
+
+const hotelCapacitySlotIds = (date) => Array.from({ length: HOTEL_PET_CAPACITY }, (_, index) =>
+  `hotel_capacity_${date}_${String(index + 1).padStart(2, '0')}`);
+
+const getHotelCapacityAvailability = async (checkIn, checkOut, legacyPetCounts = {}) => {
+  const dates = hotelCapacityDates(checkIn, checkOut);
+  const lockIds = dates.flatMap(hotelCapacitySlotIds);
+  const refs = lockIds.map((id) => lockCollection.doc(id));
+  const snapshots = refs.length ? await firestore.getAll(...refs) : [];
+  const snapshotById = new Map(refs.map((ref, index) => [ref.id, snapshots[index]]));
+  const daily = dates.map((date) => {
+    const occupiedByLocks = hotelCapacitySlotIds(date).filter((id) => snapshotById.get(id)?.exists).length;
+    const legacyOccupied = Math.max(0, Number(legacyPetCounts[date]) || 0);
+    return {
+      date,
+      availablePets: Math.max(0, HOTEL_PET_CAPACITY - occupiedByLocks - legacyOccupied),
+    };
+  });
+  return {
+    capacity: HOTEL_PET_CAPACITY,
+    availablePets: daily.length ? Math.min(...daily.map((item) => item.availablePets)) : HOTEL_PET_CAPACITY,
+    daily,
+  };
+};
+
+const claimHotelCapacity = async (petCount, checkIn, checkOut, legacyPetCounts = {}) => {
+  const dates = hotelCapacityDates(checkIn, checkOut);
+  const count = Number(petCount);
+  if (!Number.isInteger(count) || count < 1 || count > HOTEL_PET_CAPACITY || !dates.length) {
+    throw new BookingConflictError('A valid pet count and stay date range are required.');
+  }
+  const idsByDate = dates.map((date) => hotelCapacitySlotIds(date));
+  const allIds = idsByDate.flat();
+  const refs = allIds.map((id) => lockCollection.doc(id));
+  const claimedIds = await firestore.runTransaction(async (transaction) => {
+    const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)));
+    const snapshotById = new Map(refs.map((ref, index) => [ref.id, snapshots[index]]));
+    const selectedByDate = [];
+
+    for (let index = 0; index < dates.length; index += 1) {
+      const date = dates[index];
+      const occupiedByLocks = idsByDate[index].filter((id) => snapshotById.get(id)?.exists).length;
+      const legacyOccupied = Math.max(0, Number(legacyPetCounts[date]) || 0);
+      const availableIds = idsByDate[index].filter((id) => !snapshotById.get(id)?.exists);
+      if (occupiedByLocks + legacyOccupied + count > HOTEL_PET_CAPACITY || availableIds.length < count) {
+        throw new BookingConflictError('There are not enough hotel spaces for those dates. Please choose another stay.');
+      }
+      selectedByDate.push(availableIds.slice(0, count));
+    }
+
+    selectedByDate.forEach((ids, index) => {
+      ids.forEach((id) => transaction.create(lockCollection.doc(id), {
+        type: 'hotel-capacity',
+        date: dates[index],
+        createdAt: new Date(),
+      }));
+    });
+    return selectedByDate.flat();
+  });
+  return claimedIds;
+};
+
+const claimReplacementHotelCapacity = async (oldLockIds, petCount, checkIn, checkOut, legacyPetCounts = {}) => {
+  const dates = hotelCapacityDates(checkIn, checkOut);
+  const count = Number(petCount);
+  if (!Number.isInteger(count) || count < 1 || count > HOTEL_PET_CAPACITY || !dates.length) {
+    throw new BookingConflictError('A valid pet count and stay date range are required.');
+  }
+  const oldIds = new Set(Array.isArray(oldLockIds) ? oldLockIds : []);
+  const idsByDate = dates.map((date) => hotelCapacitySlotIds(date));
+  const allIds = [...new Set([...oldIds, ...idsByDate.flat()])];
+  const refs = allIds.map((id) => lockCollection.doc(id));
+  const replacement = await firestore.runTransaction(async (transaction) => {
+    const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)));
+    const snapshotById = new Map(refs.map((ref, index) => [ref.id, snapshots[index]]));
+    const selectedByDate = [];
+
+    for (let index = 0; index < dates.length; index += 1) {
+      const ids = idsByDate[index];
+      const occupiedByOtherLocks = ids.filter((id) => snapshotById.get(id)?.exists && !oldIds.has(id)).length;
+      const legacyOccupied = Math.max(0, Number(legacyPetCounts[dates[index]]) || 0);
+      const availableIds = ids.filter((id) => !snapshotById.get(id)?.exists || oldIds.has(id));
+      if (occupiedByOtherLocks + legacyOccupied + count > HOTEL_PET_CAPACITY || availableIds.length < count) {
+        throw new BookingConflictError('There are not enough hotel spaces for those dates. Please choose another stay.');
+      }
+      selectedByDate.push(availableIds.slice(0, count));
+    }
+
+    const created = [];
+    selectedByDate.forEach((ids, index) => {
+      ids.forEach((id) => {
+        if (!snapshotById.get(id)?.exists) {
+          transaction.create(lockCollection.doc(id), {
+            type: 'hotel-capacity',
+            date: dates[index],
+            createdAt: new Date(),
+          });
+          created.push(id);
+        }
+      });
+    });
+    return { lockIds: selectedByDate.flat(), createdLockIds: created };
+  });
+  return replacement;
+};
+
+const hotelReservationLockIds = (reservation) => {
+  if (reservation?.capacityManaged) return Array.isArray(reservation.capacityLockIds) ? reservation.capacityLockIds : [];
+  const roomTypes = Array.isArray(reservation?.roomTypes) && reservation.roomTypes.length
+    ? reservation.roomTypes
+    : Array.isArray(reservation?.petRooms) && reservation.petRooms.length
+      ? reservation.petRooms.map((petRoom) => petRoom.roomType)
+      : [reservation?.roomType];
+  return hotelLockIdsForTypes(roomTypes, reservation?.checkIn, reservation?.checkOut);
+};
+
 const areBookingSlotsAvailable = async (lockIds) => {
   if (!lockIds.length) return true;
   const refs = lockIds.map((id) => lockCollection.doc(id));
@@ -72,7 +196,7 @@ const releaseBookingSlots = async (refs) => {
 };
 
 const releaseBookingSlotsByIds = async (lockIds) => {
-  const refs = lockIds.map((id) => lockCollection.doc(id));
+  const refs = (Array.isArray(lockIds) ? lockIds : []).map((id) => lockCollection.doc(id));
   await releaseBookingSlots(refs);
 };
 
@@ -105,4 +229,22 @@ const claimReplacementBookingSlots = async (oldLockIds, newLockIds, details, old
   return createdIds;
 };
 
-module.exports = { BookingConflictError, groomingLockIds, releaseGroomingBookingSlots, releaseGroomingLockIds, hotelLockIds, hotelLockIdsForTypes, areBookingSlotsAvailable, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds };
+module.exports = {
+  BookingConflictError,
+  groomingLockIds,
+  releaseGroomingBookingSlots,
+  releaseGroomingLockIds,
+  hotelLockIds,
+  hotelLockIdsForTypes,
+  HOTEL_PET_CAPACITY,
+  hotelCapacityDates,
+  getHotelCapacityAvailability,
+  claimHotelCapacity,
+  claimReplacementHotelCapacity,
+  hotelReservationLockIds,
+  areBookingSlotsAvailable,
+  claimBookingSlots,
+  claimReplacementBookingSlots,
+  releaseBookingSlots,
+  releaseBookingSlotsByIds,
+};

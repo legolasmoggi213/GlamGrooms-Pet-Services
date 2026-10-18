@@ -7,13 +7,14 @@ const { parseToken: parseAdminToken } = require('../util/adminAuth');
 const {
   BookingConflictError,
   groomingLockIds,
-  hotelLockIdsForTypes,
+  hotelReservationLockIds,
   releaseGroomingBookingSlots,
   areBookingSlotsAvailable,
   claimBookingSlots,
   releaseBookingSlots,
   releaseBookingSlotsByIds,
 } = require('../util/bookingLocks');
+const { hotelStayAvailability, claimHotelStayCapacity, HOTEL_PET_CAPACITY } = require('../util/hotelCapacity');
 const { validateTime, validatePickupTime, validateAppointmentDuration } = require('../util/businessHours');
 const { sendPayMongoReceipt, sendReservationTicket } = require('../util/mailer');
 const { markBookingPaidAndConfirmed } = require('../util/paymentConfirmation');
@@ -119,7 +120,7 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
       const isOwner = customerId && String(resv.customerId) === String(customerId);
       const isExpired = resv.createdAt && (now - new Date(resv.createdAt).getTime() > EXPIRY_MS);
       if (isOwner || isExpired) {
-        const lockIds = hotelLockIdsForTypes(reservationRoomTypes(resv), resv.checkIn, resv.checkOut);
+        const lockIds = hotelReservationLockIds(resv);
         await releaseBookingSlotsByIds(lockIds);
         await resv.destroy();
       }
@@ -304,8 +305,10 @@ const bookHotel = async (req, res, next) => {
     }
 
     const requestedRoomTypes = [...new Set(petRoomTypes)];
-    const lockRefs = await claimBookingSlots(hotelLockIdsForTypes(requestedRoomTypes, checkIn, checkOut), {
-      type: 'hotel', roomTypes: requestedRoomTypes, checkIn, checkOut,
+    const { lockIds: capacityLockIds } = await claimHotelStayCapacity({
+      petCount: petsData.length,
+      checkIn,
+      checkOut,
     });
     let reservationCreated = false;
     let reservationRecord = null;
@@ -341,6 +344,8 @@ const bookHotel = async (req, res, next) => {
         petIds: pets.map((pet) => pet.id),
         petNames: pets.map((pet) => pet.name),
         petTypes: pets.map((pet) => pet.type || 'adult'), // Include pet type in the record
+        capacityManaged: true,
+        capacityLockIds,
         status: 'pending',
         pricePerNight,
         totalPrice,
@@ -364,7 +369,7 @@ const bookHotel = async (req, res, next) => {
       reservationCreated = true;
       res.status(201).json({ message: 'Hotel reservation booked', reservation, customer, pet: primaryPet, pets, checkout });
     } finally {
-      if (!reservationCreated) await releaseBookingSlots(lockRefs);
+      if (!reservationCreated) await releaseBookingSlotsByIds(capacityLockIds);
       if (!reservationCreated && reservationRecord) await reservationRecord.destroy();
     }
   } catch (error) {
@@ -473,7 +478,7 @@ const cancelPayment = async (req, res, next) => {
     if (!(await canAccessBooking(req, booking))) return res.status(403).json({ error: 'You are not allowed to cancel this booking.' });
     if (booking.paymentStatus === 'pending') {
       const lockIds = bookingType === 'hotel'
-        ? hotelLockIdsForTypes(reservationRoomTypes(booking), booking.checkIn, booking.checkOut)
+        ? hotelReservationLockIds(booking)
         : null;
       if (lockIds) await releaseBookingSlotsByIds(lockIds);
       else await releaseGroomingBookingSlots(booking.date, booking.time, groomingRecordDuration(booking));
@@ -548,10 +553,19 @@ const getHotelAvailability = async (req, res, next) => {
     const nights = getStayNights(checkIn, checkOut);
     if (nights < 3) return res.status(400).json({ error: 'Hotel stays require at least 3 nights.' });
 
-    const lockIds = hotelLockIdsForTypes([roomType], checkIn, checkOut);
-    const available = await areBookingSlotsAvailable(lockIds);
-
-    res.json({ roomType, checkIn, checkOut, available });
+    const requestedPetCount = Number(req.query.petCount || 1);
+    if (!Number.isInteger(requestedPetCount) || requestedPetCount < 1 || requestedPetCount > 5) {
+      return res.status(400).json({ error: 'petCount must be between 1 and 5' });
+    }
+    const capacity = await hotelStayAvailability(checkIn, checkOut);
+    res.json({
+      roomType,
+      checkIn,
+      checkOut,
+      capacity: HOTEL_PET_CAPACITY,
+      availablePets: capacity.availablePets,
+      available: capacity.availablePets >= requestedPetCount,
+    });
   } catch (error) {
     next(error);
   }

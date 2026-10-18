@@ -220,23 +220,20 @@ const checkAvailability = async () => {
   submitBtn.disabled = true;
   if (!roomTypes.length || !checkIn || !checkOut) return;
   try {
-    const results = await Promise.all(roomTypes.map(async (roomType) => {
-      const query = new URLSearchParams({ roomType, checkIn, checkOut });
-      const res = await fetch(`/api/v1/bookings/hotel/availability?${query}`, { credentials: 'include' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not check room availability');
-      return data;
-    }));
+    const query = new URLSearchParams({ roomType: roomTypes[0], checkIn, checkOut, petCount: String(collectPets().length) });
+    const res = await fetch(`/api/v1/bookings/hotel/availability?${query}`, { credentials: 'include' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not check hotel availability');
     if (requestId !== availabilityRequest) return;
     const badge = document.getElementById('availability-badge');
-    roomAvailable = results.every((result) => result.available);
+    roomAvailable = data.available;
     submitBtn.disabled = !roomAvailable;
     if (!badge) return;
     if (roomAvailable) {
-      badge.textContent = '✓ All selected rooms are available';
+      badge.textContent = `${data.availablePets} of ${data.capacity} pet spaces available for these dates`;
       badge.style.color = '#1a6b4a';
     } else {
-      badge.textContent = '✗ One or more selected room types are unavailable for these dates';
+      badge.textContent = `Only ${data.availablePets} of ${data.capacity} pet spaces remain for these dates`;
       badge.style.color = '#c0392b';
     }
   } catch (err) {

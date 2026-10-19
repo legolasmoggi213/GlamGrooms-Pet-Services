@@ -23,6 +23,10 @@
   </header>
 
   <div id="toast" class="toast" aria-live="polite">Account created successfully.</div>
+  <section id="payment-retry-panel" class="payment-retry-panel" hidden role="status" aria-live="polite">
+    <p id="payment-retry-message">We are still confirming your PayMongo payment. Your booking is being kept.</p>
+    <button id="retry-payment-verification" class="btn btn-primary btn-sm" type="button">Check payment again</button>
+  </section>
 
   <div id="confirm-delete" class="confirm-box hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
     <div class="confirm-card">
@@ -70,11 +74,17 @@
     const params = new URLSearchParams(location.search);
     const showSuccessToast = params.get('justRegistered') === '1';
     const paymentSuccess = params.get('payment_success') === '1';
+    const paymentPending = params.get('payment_pending') === '1';
+    const paymentSessionId = params.get('session_id') || '';
     const deleteBtn = document.getElementById('delete-account-btn');
     const deleteModal = document.getElementById('confirm-delete');
     const cancelDelete = document.getElementById('cancel-delete');
     const confirmDelete = document.getElementById('confirm-delete-btn');
     const paymentSummaryDialog = document.getElementById('payment-summary-dialog');
+    const paymentRetryPanel = document.getElementById('payment-retry-panel');
+    const paymentRetryMessage = document.getElementById('payment-retry-message');
+    const retryPaymentButton = document.getElementById('retry-payment-verification');
+    let paymentRetryStarted = false;
 
     if (showSuccessToast) {
       const toast = document.getElementById('toast');
@@ -232,6 +242,13 @@
         `;
 
         if (paymentSuccess) openLatestPaymentSummary();
+        if (paymentPending && paymentSessionId) {
+          paymentRetryPanel.hidden = false;
+          if (!paymentRetryStarted) {
+            paymentRetryStarted = true;
+            retryPaymentVerification();
+          }
+        }
       } catch (e) {
         document.getElementById('content').innerHTML = '<div class="card">Failed to load profile.</div>';
       }
@@ -351,6 +368,35 @@
       nextUrl.searchParams.delete('bookingId');
       history.replaceState(null, '', nextUrl);
     }
+
+    async function retryPaymentVerification() {
+      if (!paymentSessionId) return;
+      retryPaymentButton.disabled = true;
+      paymentRetryMessage.textContent = 'Checking PayMongo again. Please do not submit another payment.';
+      try {
+        const response = await fetch('/api/v1/payments/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ sessionId: paymentSessionId }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 401 || response.status === 403) {
+          const returnPath = `${location.pathname}${location.search}`;
+          location.replace(`/customer/login.html?return=${encodeURIComponent(returnPath)}`);
+          return;
+        }
+        if (!response.ok) throw new Error(result.error || `Verification failed (${response.status}).`);
+        if (!result.success || !result.bookingType || !result.bookingId) throw new Error('Payment verification returned no booking details.');
+        location.replace(`/customer/account.html?payment_success=1&bookingType=${encodeURIComponent(result.bookingType)}&bookingId=${encodeURIComponent(result.bookingId)}`);
+      } catch (error) {
+        paymentRetryMessage.textContent = `Payment is not confirmed in your profile yet. Your booking is being kept. Do not pay again. Try again shortly or contact the business with session ${paymentSessionId}.`;
+      } finally {
+        retryPaymentButton.disabled = false;
+      }
+    }
+
+    retryPaymentButton.addEventListener('click', retryPaymentVerification);
 
     document.getElementById('close-payment-summary').addEventListener('click', () => paymentSummaryDialog.close());
     paymentSummaryDialog.addEventListener('click', (event) => {

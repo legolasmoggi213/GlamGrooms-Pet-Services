@@ -26,6 +26,9 @@
         message.textContent = 'Payment session not found. Please contact the business if you were charged.';
         return;
       }
+      const returnToProfileForRetry = () => {
+        window.location.replace(`/customer/account.html?payment_pending=1&session_id=${encodeURIComponent(sessionId)}`);
+      };
       try {
         for (let attempt = 0; attempt < 20; attempt += 1) {
           const response = await fetch('/api/v1/payments/verify', {
@@ -35,6 +38,16 @@
             body: JSON.stringify({ sessionId }),
           });
           const result = await response.json().catch(() => ({}));
+
+          if (response.status >= 500) {
+            if (attempt < 3) {
+              message.textContent = 'Our payment service is temporarily unavailable. Retrying verification…';
+              await new Promise(resolve => setTimeout(resolve, 1500));
+              continue;
+            }
+            returnToProfileForRetry();
+            return;
+          }
 
           if (response.status === 401 || response.status === 403) {
             const returnPath = `${location.pathname}${location.search}`;
@@ -63,6 +76,10 @@
           return;
         }
       } catch (error) {
+        if (error instanceof TypeError) {
+          returnToProfileForRetry();
+          return;
+        }
         message.textContent = error.message || 'We could not verify the payment yet. Please contact the business if you were charged.';
       }
     })();

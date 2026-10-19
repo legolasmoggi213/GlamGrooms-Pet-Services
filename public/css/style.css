@@ -903,6 +903,29 @@ a:hover { color: var(--primary-dark); text-decoration: none; }
 .payment-summary-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .payment-summary-heading h2 { font-family: var(--font-display); font-size: 1.35rem; }
 .payment-summary-dialog .payment-receipt-summary { display: block; }
+.payment-retry-panel {
+  position: fixed;
+  z-index: 120;
+  right: 1rem;
+  bottom: 1rem;
+  left: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1rem;
+  border: 1px solid var(--gold-dark);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.payment-retry-panel[hidden] { display: none; }
+.payment-retry-panel p { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .payment-retry-panel { align-items: stretch; flex-direction: column; }
+}
 .form-section-label {
   font-size: 0.78rem;
   font-weight: 800;

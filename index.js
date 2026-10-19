@@ -232,10 +232,7 @@ app.post('/customer/delete-account', async (req, res) => {
       if (booking.petId) booking.Pet = await db.Pet.findByPk(booking.petId);
       return booking;
     };
-    const isCompletedOrCash = (b) => !(b.paymentMethod === 'qrph' && b.paymentStatus === 'pending');
-    const validGrooming = grooming.filter(isCompletedOrCash);
-    const validHotel = hotel.filter(isCompletedOrCash);
-    res.json({ customer, pets, grooming: await Promise.all(validGrooming.map(attachPet)), hotel: await Promise.all(validHotel.map(attachPet)) });
+    res.json({ customer, pets, grooming: await Promise.all(grooming.map(attachPet)), hotel: await Promise.all(hotel.map(attachPet)) });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Server error' });

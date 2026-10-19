@@ -17,7 +17,7 @@
     'grooming-a-la-carte-face-trim': 250,
     'grooming-a-la-carte-paw-trim': 200,
     'grooming-a-la-carte-nail-clipping': 90,
-    'grooming-a-la-carte-ear-cleaning': 90,
+    'grooming-a-la-carte-ear-cleaning': 1,
     'grooming-a-la-carte-anal-sac-expressing': 120,
     'grooming-a-la-carte-de-matting': 500,
     'ayurveda-herb-beauty-s': 600,

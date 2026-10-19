@@ -18,8 +18,8 @@ const GROOMING = {
 const A_LA_CARTE = {
   'Face Trim': 250,
   'Paw Trim': 200,
-  'Nail Clipping': 90,
-  'Ear Cleaning': 90,
+  'Nail Clipping': 1,
+  'Ear Cleaning': 1,
   'Anal Sac Expressing': 120,
   'De-matting': { min: 300, max: 500 },
 };

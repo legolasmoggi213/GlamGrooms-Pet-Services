@@ -12,6 +12,13 @@ const app = express();
 const port = process.env.PORT || 3000;
 let databaseConnected = false;
 
+app.use((req, res, next) => {
+  if (String(req.hostname || '').toLowerCase() === 'glamgrooms.net') {
+    return res.redirect(308, `https://www.glamgrooms.net${req.originalUrl}`);
+  }
+  next();
+});
+
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
 app.use(express.json({
   verify: (req, res, buffer) => {

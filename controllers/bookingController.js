@@ -72,13 +72,18 @@ const paymentDetails = (paymentMethod) => ({
 });
 
 const startGcashCheckout = async ({ req, bookingType, bookingId, amount, description }) => {
-  const appUrl = (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+  const appUrl = new URL(process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`);
+  if (['glamgrooms.net', 'www.glamgrooms.net'].includes(appUrl.hostname.toLowerCase())) {
+    appUrl.protocol = 'https:';
+    appUrl.hostname = 'www.glamgrooms.net';
+  }
+  const baseUrl = appUrl.origin;
   return createQrPhCheckout({
     amount,
     description,
     metadata: { bookingType, bookingId: String(bookingId) },
-    successUrl: `${appUrl}/payment-success.html?booking_type=${encodeURIComponent(bookingType)}&booking_id=${encodeURIComponent(bookingId)}`,
-    cancelUrl: `${appUrl}/payment-cancelled.html?booking_type=${encodeURIComponent(bookingType)}&booking_id=${encodeURIComponent(bookingId)}`,
+    successUrl: `${baseUrl}/payment-success.html?booking_type=${encodeURIComponent(bookingType)}&booking_id=${encodeURIComponent(bookingId)}`,
+    cancelUrl: `${baseUrl}/payment-cancelled.html?booking_type=${encodeURIComponent(bookingType)}&booking_id=${encodeURIComponent(bookingId)}`,
   });
 };
 

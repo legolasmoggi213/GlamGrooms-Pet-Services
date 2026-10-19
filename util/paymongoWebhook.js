@@ -21,21 +21,22 @@ const handlePayMongoWebhook = async (req, res) => {
       return res.status(401).json({ error: 'Invalid webhook signature.' });
     }
 
-    const eventAttributes = req.body?.data?.attributes;
-    if (!eventAttributes || !eventAttributes.type) {
+    const event = req.body?.data;
+    const eventType = event?.attributes?.type || event?.type;
+    if (!event || !eventType) {
       return res.status(400).json({ error: 'Invalid webhook payload' });
     }
 
-    if (eventAttributes.type !== 'checkout_session.payment.paid') {
+    if (eventType !== 'checkout_session.payment.paid') {
       return res.json({ received: true, skipped: true });
     }
 
-    const checkoutSession = eventAttributes.data;
+    const checkoutSession = event?.attributes?.data || event?.data;
     const attributes = checkoutSession && checkoutSession.attributes;
-    const metadata = attributes?.metadata || eventAttributes.metadata || {};
+    const metadata = attributes?.metadata || event?.attributes?.metadata || {};
     const bookingType = metadata.bookingType;
     const bookingId = metadata.bookingId;
-    const sessionId = String(checkoutSession?.id || eventAttributes.checkout_session_id || '').trim();
+    const sessionId = String(checkoutSession?.id || event?.attributes?.checkout_session_id || '').trim();
     if (!['grooming', 'hotel'].includes(bookingType) || !bookingId || !sessionId) {
       return res.status(400).json({ error: 'Webhook missing booking metadata' });
     }

@@ -285,17 +285,28 @@ const checkAvailability = async () => {
     const wasCancelled = params.get('payment') === 'cancelled';
     const raw = sessionStorage.getItem('pending_paymongo_booking');
     let cancelledAny = false;
+    let cancellationFailed = false;
 
     if (raw) {
       sessionStorage.removeItem('pending_paymongo_booking');
       try {
         const pending = JSON.parse(raw);
         if (pending && pending.id) {
-          await apiPost('/payments/cancel', { bookingType: pending.type || 'hotel', bookingId: pending.id });
-          cancelledAny = true;
+          const result = await apiPost('/payments/cancel', { bookingType: pending.type || 'hotel', bookingId: pending.id });
+          if (result.paid) {
+            window.location.replace(`/customer/account.html?payment_success=1&bookingType=${encodeURIComponent(pending.type || 'hotel')}&bookingId=${encodeURIComponent(pending.id)}`);
+            return;
+          }
+          cancelledAny = Boolean(result.deleted);
         }
       } catch (e) {
         console.warn('Could not void pending reservation:', e);
+        cancellationFailed = true;
+      }
+
+      if (cancellationFailed) {
+        showAlert('error', 'We could not confirm that payment was cancelled. Your reservation was kept; check My Account before trying to pay again.');
+        return;
       }
     }
 

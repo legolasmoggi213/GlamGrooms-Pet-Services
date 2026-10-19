@@ -55,5 +55,10 @@ const createQrPhCheckout = async ({ amount, description, metadata, successUrl, c
 };
 
 const getCheckoutSession = (sessionId) => paymongoRequest(`/checkout_sessions/${encodeURIComponent(sessionId)}`);
+const expireCheckoutSession = (sessionId) => paymongoRequest(`/checkout_sessions/${encodeURIComponent(sessionId)}/expire`, { method: 'POST' });
 
-module.exports = { createQrPhCheckout, getCheckoutSession, getPayMongoKey };
+const isCheckoutSessionPaid = (attributes = {}) => attributes.payment_status === 'paid'
+  || (Array.isArray(attributes.payments) && attributes.payments.some((payment) => payment?.attributes?.status === 'paid'))
+  || attributes.payment_intent?.attributes?.status === 'succeeded';
+
+module.exports = { createQrPhCheckout, getCheckoutSession, expireCheckoutSession, getPayMongoKey, isCheckoutSessionPaid };

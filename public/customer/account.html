@@ -58,6 +58,14 @@
     </section>
   </main>
 
+  <dialog id="payment-summary-dialog" class="payment-summary-dialog" aria-labelledby="payment-summary-title">
+    <div class="payment-summary-heading">
+      <h2 id="payment-summary-title">Payment confirmed</h2>
+      <button id="close-payment-summary" class="btn btn-outline btn-sm" type="button">Close</button>
+    </div>
+    <div id="payment-summary-content"></div>
+  </dialog>
+
   <script>
     const params = new URLSearchParams(location.search);
     const showSuccessToast = params.get('justRegistered') === '1';
@@ -66,6 +74,7 @@
     const deleteModal = document.getElementById('confirm-delete');
     const cancelDelete = document.getElementById('cancel-delete');
     const confirmDelete = document.getElementById('confirm-delete-btn');
+    const paymentSummaryDialog = document.getElementById('payment-summary-dialog');
 
     if (showSuccessToast) {
       const toast = document.getElementById('toast');
@@ -329,7 +338,11 @@
       if (!target) return;
 
       target.open = true;
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('payment-summary-content').innerHTML = target.outerHTML;
+      const receipt = document.querySelector('#payment-summary-content details[data-payment-receipt]');
+      if (!receipt) return;
+      receipt.open = true;
+      paymentSummaryDialog.showModal();
       clearInterval(autoRefresh);
 
       const nextUrl = new URL(location.href);
@@ -338,6 +351,11 @@
       nextUrl.searchParams.delete('bookingId');
       history.replaceState(null, '', nextUrl);
     }
+
+    document.getElementById('close-payment-summary').addEventListener('click', () => paymentSummaryDialog.close());
+    paymentSummaryDialog.addEventListener('click', (event) => {
+      if (event.target === paymentSummaryDialog) paymentSummaryDialog.close();
+    });
 
     document.addEventListener('click', (event) => {
       if (!event.target.closest('.print-payment-receipt')) return;

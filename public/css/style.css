@@ -888,6 +888,21 @@ a:hover { color: var(--primary-dark); text-decoration: none; }
 .receipt-actions .btn { border-radius: 6px; }
 .receipt-link { display: inline-block; margin-top: 0.4rem; color: #806300; font-size: 0.88rem; font-weight: 700; }
 .receipt-link:hover { color: #4f3e00; text-decoration: underline; }
+.payment-summary-dialog {
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+}
+.payment-summary-dialog::backdrop { background: rgba(0, 0, 0, 0.76); backdrop-filter: blur(4px); }
+.payment-summary-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.payment-summary-heading h2 { font-family: var(--font-display); font-size: 1.35rem; }
+.payment-summary-dialog .payment-receipt-summary { display: block; }
 .form-section-label {
   font-size: 0.78rem;
   font-weight: 800;

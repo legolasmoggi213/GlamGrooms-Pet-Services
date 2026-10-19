@@ -1,7 +1,7 @@
 const { Customer, Pet, GroomingAppointment, HotelReservation } = require('../models');
 const { SERVICE_PRICES } = require('./groomingController');
 const { ROOM_PRICES, ROOM_DETAILS } = require('./hotelController');
-const { createQrPhCheckout, getCheckoutSession, getPayMongoKey } = require('../util/paymongo');
+const { createQrPhCheckout, getCheckoutSession, expireCheckoutSession, getPayMongoKey, isCheckoutSessionPaid } = require('../util/paymongo');
 const { parseToken: parseCustomerToken } = require('../util/customerAuth');
 const { parseToken: parseAdminToken } = require('../util/adminAuth');
 const {
@@ -72,7 +72,7 @@ const paymentDetails = (paymentMethod) => ({
 });
 
 const startGcashCheckout = async ({ req, bookingType, bookingId, amount, description }) => {
-  const appUrl = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`;
+  const appUrl = (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
   return createQrPhCheckout({
     amount,
     description,
@@ -96,18 +96,43 @@ const findOrCreateCustomerWithPets = async (customerData, petsData) => {
   return { customer, pets };
 };
 
-const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
+const cleanupAbandonedPayMongoBookings = async () => {
   const EXPIRY_MS = 15 * 60 * 1000;
   const now = Date.now();
+  const expireStaleCheckout = async (booking) => {
+    const sessionId = String(booking.paymentReference || '').trim();
+    if (!sessionId) return false;
+
+    let checkout = await getCheckoutSession(sessionId);
+    let attributes = checkout.data?.attributes || {};
+    if (isCheckoutSessionPaid(attributes)) {
+      await markBookingPaidAndConfirmed(booking, sessionId);
+      return false;
+    }
+    if (attributes.status === 'expired') return true;
+
+    try {
+      checkout = await expireCheckoutSession(sessionId);
+      attributes = checkout.data?.attributes || {};
+    } catch (expireError) {
+      checkout = await getCheckoutSession(sessionId);
+      attributes = checkout.data?.attributes || {};
+    }
+
+    if (isCheckoutSessionPaid(attributes)) {
+      await markBookingPaidAndConfirmed(booking, sessionId);
+      return false;
+    }
+    return attributes.status === 'expired';
+  };
 
   try {
     const groomingPending = await GroomingAppointment.findAll({
       where: { paymentMethod: 'qrph', paymentStatus: 'pending' },
     });
     for (const appt of groomingPending) {
-      const isOwner = customerId && String(appt.customerId) === String(customerId);
       const isExpired = appt.createdAt && (now - new Date(appt.createdAt).getTime() > EXPIRY_MS);
-      if (isOwner || isExpired) {
+      if (isExpired && await expireStaleCheckout(appt)) {
         await releaseGroomingBookingSlots(appt.date, appt.time, groomingRecordDuration(appt));
         await appt.destroy();
       }
@@ -117,9 +142,8 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
       where: { paymentMethod: 'qrph', paymentStatus: 'pending' },
     });
     for (const resv of hotelPending) {
-      const isOwner = customerId && String(resv.customerId) === String(customerId);
       const isExpired = resv.createdAt && (now - new Date(resv.createdAt).getTime() > EXPIRY_MS);
-      if (isOwner || isExpired) {
+      if (isExpired && await expireStaleCheckout(resv)) {
         const lockIds = hotelReservationLockIds(resv);
         await releaseBookingSlotsByIds(lockIds);
         await resv.destroy();
@@ -147,8 +171,8 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
     }
     if (!String(customerData.address || '').trim()) return res.status(400).json({ error: 'Address is required' });
 
-    // Release any previous uncompleted PayMongo attempts by this customer to prevent double-booking or slot-locking
-    await cleanupAbandonedPayMongoBookings(signedInCustomer.id);
+    // Release only stale PayMongo attempts; never delete a customer's active checkout.
+    await cleanupAbandonedPayMongoBookings();
     if (petsData.length > 5) return res.status(400).json({ error: 'A booking may include up to 5 pets.' });
     if (petsData.some((pet) => !['dog', 'cat'].includes(String(pet.species).toLowerCase()) || !String(pet.name || '').trim())) {
       return res.status(400).json({ error: 'Our services are available for cats and dogs only, and each pet needs a name' });
@@ -240,6 +264,8 @@ const cleanupAbandonedPayMongoBookings = async (customerId = null) => {
           description: `Glam Grooms grooming for ${pets.length} pet${pets.length === 1 ? '' : 's'}`,
         });
         if (!checkout.checkoutUrl) throw new Error('PayMongo did not return a checkout URL.');
+        if (!checkout.id) throw new Error('PayMongo did not return a checkout session ID.');
+        await appointment.update({ paymentReference: checkout.id });
       }
       appointmentCreated = true;
       res.status(201).json({ message: 'Grooming appointment booked', appointment, customer, pet: primaryPet, pets, checkout });
@@ -271,8 +297,8 @@ const bookHotel = async (req, res, next) => {
     }
     if (!String(customerData.address || '').trim()) return res.status(400).json({ error: 'Address is required' });
 
-    // Release any previous uncompleted PayMongo attempts by this customer to prevent double-booking or slot-locking
-    await cleanupAbandonedPayMongoBookings(signedInCustomer.id);
+    // Release only stale PayMongo attempts; never delete a customer's active checkout.
+    await cleanupAbandonedPayMongoBookings();
     if (petsData.length > 5) return res.status(400).json({ error: 'A booking may include up to 5 pets.' });
     if (petsData.some((pet) => !['dog', 'cat'].includes(String(pet.species).toLowerCase()) || !String(pet.name || '').trim())) {
       return res.status(400).json({ error: 'Our services are available for cats and dogs only, and each pet needs a name' });
@@ -365,6 +391,8 @@ const bookHotel = async (req, res, next) => {
           description: `Glam Grooms ${roomType} hotel reservation`,
         });
         if (!checkout.checkoutUrl) throw new Error('PayMongo did not return a checkout URL.');
+        if (!checkout.id) throw new Error('PayMongo did not return a checkout session ID.');
+        await reservation.update({ paymentReference: checkout.id });
       }
       reservationCreated = true;
       res.status(201).json({ message: 'Hotel reservation booked', reservation, customer, pet: primaryPet, pets, checkout });
@@ -385,7 +413,7 @@ const verifyPayment = async (req, res, next) => {
 
     const result = await getCheckoutSession(sessionId);
     const attributes = result.data?.attributes || {};
-    if (attributes.payment_status !== 'paid') return res.status(400).json({ error: 'Payment has not been completed.' });
+    if (!isCheckoutSessionPaid(attributes)) return res.status(400).json({ error: 'Payment has not been completed.' });
 
     const metadata = attributes.metadata || {};
     if (!['grooming', 'hotel'].includes(metadata.bookingType) || !metadata.bookingId) {
@@ -476,15 +504,54 @@ const cancelPayment = async (req, res, next) => {
     const booking = await Model.findByPk(bookingId);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
     if (!(await canAccessBooking(req, booking))) return res.status(403).json({ error: 'You are not allowed to cancel this booking.' });
+    let deleted = false;
     if (booking.paymentStatus === 'pending') {
+      const sessionId = String(booking.paymentReference || '').trim();
+      if (!sessionId) {
+        return res.status(409).json({ error: 'The payment session cannot be verified, so this booking was kept. Please contact the business before trying to pay again.' });
+      }
+
+      let checkout = await getCheckoutSession(sessionId);
+      let attributes = checkout.data?.attributes || {};
+      if (isCheckoutSessionPaid(attributes)) {
+        await markBookingPaidAndConfirmed(booking, sessionId);
+        return res.json({ success: true, bookingId, paid: true, deleted: false });
+      }
+
+      if (attributes.status !== 'expired') {
+        try {
+          checkout = await expireCheckoutSession(sessionId);
+          attributes = checkout.data?.attributes || {};
+        } catch (expireError) {
+          checkout = await getCheckoutSession(sessionId);
+          attributes = checkout.data?.attributes || {};
+          if (isCheckoutSessionPaid(attributes)) {
+            await markBookingPaidAndConfirmed(booking, sessionId);
+            return res.json({ success: true, bookingId, paid: true, deleted: false });
+          }
+          if (attributes.status !== 'expired') {
+            return res.status(409).json({ error: 'Payment is still processing, so this booking was kept. Please check your profile before trying to pay again.' });
+          }
+        }
+      }
+
+      if (isCheckoutSessionPaid(attributes)) {
+        await markBookingPaidAndConfirmed(booking, sessionId);
+        return res.json({ success: true, bookingId, paid: true, deleted: false });
+      }
+      if (attributes.status !== 'expired') {
+        return res.status(409).json({ error: 'PayMongo could not confirm cancellation, so this booking was kept. Please contact the business before trying to pay again.' });
+      }
+
       const lockIds = bookingType === 'hotel'
         ? hotelReservationLockIds(booking)
         : null;
       if (lockIds) await releaseBookingSlotsByIds(lockIds);
       else await releaseGroomingBookingSlots(booking.date, booking.time, groomingRecordDuration(booking));
       await booking.destroy();
+      deleted = true;
     }
-    res.json({ success: true, bookingId, deleted: true });
+    res.json({ success: true, bookingId, deleted, paid: booking.paymentStatus === 'paid' });
   } catch (error) {
     next(error);
   }

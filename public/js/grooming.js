@@ -372,6 +372,7 @@
           sessionStorage.setItem('pending_paymongo_booking', JSON.stringify({
             type: 'grooming',
             id: result.appointment?.id,
+            sessionId: result.checkout?.id,
             createdAt: Date.now(),
           }));
         } catch (error) {

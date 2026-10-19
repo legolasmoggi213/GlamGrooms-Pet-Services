@@ -374,6 +374,7 @@ const checkAvailability = async () => {
         sessionStorage.setItem('pending_paymongo_booking', JSON.stringify({
           type: 'hotel',
           id: result.reservation.id,
+          sessionId: result.checkout.id,
           time: Date.now(),
         }));
         window.location.href = result.checkout.checkoutUrl;

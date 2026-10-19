@@ -77,7 +77,7 @@ const startGcashCheckout = async ({ req, bookingType, bookingId, amount, descrip
     amount,
     description,
     metadata: { bookingType, bookingId: String(bookingId) },
-    successUrl: `${appUrl}/payment-success.html?session_id={CHECKOUT_SESSION_ID}`,
+    successUrl: `${appUrl}/payment-success.html?booking_type=${encodeURIComponent(bookingType)}&booking_id=${encodeURIComponent(bookingId)}`,
     cancelUrl: `${appUrl}/payment-cancelled.html?booking_type=${encodeURIComponent(bookingType)}&booking_id=${encodeURIComponent(bookingId)}`,
   });
 };
@@ -408,8 +408,30 @@ const bookHotel = async (req, res, next) => {
 
 const verifyPayment = async (req, res, next) => {
   try {
-    const sessionId = String(req.body?.sessionId || '').trim();
-    if (!sessionId) return res.status(400).json({ error: 'A PayMongo session ID is required' });
+    let sessionId = String(req.body?.sessionId || '').trim();
+    const requestedBookingType = String(req.body?.bookingType || '').trim();
+    const requestedBookingId = String(req.body?.bookingId || '').trim();
+    let booking = null;
+
+    if (requestedBookingType || requestedBookingId) {
+      if (!['grooming', 'hotel'].includes(requestedBookingType) || !requestedBookingId) {
+        return res.status(400).json({ error: 'A valid booking type and ID are required.' });
+      }
+      const RequestedModel = requestedBookingType === 'hotel' ? HotelReservation : GroomingAppointment;
+      booking = await RequestedModel.findByPk(requestedBookingId);
+      if (!booking) return res.status(404).json({ error: 'Booking not found' });
+      if (!(await canAccessBooking(req, booking))) return res.status(403).json({ error: 'You are not allowed to update this booking.' });
+      if (booking.paymentMethod !== 'qrph') return res.status(409).json({ error: 'This booking was not paid through PayMongo.' });
+
+      const storedSessionId = String(booking.paymentReference || '').trim();
+      if (!/^cs_[A-Za-z0-9]+$/.test(sessionId)) sessionId = storedSessionId;
+      else if (storedSessionId && storedSessionId !== sessionId) {
+        return res.status(409).json({ error: 'The checkout session does not match this booking.' });
+      }
+    }
+    if (!/^cs_[A-Za-z0-9]+$/.test(sessionId)) {
+      return res.status(400).json({ error: 'A valid PayMongo checkout session is not available for this booking.' });
+    }
 
     const result = await getCheckoutSession(sessionId);
     const attributes = result.data?.attributes || {};
@@ -419,8 +441,11 @@ const verifyPayment = async (req, res, next) => {
     if (!['grooming', 'hotel'].includes(metadata.bookingType) || !metadata.bookingId) {
       return res.status(400).json({ error: 'The payment is not linked to a valid booking.' });
     }
+    if (booking && (requestedBookingType !== metadata.bookingType || String(booking.id) !== String(metadata.bookingId))) {
+      return res.status(409).json({ error: 'The PayMongo session does not match this booking.' });
+    }
     const Model = metadata.bookingType === 'hotel' ? HotelReservation : GroomingAppointment;
-    const booking = await Model.findByPk(metadata.bookingId);
+    booking = booking || await Model.findByPk(metadata.bookingId);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
     if (!(await canAccessBooking(req, booking))) return res.status(403).json({ error: 'You are not allowed to update this booking.' });
     if (booking.paymentMethod !== 'qrph') return res.status(409).json({ error: 'This booking was not paid through PayMongo.' });

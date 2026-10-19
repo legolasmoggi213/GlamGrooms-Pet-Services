@@ -21,13 +21,30 @@
   <script>
     (async () => {
       const message = document.getElementById('payment-message');
-      const sessionId = new URLSearchParams(location.search).get('session_id');
-      if (!sessionId) {
-        message.textContent = 'Payment session not found. Please contact the business if you were charged.';
+      const params = new URLSearchParams(location.search);
+      let pendingBooking = {};
+      try {
+        pendingBooking = JSON.parse(sessionStorage.getItem('pending_paymongo_booking') || '{}');
+      } catch (error) {
+        console.warn('Could not read pending PayMongo booking:', error);
+      }
+      const sessionCandidate = params.get('session_id') || pendingBooking.sessionId || '';
+      const sessionId = /^cs_[A-Za-z0-9]+$/.test(sessionCandidate) ? sessionCandidate : '';
+      const bookingType = params.get('booking_type') || pendingBooking.type || '';
+      const bookingId = params.get('booking_id') || pendingBooking.id || '';
+      const verifyPayload = { sessionId, bookingType, bookingId };
+      if (!sessionId && (!['grooming', 'hotel'].includes(bookingType) || !bookingId)) {
+        message.textContent = 'Payment return details are missing. Please do not pay again; contact the business if you were charged.';
         return;
       }
       const returnToProfileForRetry = () => {
-        window.location.replace(`/customer/account.html?payment_pending=1&session_id=${encodeURIComponent(sessionId)}`);
+        const returnParams = new URLSearchParams({ payment_pending: '1' });
+        if (sessionId) returnParams.set('session_id', sessionId);
+        if (['grooming', 'hotel'].includes(bookingType) && bookingId) {
+          returnParams.set('booking_type', bookingType);
+          returnParams.set('booking_id', bookingId);
+        }
+        window.location.replace(`/customer/account.html?${returnParams}`);
       };
       try {
         for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -35,7 +52,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ sessionId }),
+            body: JSON.stringify(verifyPayload),
           });
           const result = await response.json().catch(() => ({}));
 
@@ -61,7 +78,7 @@
               await new Promise(resolve => setTimeout(resolve, 1500));
               continue;
             }
-            throw new Error('PayMongo has not confirmed this payment yet. Please do not pay again if your wallet shows a completed charge. You can return to My Account and contact the business with this payment session: ' + sessionId);
+            throw new Error(`PayMongo has not confirmed this payment yet. Please do not pay again if your wallet shows a completed charge. Contact the business with booking ${bookingId || 'unknown'}${sessionId ? ` and session ${sessionId}` : ''}.`);
           }
 
           if (!response.ok) throw new Error(result.error || `Payment verification failed (${response.status}).`);

@@ -76,6 +76,8 @@
     const paymentSuccess = params.get('payment_success') === '1';
     const paymentPending = params.get('payment_pending') === '1';
     const paymentSessionId = params.get('session_id') || '';
+    const paymentBookingType = params.get('booking_type') || '';
+    const paymentBookingId = params.get('booking_id') || '';
     const deleteBtn = document.getElementById('delete-account-btn');
     const deleteModal = document.getElementById('confirm-delete');
     const cancelDelete = document.getElementById('cancel-delete');
@@ -242,7 +244,7 @@
         `;
 
         if (paymentSuccess) openLatestPaymentSummary();
-        if (paymentPending && paymentSessionId) {
+        if (paymentPending && (paymentSessionId || paymentBookingId)) {
           paymentRetryPanel.hidden = false;
           if (!paymentRetryStarted) {
             paymentRetryStarted = true;
@@ -370,7 +372,7 @@
     }
 
     async function retryPaymentVerification() {
-      if (!paymentSessionId) return;
+      if (!paymentSessionId && (!['grooming', 'hotel'].includes(paymentBookingType) || !paymentBookingId)) return;
       retryPaymentButton.disabled = true;
       paymentRetryMessage.textContent = 'Checking PayMongo again. Please do not submit another payment.';
       try {
@@ -378,7 +380,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ sessionId: paymentSessionId }),
+          body: JSON.stringify({ sessionId: paymentSessionId, bookingType: paymentBookingType, bookingId: paymentBookingId }),
         });
         const result = await response.json().catch(() => ({}));
         if (response.status === 401 || response.status === 403) {
@@ -388,9 +390,11 @@
         }
         if (!response.ok) throw new Error(result.error || `Verification failed (${response.status}).`);
         if (!result.success || !result.bookingType || !result.bookingId) throw new Error('Payment verification returned no booking details.');
+        sessionStorage.removeItem('pending_paymongo_booking');
         location.replace(`/customer/account.html?payment_success=1&bookingType=${encodeURIComponent(result.bookingType)}&bookingId=${encodeURIComponent(result.bookingId)}`);
       } catch (error) {
-        paymentRetryMessage.textContent = `Payment is not confirmed in your profile yet. Your booking is being kept. Do not pay again. Try again shortly or contact the business with session ${paymentSessionId}.`;
+        const reference = paymentSessionId || paymentBookingId;
+        paymentRetryMessage.textContent = `Payment is not confirmed in your profile yet. Your booking is being kept. Do not pay again. Try again shortly or contact the business with reference ${reference}.`;
       } finally {
         retryPaymentButton.disabled = false;
       }

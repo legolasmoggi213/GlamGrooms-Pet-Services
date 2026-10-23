@@ -74,6 +74,12 @@
       </div>
 
       <section id="pos-receipt" class="pos-receipt" aria-live="polite"></section>
+      <section class="panel" aria-label="Recent receipts">
+        <div class="flex-between">
+          <h3>Saved receipts</h3>
+        </div>
+        <div id="saved-receipts" class="saved-receipts"><div class="empty">No saved receipts yet.</div></div>
+      </section>
     </main>
   </div>
 
@@ -162,17 +168,88 @@
 
     function renderReceipt(transaction, sale, paymentMethod, tenderedAmount, customerName) {
       const receipt = document.getElementById('pos-receipt');
-      const lines = sale.map((item) => `<tr><td>${escapeHtml(item.name)} × ${item.quantity}</td><td>${money(item.unitPrice * item.quantity)}</td></tr>`).join('');
+      const receiptNumber = transaction?.receipt?.receiptNumber || transaction?.id || 'POS-000';
+      const total = Number(transaction?.amount ?? sale.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0));
+      const changeDue = Number(transaction?.changeDue ?? Math.max(0, tenderedAmount - total));
+      const lines = (sale.length ? sale : (transaction?.receipt?.items || [])).map((item) => {
+        const itemName = item.name || item.label || 'Item';
+        const quantity = Number(item.quantity || 1);
+        const unitPrice = Number(item.unitPrice || item.lineTotal || 0);
+        const lineTotal = Number(item.lineTotal ?? quantity * unitPrice);
+        return `<tr><td>${escapeHtml(itemName)} × ${quantity}</td><td>${money(lineTotal)}</td></tr>`;
+      }).join('');
       receipt.innerHTML = `
         <h1>Glam Grooms Pet Spa &amp; Hotel</h1>
-        <p>Sale receipt · ${escapeHtml(fmtDateTime(transaction.paidAt || new Date().toISOString()))}</p>
-        <p>Receipt: ${escapeHtml(transaction.id)}<br>Customer: ${escapeHtml(customerName)}<br>Payment: ${escapeHtml(capitalize(paymentMethod))}</p>
+        <p>Sale receipt · ${escapeHtml(fmtDateTime(transaction?.paidAt || new Date().toISOString()))}</p>
+        <p>Receipt: ${escapeHtml(receiptNumber)}<br>Customer: ${escapeHtml(customerName || transaction?.receipt?.customerName || 'Walk-in customer')}<br>Payment: ${escapeHtml(capitalize(paymentMethod || transaction?.receipt?.paymentMethod || 'cash'))}</p>
         <table><thead><tr><th>Item</th><th>Amount</th></tr></thead><tbody>${lines}</tbody></table>
-        <p><strong>Total: ${money(transaction.amount)}</strong></p>
-        ${paymentMethod === 'cash' ? `<p>Cash received: ${money(tenderedAmount)}<br>Change: ${money(transaction.changeDue)}</p>` : ''}
+        <p><strong>Total: ${money(total)}</strong></p>
+        ${paymentMethod === 'cash' || transaction?.receipt?.paymentMethod === 'cash' ? `<p>Cash received: ${money(Number(tenderedAmount ?? transaction?.receipt?.tenderedAmount ?? total))}<br>Change: ${money(changeDue)}</p>` : ''}
         <p>Thank you for your visit.</p>
         <button type="button" class="btn btn-primary" onclick="window.print()">Print receipt</button>`;
       receipt.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function renderSavedReceipts(records) {
+      const container = document.getElementById('saved-receipts');
+      if (!records.length) {
+        container.innerHTML = '<div class="empty">No saved receipts yet.</div>';
+        return;
+      }
+      container.innerHTML = records.map((record) => {
+        const receipt = record.receipt || {
+          receiptNumber: record.id,
+          customerName: record.customerName || 'Walk-in customer',
+          paymentMethod: record.paymentMethod || 'cash',
+          amount: Number(record.amount || 0),
+          tenderedAmount: Number(record.tenderedAmount || record.amount || 0),
+          changeDue: Number(record.changeDue || 0),
+          items: Array.isArray(record.items) ? record.items : [],
+          paidAt: record.paidAt || record.createdAt,
+        };
+        return `
+          <div class="saved-receipt-item">
+            <div>
+              <strong>Receipt #${escapeHtml(String(receipt.receiptNumber || record.id))}</strong><br>
+              <span>${escapeHtml(receipt.customerName || record.customerName || 'Walk-in customer')} · ${escapeHtml(capitalize(receipt.paymentMethod || record.paymentMethod || 'cash'))}</span><br>
+              <small>${escapeHtml(fmtDateTime(receipt.paidAt || record.paidAt || new Date().toISOString()))}</small>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm" data-print-receipt="${escapeHtml(String(record.id))}">Print</button>
+          </div>`;
+      }).join('');
+      container.querySelectorAll('[data-print-receipt]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const recordId = button.dataset.printReceipt;
+          const record = (await apiGet('/admin/cash-transactions')).find((item) => String(item.id) === String(recordId));
+          if (!record) return;
+          const receiptData = record.receipt || {
+            receiptNumber: record.id,
+            customerName: record.customerName || 'Walk-in customer',
+            paymentMethod: record.paymentMethod || 'cash',
+            amount: Number(record.amount || 0),
+            tenderedAmount: Number(record.tenderedAmount || record.amount || 0),
+            changeDue: Number(record.changeDue || 0),
+            items: Array.isArray(record.items) ? record.items : [],
+            paidAt: record.paidAt || record.createdAt,
+          };
+          renderReceipt({
+            id: record.id,
+            amount: Number(record.amount || 0),
+            changeDue: Number(record.changeDue || 0),
+            paidAt: record.paidAt || record.createdAt,
+            receipt: receiptData,
+          }, receiptData.items.length ? receiptData.items : [{ name: record.description || 'Walk-in sale', quantity: 1, unitPrice: Number(record.amount || 0), lineTotal: Number(record.amount || 0) }], receiptData.paymentMethod || record.paymentMethod || 'cash', receiptData.tenderedAmount || record.tenderedAmount || Number(record.amount || 0), receiptData.customerName || record.customerName || 'Walk-in customer');
+        });
+      });
+    }
+
+    async function loadSavedReceipts() {
+      try {
+        const records = await apiGet('/admin/cash-transactions');
+        renderSavedReceipts(Array.isArray(records) ? records.filter((record) => record.type === 'walk-in') : []);
+      } catch (error) {
+        document.getElementById('saved-receipts').innerHTML = '<div class="empty">Unable to load saved receipts.</div>';
+      }
     }
 
     productContainer.addEventListener('click', (event) => {
@@ -242,6 +319,7 @@
         document.getElementById('sale-contact').value = '';
         showMessage('Sale recorded.', 'success');
         renderReceipt(result.transaction, sale, paymentMethod, tenderedAmount, customerName);
+        await loadSavedReceipts();
       } catch (error) {
         showMessage(error.message || 'Unable to complete this sale.', 'error');
       } finally {
@@ -268,6 +346,7 @@
       showMessage(error.message || 'Unable to load the service catalog.', 'error');
     });
 
+    loadSavedReceipts();
     renderCart();
   </script>
 </body>

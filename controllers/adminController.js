@@ -358,6 +358,17 @@ const listCashTransactions = async (req, res, next) => {
       paidAt: record.paidAt || record.createdAt,
       recordedBy: record.recordedBy || 'ADMIN',
       notes: record.notes || '',
+      receipt: record.receipt || {
+        receiptNumber: record.id,
+        customerName: record.customerName,
+        contact: record.contact || null,
+        paymentMethod: record.paymentMethod,
+        amount: Number(record.amount || 0),
+        tenderedAmount: Number(record.tenderedAmount || record.amount || 0),
+        changeDue: Number(record.changeDue || 0),
+        items: Array.isArray(record.items) ? record.items : [],
+        paidAt: record.paidAt || record.createdAt,
+      },
     })));
   } catch (error) {
     next(error);
@@ -407,6 +418,7 @@ const createCashTransaction = async (req, res, next) => {
         return res.status(400).json({ error: 'Cash received must cover the sale total.' });
       }
       const changeDue = Math.round((tenderedAmount - amount) * 100) / 100;
+      const paidAt = new Date();
       const transaction = await CashTransaction.create({
         type: 'walk-in',
         customerName,
@@ -417,11 +429,36 @@ const createCashTransaction = async (req, res, next) => {
         paymentMethod,
         tenderedAmount,
         changeDue,
-        paidAt: new Date(),
+        paidAt,
         recordedBy: 'ADMIN',
         notes: String(body.notes || '').trim(),
+        receipt: {
+          receiptNumber: '',
+          customerName,
+          contact: String(body.contact || '').trim() || null,
+          paymentMethod,
+          amount,
+          tenderedAmount,
+          changeDue,
+          items: hasItems ? items : [],
+          paidAt,
+          description,
+        },
       });
-      return res.status(201).json({ success: true, transaction: { id: transaction.id, amount, tenderedAmount, changeDue, paidAt: transaction.paidAt } });
+      const printableReceipt = {
+        ...transaction.receipt,
+        receiptNumber: transaction.id,
+      };
+      await transaction.update({ receipt: printableReceipt });
+      const responseTransaction = {
+        id: transaction.id,
+        amount,
+        tenderedAmount,
+        changeDue,
+        paidAt,
+        receipt: printableReceipt,
+      };
+      return res.status(201).json({ success: true, transaction: responseTransaction });
     }
 
     if (body.type !== 'booking-payment' || !['grooming', 'hotel'].includes(body.bookingType) || !body.bookingId) {

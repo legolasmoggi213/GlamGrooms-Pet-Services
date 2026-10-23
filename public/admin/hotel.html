@@ -77,7 +77,19 @@
       const r = await apiGet(`/hotel/${id}`);
       const pet = r.Pet ? escapeHtml(r.Pet.name) : '—';
       const customer = r.Customer ? escapeHtml(r.Customer.name) : '—';
-      const petInfo = r.Pet ? `Species: ${escapeHtml(r.Pet.species || '—')}, Breed: ${escapeHtml(r.Pet.breed || '—')}, Age: ${r.Pet.age != null ? r.Pet.age : '—'}` : '';
+      const petIds = Array.isArray(r.petIds) && r.petIds.length ? r.petIds : (r.petId ? [r.petId] : []);
+      const petInfo = petIds.length
+        ? petIds.map((petId) => {
+            const petRecord = Array.isArray(r.petDetails) ? r.petDetails.find((item) => String(item.id) === String(petId)) : null;
+            const details = petRecord || r.Pet;
+            const name = details?.name || 'Pet';
+            const species = details?.species || '—';
+            const breed = details?.breed || '—';
+            const age = details?.age != null ? details.age : '—';
+            const medicalHistory = details?.medicalHistory ? details.medicalHistory : '—';
+            return `${name}: Species: ${species}, Breed: ${breed}, Age: ${age}, Medical history: ${medicalHistory}`;
+          }).join('\n')
+        : (r.Pet ? `Species: ${escapeHtml(r.Pet.species || '—')}, Breed: ${escapeHtml(r.Pet.breed || '—')}, Age: ${r.Pet.age != null ? r.Pet.age : '—'}, Medical history: ${r.Pet.medicalHistory || '—'}` : '');
       const customerInfo = r.Customer ? `Email: ${escapeHtml(r.Customer.email || '—')}, Phone: ${escapeHtml(r.Customer.phone || '—')}` : '';
       const roomInfo = Array.isArray(r.petRooms) && r.petRooms.length
         ? r.petRooms.map((petRoom) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}, ${fmtMoney(petRoom.pricePerNight)} per night`).join('\n')
@@ -94,7 +106,7 @@
           <div class="field"><label>Check-out Time</label><input type="text" readonly value="${escapeHtml(r.checkOutTime || '—')}" /></div>
           <div class="field"><label>Total</label><input type="text" readonly value="${fmtMoney(r.totalPrice)}" /></div>
           <div class="field"><label>Status</label><input type="text" readonly value="${escapeHtml(r.status)}" /></div>
-          <div class="field full"><label>Pet Details</label><textarea rows="2" readonly>${petInfo || '—'}</textarea></div>
+          <div class="field full"><label>Pet Details</label><textarea rows="4" readonly>${escapeHtml(petInfo) || '—'}</textarea></div>
           <div class="field full"><label>Customer Details</label><textarea rows="2" readonly>${customerInfo || '—'}</textarea></div>
           <div class="field full"><label>Customer Notes</label><textarea rows="3" readonly>${escapeHtml(r.notes || 'No notes.')}</textarea></div>
         </div>

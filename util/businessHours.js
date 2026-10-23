@@ -1,11 +1,11 @@
 // Glam Grooms operating hours.
-// Friday-Saturday: 9 AM - 6 PM
-// Sunday:         6 AM - 6 PM
-// Monday-Thursday: 9 AM - 6 PM
+// Friday-Saturday: 9 AM - 5 PM
+// Sunday:         6 AM - 5 PM
+// Monday-Thursday: 9 AM - 5 PM
 
 const OPEN_HOUR = 9;     // 09:00 default open
 const SUN_OPEN_HOUR = 6; // 06:00 Sunday open
-const CLOSE_HOUR = 18;   // 18:00 close
+const CLOSE_HOUR = 17;   // 17:00 close (last valid booking start is 16:00)
 
 const DAY_SUNDAY = 0;
 const DAY_FRIDAY = 5;

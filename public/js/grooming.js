@@ -145,7 +145,7 @@
       <div class="field"><label for="pet-species-${index}">Species *</label><select id="pet-species-${index}" name="species-${index}"><option value="dog">Dog</option><option value="cat">Cat</option></select></div>
       <div class="field"><label for="pet-breed-${index}">Breed *</label><input id="pet-breed-${index}" name="breed-${index}" required /></div>
       <div class="field"><label for="pet-age-${index}">Age (years) *</label><input id="pet-age-${index}" name="age-${index}" type="number" min="0" max="50" required /></div>
-      <div class="field full"><label for="pet-medical-history-${index}">Medical history (optional)</label><textarea id="pet-medical-history-${index}" name="medicalHistory-${index}" rows="2" placeholder="Allergies, conditions, or medications"></textarea></div>
+      <div class="field full"><label for="pet-medical-history-${index}">Medical history</label><textarea id="pet-medical-history-${index}" name="medicalHistory-${index}" rows="2" placeholder="Allergies, conditions, or medications"></textarea></div>
       <div class="field full"><label for="pet-service-${index}">Service for Pet ${index + 1} *</label><select id="pet-service-${index}" name="service-${index}" required>${serviceSelect.innerHTML}</select></div>
     `).join('');
     updatePrice();
@@ -227,7 +227,7 @@
       return;
     }
     pickupTimeInput.min = selectedSlot.pickupEarliest;
-    pickupTimeInput.max = '18:00';
+    pickupTimeInput.max = '17:00';
     pickupTimeInput.step = '3600';
   };
 

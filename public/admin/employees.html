@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Employees — Glam Grooms Admin</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="admin-main">
+      <div class="flex-between">
+        <div>
+          <h1>Employees</h1>
+          <p class="page-sub">Create staff accounts and manage access.</p>
+        </div>
+        <button class="btn btn-primary" id="add-employee" type="button">+ Add Employee</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="employee-rows"><tr><td colspan="5" class="loading">Loading employees…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>
+    renderSidebar('Employees');
+    const rows = document.getElementById('employee-rows');
+
+    function employeeForm(employee = {}) {
+      return `<form id="employee-form" class="form-grid">
+        <div class="field full"><label for="employee-name">Name</label><input id="employee-name" name="name" maxlength="120" required value="${escapeHtml(employee.name || '')}"></div>
+        <div class="field full"><label for="employee-email">Email</label><input id="employee-email" name="email" type="email" maxlength="254" required value="${escapeHtml(employee.email || '')}"></div>
+        <div class="field full"><label for="employee-phone">Phone</label><input id="employee-phone" name="phone" maxlength="40" value="${escapeHtml(employee.phone || '')}"></div>
+        <div class="field full"><label for="employee-password">${employee.id ? 'New password (leave blank to keep current)' : 'Temporary password'}</label><input id="employee-password" name="password" type="password" minlength="8" ${employee.id ? '' : 'required'} autocomplete="new-password"></div>
+        <div class="form-actions full"><button class="btn btn-primary" type="submit">Save Employee</button><button class="btn btn-outline" type="button" onclick="closeModal()">Cancel</button></div>
+      </form>`;
+    }
+
+    function bindEmployeeForm(employee) {
+      document.getElementById('employee-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const body = {
+          name: form.elements.namedItem('name').value.trim(),
+          email: form.elements.namedItem('email').value.trim(),
+          phone: form.elements.namedItem('phone').value.trim(),
+        };
+        if (form.elements.namedItem('password').value) body.password = form.elements.namedItem('password').value;
+        try {
+          if (employee.id) await apiPut(`/admin/employees/${encodeURIComponent(employee.id)}`, body);
+          else await apiPost('/admin/employees', body);
+          closeModal();
+          await loadEmployees();
+        } catch (error) { alert(error.message); }
+      });
+    }
+
+    async function loadEmployees() {
+      try {
+        const employees = await apiGet('/admin/employees');
+        rows.innerHTML = employees.length ? employees.map((employee) => `<tr>
+          <td><strong>${escapeHtml(employee.name)}</strong></td>
+          <td>${escapeHtml(employee.email)}</td>
+          <td>${escapeHtml(employee.phone || '—')}</td>
+          <td>${statusBadge(employee.status)}</td>
+          <td>${employee.status === 'active' ? `<button class="btn btn-outline btn-sm" type="button" data-edit="${escapeHtml(employee.id)}">Edit</button> <button class="btn btn-danger btn-sm" type="button" data-terminate="${escapeHtml(employee.id)}">Terminate</button>` : '—'}</td>
+        </tr>`).join('') : '<tr><td colspan="5" class="empty">No employees yet.</td></tr>';
+      } catch (error) {
+        rows.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(error.message)}</td></tr>`;
+      }
+    }
+
+    document.getElementById('add-employee').addEventListener('click', () => {
+      openModal('Add Employee', employeeForm());
+      bindEmployeeForm({});
+    });
+
+    rows.addEventListener('click', async (event) => {
+      const editButton = event.target.closest('[data-edit]');
+      const terminateButton = event.target.closest('[data-terminate]');
+      if (editButton) {
+        try {
+          const employee = (await apiGet('/admin/employees')).find((item) => item.id === editButton.dataset.edit);
+          if (!employee) throw new Error('Employee not found.');
+          openModal('Edit Employee', employeeForm(employee));
+          bindEmployeeForm(employee);
+        } catch (error) { alert(error.message); }
+      }
+      if (terminateButton && window.confirm('Terminate this employee account? They will no longer be able to sign in.')) {
+        try {
+          await apiDelete(`/admin/employees/${encodeURIComponent(terminateButton.dataset.terminate)}`);
+          await loadEmployees();
+        } catch (error) { alert(error.message); }
+      }
+    });
+
+    loadEmployees();
+  </script>
+</body>
+</html>

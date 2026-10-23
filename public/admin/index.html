@@ -61,6 +61,27 @@
         </div>
       </section>
 
+      <section class="panel" id="booking-report" aria-label="Booking report">
+        <div class="analytics-heading">
+          <div>
+            <h3>Booking Report</h3>
+            <p class="text-muted">Filter grooming appointments and hotel reservations by date.</p>
+          </div>
+          <div class="analytics-actions">
+            <label class="field"><span>From</span><input id="report-start" type="date" /></label>
+            <label class="field"><span>To</span><input id="report-end" type="date" /></label>
+            <button type="button" class="btn btn-primary" id="generate-booking-report">Generate Report</button>
+            <button type="button" class="btn btn-outline" id="export-booking-report" disabled>Export PDF</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Type</th><th>Customer</th><th>Service / Room</th><th>Status</th><th>Amount</th></tr></thead>
+            <tbody id="booking-report-rows"><tr><td colspan="6" class="empty">Choose a date range or generate a report for all bookings.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
       <div class="panel">
         <h3>Service Catalog</h3>
         <p class="text-muted">All grooming and hotel services with current pricing</p>
@@ -224,6 +245,73 @@
         document.getElementById('hotel-revenue-chart').innerHTML = renderChart(data.hotel);
       }
 
+      let currentBookingReport = [];
+      async function generateBookingReport() {
+        const start = document.getElementById('report-start').value;
+        const end = document.getElementById('report-end').value;
+        const rows = document.getElementById('booking-report-rows');
+        if (start && end && start > end) throw new Error('The start date must be on or before the end date.');
+        rows.innerHTML = '<tr><td colspan="6" class="loading">Generating report…</td></tr>';
+        const [grooming, hotel] = await Promise.all([apiGet('/grooming'), apiGet('/hotel')]);
+        const inRange = (date) => (!start || date >= start) && (!end || date <= end);
+        currentBookingReport = [
+          ...grooming.filter((booking) => inRange(String(booking.date || ''))).map((booking) => ({
+            date: booking.date,
+            type: 'Grooming',
+            customer: booking.Customer?.name || 'Customer',
+            service: Array.isArray(booking.petServices) && booking.petServices.length
+              ? booking.petServices.map((item) => `${item.petName || 'Pet'}: ${item.service}`).join(', ')
+              : booking.service || 'Grooming',
+            status: booking.status || 'pending',
+            amount: Number(booking.price || 0),
+          })),
+          ...hotel.filter((booking) => inRange(String(booking.checkIn || ''))).map((booking) => ({
+            date: booking.checkIn,
+            type: 'Hotel',
+            customer: booking.Customer?.name || 'Customer',
+            service: Array.isArray(booking.petRooms) && booking.petRooms.length
+              ? booking.petRooms.map((item) => `${item.petName || 'Pet'}: ${item.roomType}`).join(', ')
+              : booking.roomType || 'Hotel stay',
+            status: booking.status || 'pending',
+            amount: Number(booking.totalPrice || 0),
+          })),
+        ].sort((left, right) => String(left.date).localeCompare(String(right.date)));
+        rows.innerHTML = currentBookingReport.length ? currentBookingReport.map((booking) => `<tr>
+          <td>${fmtDate(booking.date)}</td><td>${escapeHtml(booking.type)}</td><td>${escapeHtml(booking.customer)}</td>
+          <td>${escapeHtml(booking.service)}</td><td>${statusBadge(booking.status)}</td><td>${fmtMoney(booking.amount)}</td>
+        </tr>`).join('') : '<tr><td colspan="6" class="empty">No bookings match this date range.</td></tr>';
+        document.getElementById('export-booking-report').disabled = !currentBookingReport.length;
+      }
+
+      function exportBookingReportPdf() {
+        if (!currentBookingReport.length || !window.jspdf) return;
+        const pdf = new window.jspdf.jsPDF('l', 'mm', 'a4');
+        const start = document.getElementById('report-start').value || 'All';
+        const end = document.getElementById('report-end').value || 'dates';
+        pdf.setFontSize(16);
+        pdf.text('Glam Grooms Booking Report', 14, 16);
+        pdf.setFontSize(10);
+        pdf.text(`Date range: ${start} to ${end}`, 14, 23);
+        pdf.text('Date', 14, 32);
+        pdf.text('Type', 43, 32);
+        pdf.text('Customer', 69, 32);
+        pdf.text('Service / Room', 112, 32);
+        pdf.text('Status', 220, 32);
+        pdf.text('Amount', 252, 32);
+        let y = 39;
+        for (const booking of currentBookingReport) {
+          if (y > 185) { pdf.addPage(); y = 18; }
+          pdf.text(fmtDate(booking.date), 14, y, { maxWidth: 27 });
+          pdf.text(booking.type, 43, y, { maxWidth: 24 });
+          pdf.text(String(booking.customer), 69, y, { maxWidth: 40 });
+          pdf.text(String(booking.service), 112, y, { maxWidth: 104 });
+          pdf.text(String(booking.status), 220, y, { maxWidth: 30 });
+          pdf.text(fmtMoney(booking.amount), 252, y, { maxWidth: 30 });
+          y += 8;
+        }
+        pdf.save(`booking-report-${start}-${end}.pdf`);
+      }
+
       async function loadServiceCatalog() {
         try {
           const response = await fetch('/api/v1/admin/services', { credentials: 'include' });
@@ -326,6 +414,10 @@
         runDashboardLoader(loadRevenue, 'revenue');
       });
       document.getElementById('export-revenue-pdf')?.addEventListener('click', exportRevenuePdf);
+      document.getElementById('generate-booking-report')?.addEventListener('click', () => {
+        generateBookingReport().catch((error) => alert(error.message));
+      });
+      document.getElementById('export-booking-report')?.addEventListener('click', exportBookingReportPdf);
       runDashboardLoader(loadStats, 'stats');
       runDashboardLoader(loadOccupancy, 'occupancy');
       runDashboardLoader(loadActivity, 'activity');

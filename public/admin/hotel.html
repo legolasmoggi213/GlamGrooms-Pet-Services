@@ -65,6 +65,13 @@
           <td>${statusBadge(r.status)}</td>
           <td>
             ${r.status !== 'cancelled' && ((!r.confirmedAt && r.status !== 'checked-in' && r.status !== 'checked-out') || (r.confirmedAt && !r.reservationTicketEmailSentAt)) ? `<button class="btn btn-success btn-sm" onclick="confirmRes('${r.id}', this)">${r.confirmedAt ? 'Send Ticket' : 'Confirm'}</button>` : ''}
+            ${r.status === 'pending' || r.status === 'reserved' ? `<button class="btn btn-danger btn-sm" type="button" onclick='rejectRes(${escapeHtml(JSON.stringify(r.id))}, this)'>Reject</button>` : ''}
+            <div class="booking-status-control">
+              <select aria-label="Update reservation status" data-reservation-status="${escapeHtml(r.id)}">
+                ${['pending', 'reserved', 'confirmed', 'checked-in', 'checked-out', 'cancelled'].map((status) => `<option value="${status}" ${r.status === status ? 'selected' : ''}>${capitalize(status)}</option>`).join('')}
+              </select>
+              <button class="btn btn-outline btn-sm" type="button" data-save-reservation-status="${escapeHtml(r.id)}">Update</button>
+            </div>
             <button class="btn btn-outline btn-sm" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})'>View</button>
             <button class="btn btn-danger btn-sm" onclick='removeRes(${escapeHtml(JSON.stringify(r.id))})'>Delete</button>
           </td>
@@ -130,6 +137,38 @@
         alert(error.message);
       }
     };
+
+    window.rejectRes = async (id, button) => {
+      if (!window.confirm('Reject this hotel reservation?')) return;
+      button.disabled = true;
+      try {
+        await apiPut(`/hotel/${encodeURIComponent(id)}`, { status: 'cancelled' });
+        await loadReservations();
+      } catch (error) {
+        button.disabled = false;
+        alert(error.message);
+      }
+    };
+
+    rowsEl.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-save-reservation-status]');
+      if (!button) return;
+      const id = button.dataset.saveReservationStatus;
+      const select = rowsEl.querySelector(`[data-reservation-status="${CSS.escape(id)}"]`);
+      if (!select) return;
+      button.disabled = true;
+      try {
+        const result = await apiPut(`/hotel/${encodeURIComponent(id)}`, { status: select.value });
+        if (select.value === 'confirmed' && !result.emailSent) {
+          alert('Reservation status updated, but the customer confirmation email was not sent. Check the email configuration.');
+        }
+        await loadReservations();
+      } catch (error) {
+        alert(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    });
 
     window.removeRes = (id) =>
       confirmDelete('Delete this reservation?', async () => {

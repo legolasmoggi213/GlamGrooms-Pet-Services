@@ -5,6 +5,8 @@ const groomingController = require('../controllers/groomingController');
 const hotelController = require('../controllers/hotelController');
 const bookingController = require('../controllers/bookingController');
 const adminController = require('../controllers/adminController');
+const operationsController = require('../controllers/operationsController');
+const { Employee } = require('../models');
 const { parseToken } = require('../util/adminAuth');
 const { groomingServiceDuration } = require('../util/bookingCalculations');
 
@@ -43,20 +45,42 @@ const getServices = async (req, res, next) => {
   }
 };
 
-const adminOnly = (req, res, next) => {
+const getRequestUser = (req) => {
 	const cookie = (req.headers.cookie || '').split(';')
 		.map((part) => part.trim())
 		.find((part) => part.startsWith('admin_token='));
 	const token = cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : null;
-	if (parseToken(token) !== 'ADMIN') return res.status(401).json({ error: 'Admin authentication required' });
-	next();
+  return parseToken(token);
+};
+
+const adminOnly = (req, res, next) => {
+  if (getRequestUser(req) !== 'ADMIN') return res.status(401).json({ error: 'Admin authentication required' });
+  next();
+};
+
+const adminOrStaff = async (req, res, next) => {
+  try {
+    const user = getRequestUser(req);
+    if (user === 'ADMIN') return next();
+    if (typeof user === 'string' && user.startsWith('STAFF:')) {
+      const employee = await Employee.findByPk(user.slice('STAFF:'.length));
+      if (employee && employee.status === 'active') {
+        req.authEmployee = employee;
+        return next();
+      }
+    }
+    return res.status(401).json({ error: 'Staff or admin authentication required' });
+  } catch (error) {
+    return next(error);
+  }
 };
 
 router.use('/customers', adminOnly);
 router.use('/pets', adminOnly);
-router.use('/grooming', adminOnly);
-router.use('/hotel', adminOnly);
-router.use('/admin', adminOnly);
+router.use('/grooming', adminOrStaff);
+router.use('/hotel', adminOrStaff);
+router.use('/admin', adminOrStaff);
+router.use('/inventory', adminOrStaff);
 
 // Customers
 router.get('/customers', customerController.listCustomers);
@@ -86,6 +110,15 @@ router.post('/hotel', hotelController.createReservation);
 router.put('/hotel/:id', hotelController.updateReservation);
 router.delete('/hotel/:id', hotelController.deleteReservation);
 
+// Inventory and stock requests
+router.get('/inventory/products', operationsController.listProducts);
+router.post('/inventory/products', operationsController.createProduct);
+router.put('/inventory/products/:id', operationsController.updateProduct);
+router.delete('/inventory/products/:id', operationsController.deleteProduct);
+router.get('/inventory/requests', operationsController.listStockRequests);
+router.post('/inventory/requests', operationsController.createStockRequest);
+router.patch('/inventory/requests/:id', adminOnly, operationsController.updateStockRequest);
+
 // Public one-shot bookings (customer + pet + booking in a single request)
 router.post('/bookings/grooming', bookingController.bookGrooming);
 router.post('/bookings/hotel', bookingController.bookHotel);
@@ -102,11 +135,15 @@ router.get('/admin/activity', adminController.getRecentActivity);
 router.get('/admin/occupancy', adminController.getOccupancy);
 router.get('/admin/revenue-by-service', adminController.getRevenueBreakdown);
 router.get('/admin/revenue-analytics', adminController.getRevenueAnalytics);
-router.get('/admin/cash-transactions', adminController.listCashTransactions);
-router.post('/admin/cash-transactions', adminController.createCashTransaction);
+router.get('/admin/cash-transactions', adminOnly, adminController.listCashTransactions);
+router.post('/admin/cash-transactions', adminOnly, adminController.createCashTransaction);
+router.get('/admin/employees', adminOnly, operationsController.listEmployees);
+router.post('/admin/employees', adminOnly, operationsController.createEmployee);
+router.put('/admin/employees/:id', adminOnly, operationsController.updateEmployee);
+router.delete('/admin/employees/:id', adminOnly, operationsController.terminateEmployee);
 
 // Keep the dashboard endpoint protected while sharing its catalog response.
-router.get('/admin/services', adminOnly, getServices);
+router.get('/admin/services', adminOrStaff, getServices);
 
 // Service reminders (admin-triggered)
 const { sendReminders } = require('../util/reminders');

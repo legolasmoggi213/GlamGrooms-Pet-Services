@@ -69,6 +69,13 @@
     </div>
     <div id="payment-summary-content"></div>
   </dialog>
+  <dialog id="booking-action-dialog" class="payment-summary-dialog" aria-labelledby="booking-action-title">
+    <div class="payment-summary-heading">
+      <h2 id="booking-action-title">Reschedule booking</h2>
+      <button id="close-booking-action" class="btn btn-outline btn-sm" type="button">Close</button>
+    </div>
+    <form id="booking-action-form" class="form-grid"></form>
+  </dialog>
 
   <script>
     const params = new URLSearchParams(location.search);
@@ -83,10 +90,13 @@
     const cancelDelete = document.getElementById('cancel-delete');
     const confirmDelete = document.getElementById('confirm-delete-btn');
     const paymentSummaryDialog = document.getElementById('payment-summary-dialog');
+    const bookingActionDialog = document.getElementById('booking-action-dialog');
+    const bookingActionForm = document.getElementById('booking-action-form');
     const paymentRetryPanel = document.getElementById('payment-retry-panel');
     const paymentRetryMessage = document.getElementById('payment-retry-message');
     const retryPaymentButton = document.getElementById('retry-payment-verification');
     let paymentRetryStarted = false;
+    let autoRefresh = null;
 
     if (showSuccessToast) {
       const toast = document.getElementById('toast');
@@ -120,6 +130,11 @@
       } catch (e) {
         alert('Failed to delete account. Please try again.');
       }
+    });
+
+    document.getElementById('close-booking-action').addEventListener('click', () => bookingActionDialog.close());
+    bookingActionDialog.addEventListener('close', () => {
+      if (!autoRefresh) autoRefresh = setInterval(loadProfile, 5000);
     });
 
     async function loadProfile() {
@@ -191,6 +206,7 @@
                 <div class="transaction-meta">${formatDate(item.date)} • ${escapeHtml(item.time || 'Time TBA')}${item.pickupTime ? ` • Pickup ${escapeHtml(item.pickupTime)}` : ''} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.price)}</div>
                 ${paymentReceiptMarkup(item, 'grooming', p)}
                 ${reservationTicketMarkup(item, 'grooming', pets, p)}
+                ${bookingActionsMarkup(item, 'grooming')}
               </div>
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
@@ -209,6 +225,7 @@
                 <div class="transaction-meta">Check-in: ${formatDate(item.checkIn)} at ${escapeHtml(item.checkInTime || 'Time TBA')} • Check-out: ${formatDate(item.checkOut)} at ${escapeHtml(item.checkOutTime || 'Time TBA')} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.totalPrice)}</div>
                 ${paymentReceiptMarkup(item, 'hotel', p)}
                 ${reservationTicketMarkup(item, 'hotel', pets, p)}
+                ${bookingActionsMarkup(item, 'hotel')}
               </div>
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
@@ -262,6 +279,90 @@
       if (Number.isNaN(d.getTime())) return value;
       return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     }
+
+    function bookingActionsMarkup(item, type) {
+      const inactive = type === 'grooming'
+        ? ['cancelled', 'completed'].includes(item.status)
+        : ['cancelled', 'checked-in', 'checked-out'].includes(item.status);
+      if (inactive) return '';
+      const id = escapeHtml(item.id);
+      const paidNotice = item.paymentStatus === 'paid'
+        ? '<span class="transaction-meta">For cancellation of a paid booking, contact the business to discuss a refund.</span>'
+        : `<button class="btn btn-danger btn-sm" type="button" data-cancel-booking="${id}" data-booking-type="${type}">Cancel booking</button>`;
+      return `<div class="booking-actions">
+        <button class="btn btn-outline btn-sm" type="button" data-reschedule-booking="${id}" data-booking-type="${type}">Reschedule</button>
+        ${paidNotice}
+      </div>`;
+    }
+
+    function openRescheduleDialog(type, booking) {
+      const isHotel = type === 'hotel';
+      document.getElementById('booking-action-title').textContent = `Reschedule ${isHotel ? 'hotel stay' : 'grooming appointment'}`;
+      bookingActionForm.dataset.type = type;
+      bookingActionForm.dataset.id = booking.id;
+      bookingActionForm.innerHTML = isHotel ? `
+        <div class="field"><label for="reschedule-check-in">Check-in date</label><input id="reschedule-check-in" name="checkIn" type="date" required value="${escapeHtml(booking.checkIn || '')}"></div>
+        <div class="field"><label for="reschedule-check-in-time">Check-in time</label><input id="reschedule-check-in-time" name="checkInTime" type="time" required value="${escapeHtml(booking.checkInTime || '')}"></div>
+        <div class="field"><label for="reschedule-check-out">Check-out date</label><input id="reschedule-check-out" name="checkOut" type="date" required value="${escapeHtml(booking.checkOut || '')}"></div>
+        <div class="field"><label for="reschedule-check-out-time">Check-out time</label><input id="reschedule-check-out-time" name="checkOutTime" type="time" required value="${escapeHtml(booking.checkOutTime || '')}"></div>
+        <div class="form-actions full"><button class="btn btn-primary" type="submit">Save new schedule</button></div>` : `
+        <div class="field"><label for="reschedule-date">Appointment date</label><input id="reschedule-date" name="date" type="date" required value="${escapeHtml(booking.date || '')}"></div>
+        <div class="field"><label for="reschedule-time">Appointment time</label><input id="reschedule-time" name="time" type="time" required value="${escapeHtml(booking.time || '')}"></div>
+        <div class="field"><label for="reschedule-pickup">Pickup time</label><input id="reschedule-pickup" name="pickupTime" type="time" value="${escapeHtml(booking.pickupTime || '')}"></div>
+        <div class="form-actions full"><button class="btn btn-primary" type="submit">Save new schedule</button></div>`;
+      clearInterval(autoRefresh);
+      autoRefresh = null;
+      bookingActionDialog.showModal();
+    }
+
+    document.getElementById('bookings').addEventListener('click', async (event) => {
+      const cancelButton = event.target.closest('[data-cancel-booking]');
+      const rescheduleButton = event.target.closest('[data-reschedule-booking]');
+      if (cancelButton) {
+        const type = cancelButton.dataset.bookingType;
+        if (!window.confirm('Cancel this booking? This cannot be undone online.')) return;
+        cancelButton.disabled = true;
+        try {
+          const response = await fetch(`/customer/bookings/${type}/${encodeURIComponent(cancelButton.dataset.cancelBooking)}/cancel`, {
+            method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}',
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || 'Unable to cancel this booking.');
+          await loadProfile();
+        } catch (error) {
+          alert(error.message);
+          cancelButton.disabled = false;
+        }
+        return;
+      }
+      if (rescheduleButton) {
+        const type = rescheduleButton.dataset.bookingType;
+        try {
+          const profile = await fetch('/customer/profile', { credentials: 'include' }).then((response) => response.json());
+          const bookings = type === 'grooming' ? profile.grooming : profile.hotel;
+          const booking = (bookings || []).find((item) => String(item.id) === rescheduleButton.dataset.rescheduleBooking);
+          if (!booking) throw new Error('Booking not found. Refresh the page and try again.');
+          openRescheduleDialog(type, booking);
+        } catch (error) { alert(error.message); }
+      }
+    });
+
+    bookingActionForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const type = bookingActionForm.dataset.type;
+      const id = bookingActionForm.dataset.id;
+      const formData = new FormData(bookingActionForm);
+      const body = Object.fromEntries(formData.entries());
+      try {
+        const response = await fetch(`/customer/bookings/${type}/${encodeURIComponent(id)}/reschedule`, {
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Unable to reschedule this booking.');
+        bookingActionDialog.close();
+        await loadProfile();
+      } catch (error) { alert(error.message); }
+    });
 
     function formatMoney(value) {
       return `PHP ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -426,7 +527,7 @@
     }
 
     loadProfile();
-    let autoRefresh = setInterval(loadProfile, 5000);
+    autoRefresh = setInterval(loadProfile, 5000);
 
     // Stop auto-refresh while editing profile so the form stays intact
     document.addEventListener('focusin', (e) => {

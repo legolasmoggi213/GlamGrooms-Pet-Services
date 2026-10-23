@@ -73,6 +73,7 @@
           <td>${statusBadge(a.status)}</td>
           <td>
             ${a.status !== 'cancelled' && ((!a.confirmedAt && a.status !== 'completed') || (a.confirmedAt && !a.reservationTicketEmailSentAt)) ? `<button class="btn btn-success btn-sm" onclick="confirmAppt('${a.id}', this)">${a.confirmedAt ? 'Send Ticket' : 'Confirm'}</button>` : ''}
+            ${a.status === 'pending' ? `<button class="btn btn-danger btn-sm" type="button" onclick='rejectAppt(${escapeHtml(JSON.stringify(a.id))}, this)'>Reject</button>` : ''}
             <button class="btn btn-outline btn-sm" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})'>View</button>
             <button class="btn btn-danger btn-sm" onclick='removeAppt(${escapeHtml(JSON.stringify(a.id))})'>Delete</button>
           </td>
@@ -207,6 +208,18 @@
           button.disabled = false;
           button.textContent = 'Confirm';
         }
+        alert(error.message);
+      }
+    };
+
+    window.rejectAppt = async (id, button) => {
+      if (!window.confirm('Reject this grooming booking?')) return;
+      button.disabled = true;
+      try {
+        await apiPut(`/grooming/${encodeURIComponent(id)}`, { status: 'cancelled' });
+        await loadAppointments();
+      } catch (error) {
+        button.disabled = false;
         alert(error.message);
       }
     };

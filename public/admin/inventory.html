@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inventory — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="admin-main">
+      <div class="flex-between">
+        <div>
+          <h1>Inventory &amp; Stock</h1>
+          <p class="page-sub">Track products, reorder levels, and staff stock requests.</p>
+        </div>
+        <button class="btn btn-primary" id="add-product" type="button">+ Add Product</button>
+      </div>
+
+      <section class="panel">
+        <h3>Products</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Product</th><th>Category</th><th>Stock</th><th>Reorder at</th><th>Actions</th></tr></thead>
+            <tbody id="product-rows"><tr><td colspan="5" class="loading">Loading inventory…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h3>Stock Requests</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Product</th><th>Quantity</th><th>Requested by</th><th>Notes</th><th>Status</th><th>Review</th></tr></thead>
+            <tbody id="request-rows"><tr><td colspan="6" class="loading">Loading requests…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>
+    renderSidebar('Inventory');
+    const productRows = document.getElementById('product-rows');
+    const requestRows = document.getElementById('request-rows');
+    let isAdmin = false;
+
+    async function loadRole() {
+      const response = await fetch('/admin/nav-status', { credentials: 'include' });
+      const status = await response.json();
+      isAdmin = status.role === 'admin';
+    }
+
+    function productForm(product = {}) {
+      return `<form id="product-form" class="form-grid">
+        <div class="field full"><label for="product-name">Product name</label><input id="product-name" name="name" maxlength="120" required value="${escapeHtml(product.name || '')}"></div>
+        <div class="field"><label for="product-category">Category</label><input id="product-category" name="category" maxlength="80" required value="${escapeHtml(product.category || '')}"></div>
+        <div class="field"><label for="product-unit">Unit</label><input id="product-unit" name="unit" maxlength="30" placeholder="bottle, pack, kg" required value="${escapeHtml(product.unit || '')}"></div>
+        <div class="field"><label for="product-quantity">Current quantity</label><input id="product-quantity" name="quantity" type="number" min="0" max="1000000" step="1" required value="${Number(product.quantity || 0)}"></div>
+        <div class="field"><label for="product-reorder">Low-stock threshold</label><input id="product-reorder" name="reorderLevel" type="number" min="0" max="1000000" step="1" required value="${Number(product.reorderLevel || 0)}"></div>
+        <div class="form-actions full"><button class="btn btn-primary" type="submit">Save Product</button><button class="btn btn-outline" type="button" onclick="closeModal()">Cancel</button></div>
+      </form>`;
+    }
+
+    function bindProductForm(product) {
+      document.getElementById('product-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const body = {
+          name: form.elements.namedItem('name').value.trim(),
+          category: form.elements.namedItem('category').value.trim(),
+          unit: form.elements.namedItem('unit').value.trim(),
+          quantity: Number(form.elements.namedItem('quantity').value),
+          reorderLevel: Number(form.elements.namedItem('reorderLevel').value),
+        };
+        try {
+          if (product.id) await apiPut(`/inventory/products/${encodeURIComponent(product.id)}`, body);
+          else await apiPost('/inventory/products', body);
+          closeModal();
+          await loadInventory();
+        } catch (error) { alert(error.message); }
+      });
+    }
+
+    function requestForm(product) {
+      return `<form id="request-form" class="form-grid">
+        <div class="field full"><label>Product</label><input value="${escapeHtml(product.name)}" readonly></div>
+        <div class="field"><label for="request-quantity">Quantity requested (${escapeHtml(product.unit)})</label><input id="request-quantity" name="quantity" type="number" min="1" max="1000000" step="1" required></div>
+        <div class="field full"><label for="request-notes">Notes</label><textarea id="request-notes" name="notes" maxlength="500" rows="3"></textarea></div>
+        <div class="form-actions full"><button class="btn btn-primary" type="submit">Submit Request</button><button class="btn btn-outline" type="button" onclick="closeModal()">Cancel</button></div>
+      </form>`;
+    }
+
+    async function loadInventory() {
+      try {
+        const products = await apiGet('/inventory/products');
+        productRows.innerHTML = products.length ? products.map((product) => {
+          const low = Number(product.quantity) <= Number(product.reorderLevel);
+          return `<tr>
+            <td><strong>${escapeHtml(product.name)}</strong></td>
+            <td>${escapeHtml(product.category)}</td>
+            <td>${Number(product.quantity)} ${escapeHtml(product.unit)} ${low ? '<span class="status-badge status-pending">Low stock</span>' : ''}</td>
+            <td>${Number(product.reorderLevel)} ${escapeHtml(product.unit)}</td>
+            <td><button class="btn btn-outline btn-sm" type="button" data-edit-product="${escapeHtml(product.id)}">Manage</button> <button class="btn btn-primary btn-sm" type="button" data-request-stock="${escapeHtml(product.id)}">Request stock</button> <button class="btn btn-danger btn-sm" type="button" data-delete-product="${escapeHtml(product.id)}">Delete</button></td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="5" class="empty">No inventory products yet.</td></tr>';
+
+        const requests = await apiGet('/inventory/requests');
+        requestRows.innerHTML = requests.length ? requests.map((request) => `<tr>
+          <td><strong>${escapeHtml(request.itemName)}</strong></td>
+          <td>${Number(request.quantity)} ${escapeHtml(request.unit || '')}</td>
+          <td>${escapeHtml(request.requestedBy)}</td>
+          <td>${escapeHtml(request.notes || '—')}</td>
+          <td>${statusBadge(request.status)}</td>
+          <td>${isAdmin && request.status === 'pending' ? `<button class="btn btn-success btn-sm" type="button" data-review-request="${escapeHtml(request.id)}" data-status="approved">Approve</button> <button class="btn btn-danger btn-sm" type="button" data-review-request="${escapeHtml(request.id)}" data-status="rejected">Reject</button>` : '—'}</td>
+        </tr>`).join('') : '<tr><td colspan="6" class="empty">No stock requests yet.</td></tr>';
+      } catch (error) {
+        productRows.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(error.message)}</td></tr>`;
+      }
+    }
+
+    document.getElementById('add-product').addEventListener('click', () => {
+      openModal('Add Product', productForm());
+      bindProductForm({});
+    });
+
+    productRows.addEventListener('click', async (event) => {
+      const edit = event.target.closest('[data-edit-product]');
+      const request = event.target.closest('[data-request-stock]');
+      const remove = event.target.closest('[data-delete-product]');
+      if (edit) {
+        try {
+          const product = (await apiGet('/inventory/products')).find((item) => item.id === edit.dataset.editProduct);
+          if (!product) throw new Error('Inventory item not found.');
+          openModal('Manage Product', productForm(product));
+          bindProductForm(product);
+        } catch (error) { alert(error.message); }
+      }
+      if (request) {
+        try {
+          const product = (await apiGet('/inventory/products')).find((item) => item.id === request.dataset.requestStock);
+          if (!product) throw new Error('Inventory item not found.');
+          openModal('Request Stock', requestForm(product));
+          document.getElementById('request-form').addEventListener('submit', async (submitEvent) => {
+            submitEvent.preventDefault();
+            const form = submitEvent.currentTarget;
+            try {
+              await apiPost('/inventory/requests', {
+                itemId: product.id,
+                quantity: Number(form.elements.namedItem('quantity').value),
+                notes: form.elements.namedItem('notes').value.trim(),
+              });
+              closeModal();
+              await loadInventory();
+            } catch (error) { alert(error.message); }
+          });
+        } catch (error) { alert(error.message); }
+      }
+      if (remove && window.confirm('Delete this inventory product? Existing stock requests will remain in the request history.')) {
+        try {
+          await apiDelete(`/inventory/products/${encodeURIComponent(remove.dataset.deleteProduct)}`);
+          await loadInventory();
+        } catch (error) { alert(error.message); }
+      }
+    });
+
+    requestRows.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-review-request]');
+      if (!button) return;
+      try {
+        await apiPatch(`/inventory/requests/${encodeURIComponent(button.dataset.reviewRequest)}`, { status: button.dataset.status });
+        await loadInventory();
+      } catch (error) { alert(error.message); }
+    });
+
+    loadRole().then(loadInventory).catch((error) => {
+      productRows.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(error.message)}</td></tr>`;
+    });
+  </script>
+</body>
+</html>

@@ -33,6 +33,7 @@ const { createToken: createCustomerToken, parseToken: parseCustomerToken } = req
 const { isStrongPassword } = require('./util/passwordPolicy');
 const { releaseGroomingBookingSlots, hotelReservationLockIds, releaseBookingSlotsByIds } = require('./util/bookingLocks');
 const { groomingRecordDuration } = require('./util/bookingCalculations');
+const customerBookingController = require('./controllers/customerBookingController');
 const ADMIN_USERNAME = 'ADMIN';
 const safeReturnPath = (value, fallback) => {
   const target = String(value || '');
@@ -276,6 +277,9 @@ app.put('/customer/profile', async (req, res) => {
   }
 });
 
+app.post('/customer/bookings/:type/:id/cancel', customerBookingController.cancelBooking);
+app.post('/customer/bookings/:type/:id/reschedule', customerBookingController.rescheduleBooking);
+
 const findAdminAccount = async () => {
   if (!db.Admin) return null;
   try {
@@ -307,18 +311,28 @@ app.post('/admin/login', (req, res) => {
   (async () => {
     const rawPassword = String(req.body && req.body.password || '');
     const normalizedPassword = rawPassword.replace(/\s+/g, '');
-    const username = String(req.body && req.body.username || '').trim().toUpperCase();
-    if (username !== ADMIN_USERNAME || !normalizedPassword) return res.redirect('/admin/login.html?error=1');
+    const identifier = String(req.body && req.body.username || '').trim();
+    const username = identifier.toUpperCase();
+    if (!identifier || !rawPassword) return res.redirect('/admin/login.html?error=1');
     try {
-      const admin = await findAdminAccount();
-      const envPass = process.env.ADMIN_PASS ? String(process.env.ADMIN_PASS).replace(/\s+/g, '') : '';
-      const dbMatch = admin && admin.passwordHash && bcrypt.compareSync(normalizedPassword, admin.passwordHash);
-      const envMatch = Boolean(envPass && normalizedPassword === envPass);
-
-      if (dbMatch || envMatch) {
-        const token = createToken(ADMIN_USERNAME);
-        res.cookie('admin_token', token, { path: '/', httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
-        return res.redirect('/admin/index.html');
+      if (username === ADMIN_USERNAME) {
+        const admin = await findAdminAccount();
+        const envPass = process.env.ADMIN_PASS ? String(process.env.ADMIN_PASS).replace(/\s+/g, '') : '';
+        const dbMatch = admin && admin.passwordHash && bcrypt.compareSync(normalizedPassword, admin.passwordHash);
+        const envMatch = Boolean(envPass && normalizedPassword === envPass);
+        if (dbMatch || envMatch) {
+          const token = createToken(ADMIN_USERNAME);
+          res.cookie('admin_token', token, { path: '/', httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+          return res.redirect('/admin/index.html');
+        }
+      } else {
+        const employee = await db.Employee.findOne({ where: { email: identifier.toLowerCase() } });
+        if (employee && employee.status === 'active' && employee.passwordHash
+          && bcrypt.compareSync(rawPassword, employee.passwordHash)) {
+          const token = createToken(`STAFF:${employee.id}`);
+          res.cookie('admin_token', token, { path: '/', httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+          return res.redirect('/admin/index.html');
+        }
       }
     } catch (e) {
       console.error(e);
@@ -332,11 +346,21 @@ app.get('/admin/logout', (req, res) => {
   res.redirect('/');
 });
 
-app.get('/admin/nav-status', (req, res) => {
+app.get('/admin/nav-status', async (req, res) => {
   const raw = req.headers.cookie || '';
   const cookie = raw.split(';').map((part) => part.trim()).find((part) => part.startsWith('admin_token='));
   const token = cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : null;
-  res.json({ authenticated: parseToken(token) === ADMIN_USERNAME });
+  const identity = parseToken(token);
+  if (identity === ADMIN_USERNAME) return res.json({ authenticated: true, role: 'admin' });
+  if (typeof identity === 'string' && identity.startsWith('STAFF:')) {
+    try {
+      const employee = await db.Employee.findByPk(identity.slice('STAFF:'.length));
+      if (employee && employee.status === 'active') return res.json({ authenticated: true, role: 'staff', name: employee.name });
+    } catch (error) {
+      console.error('Staff session lookup failed:', error);
+    }
+  }
+  return res.json({ authenticated: false, role: null });
 });
 
 app.post('/admin/change-password', (req, res) => {
@@ -382,7 +406,7 @@ app.use((req, res, next) => {
 });
 
 // Protect admin static files. Allow login and registration pages to pass through.
-app.use('/admin', (req, res, next) => {
+app.use('/admin', async (req, res, next) => {
   if (req.path === '/login' || req.path === '/login.html' || req.path === '/register' || req.path === '/register.html') {
     return next();
   }
@@ -394,8 +418,20 @@ app.use('/admin', (req, res, next) => {
   };
   const token = getCookie('admin_token');
   const user = parseToken(token);
-  if (user !== ADMIN_USERNAME) return res.redirect('/admin/login.html');
-  next();
+  if (user === ADMIN_USERNAME) return next();
+  if (typeof user === 'string' && user.startsWith('STAFF:')) {
+    try {
+      const employee = await db.Employee.findByPk(user.slice('STAFF:'.length));
+      if (employee && employee.status === 'active') {
+        const staffPages = new Set(['/', '/index.html', '/grooming.html', '/hotel.html', '/inventory.html']);
+        if (!staffPages.has(req.path)) return res.status(403).send('Admin access required.');
+        return next();
+      }
+    } catch (error) {
+      console.error('Staff page access check failed:', error);
+    }
+  }
+  return res.redirect('/admin/login.html');
 }, express.static(path.join(__dirname, 'public', 'admin')));
 
 // Serve the frontend (public site) as static files.

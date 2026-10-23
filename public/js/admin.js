@@ -2,18 +2,33 @@
 
 const ADMIN_PAGES = [
   { href: '/admin/index.html', label: 'Dashboard' },
-  { href: '/admin/customers.html', label: 'Customers' },
-  { href: '/admin/pets.html', label: 'Pets' },
+  { href: '/admin/index.html#revenue', label: 'Reports' },
   { href: '/admin/grooming.html', label: 'Grooming' },
   { href: '/admin/hotel.html', label: 'Hotel' },
+  { href: '/admin/inventory.html', label: 'Inventory' },
+  { href: '/admin/customers.html', label: 'Customers' },
+  { href: '/admin/pets.html', label: 'Pets' },
   { href: '/admin/pos.html', label: 'Point of Sale' },
+  { href: '/admin/employees.html', label: 'Employees' },
   { href: '/admin/change-password.html', label: 'Change Password' },
 ];
 
-function renderSidebar(activeLabel) {
-    const links = ADMIN_PAGES.map(
-      (p) => `<a href="${p.href}" class="${p.label === activeLabel ? 'active' : ''}">${p.label}</a>`
-    ).join('');
+async function renderSidebar(activeLabel) {
+  let role = null;
+  try {
+    const response = await fetch('/admin/nav-status', { credentials: 'include' });
+    const status = await response.json();
+    if (!status.authenticated) return window.location.assign('/admin/login.html');
+    role = status.role;
+  } catch (error) {
+    console.error('Unable to load account role:', error);
+  }
+  const pages = role === 'admin'
+    ? ADMIN_PAGES
+    : ADMIN_PAGES.filter((page) => ['Dashboard', 'Reports', 'Grooming', 'Hotel', 'Inventory'].includes(page.label));
+  const links = pages.map(
+    (page) => `<a href="${page.href}" class="${page.label === activeLabel ? 'active' : ''}">${page.label}</a>`
+  ).join('');
   document.getElementById('sidebar').innerHTML = `
     <a class="brand" href="/admin/index.html">Glam Grooms Pet Spa & Hotel</a>
     ${links}

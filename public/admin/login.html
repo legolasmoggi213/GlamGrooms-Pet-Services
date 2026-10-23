@@ -17,11 +17,11 @@
 
   <div class="customer-login-card">
     <h2>Admin Login</h2>
-    <p id="admin-login-message" class="text-error" hidden>Use the admin username and password configured for this site.</p>
+    <p id="admin-login-message" class="text-error" hidden>Use the ADMIN credentials or your staff email and password.</p>
     <form method="POST" action="/admin/login">
       <div class="field">
-        <label for="username">Username</label>
-        <input id="username" name="username" type="text" value="ADMIN" autocomplete="username" autocapitalize="characters" required />
+        <label for="username">Admin username or staff email</label>
+        <input id="username" name="username" type="text" value="ADMIN" autocomplete="username" required />
       </div>
       <div class="field">
         <label for="password">Password</label>
@@ -39,7 +39,7 @@
     const message = document.getElementById('admin-login-message');
     if (params.get('error') === '1') {
       message.hidden = false;
-      message.textContent = 'Invalid admin username or password. Use ADMIN and the configured admin password.';
+      message.textContent = 'Invalid username or password. Use ADMIN credentials or your staff account.';
     }
   </script>
 

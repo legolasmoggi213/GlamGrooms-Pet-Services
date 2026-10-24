@@ -312,10 +312,11 @@ app.post('/admin/login', (req, res) => {
     const rawPassword = String(req.body && req.body.password || '');
     const normalizedPassword = rawPassword.replace(/\s+/g, '');
     const identifier = String(req.body && req.body.username || '').trim();
-    const username = identifier.toUpperCase();
+    const normalizedIdentifier = identifier.toLowerCase();
+    const adminUsername = identifier.toUpperCase();
     if (!identifier || !rawPassword) return res.redirect('/admin/login.html?error=1');
     try {
-      if (username === ADMIN_USERNAME) {
+      if (adminUsername === ADMIN_USERNAME) {
         const admin = await findAdminAccount();
         const envPass = process.env.ADMIN_PASS ? String(process.env.ADMIN_PASS).replace(/\s+/g, '') : '';
         const dbMatch = admin && admin.passwordHash && bcrypt.compareSync(normalizedPassword, admin.passwordHash);
@@ -326,7 +327,10 @@ app.post('/admin/login', (req, res) => {
           return res.redirect('/admin/index.html');
         }
       } else {
-        const employee = await db.Employee.findOne({ where: { email: identifier.toLowerCase() } });
+        const employee = await db.Employee.findOne({ where: { email: normalizedIdentifier } })
+          || await db.Employee.findOne({ where: { email: identifier } })
+          || (await db.Employee.findAll()).find((entry) => String(entry.email || '').trim().toLowerCase() === normalizedIdentifier);
+
         if (employee && employee.status === 'active' && employee.passwordHash
           && bcrypt.compareSync(rawPassword, employee.passwordHash)) {
           const token = createToken(`STAFF:${employee.id}`);

@@ -1,5 +1,5 @@
 const { GroomingAppointment, Customer, Pet } = require('../models');
-const { sendReservationTicket } = require('../util/mailer');
+const { sendReservationTicket, getEmailDeliveryConfig } = require('../util/mailer');
 const { groomingLockIds, releaseGroomingBookingSlots, releaseGroomingLockIds, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
 const { validateTime, validatePickupTime, validateAppointmentDuration } = require('../util/businessHours');
 const { groomingBookingDuration, groomingRecordDuration, timeToMinutes, validateFutureBookingTime } = require('../util/bookingCalculations');
@@ -258,24 +258,35 @@ const updateAppointment = async (req, res, next) => {
     }
     const full = await GroomingAppointment.findByPk(appointment.id, { include: includeAll });
     let emailSent = false;
+    let emailError = null;
     if (shouldSendTicket) {
-      const [customer, pets] = await Promise.all([
-        Customer.findByPk(full.customerId),
-        Promise.all((full.petIds || (full.petId ? [full.petId] : [])).map((id) => Pet.findByPk(id))),
-      ]);
       try {
-        if (customer) emailSent = await sendReservationTicket({
-          bookingRecord: full,
-          type: 'grooming',
-          to: customer.email,
-          customer: full.customerDetails || customer,
-          pets: pets.filter(Boolean),
-        });
+        const [customer, pets] = await Promise.all([
+          Customer.findByPk(full.customerId),
+          Promise.all((full.petIds || (full.petId ? [full.petId] : [])).map((id) => Pet.findByPk(id))),
+        ]);
+        if (!customer || !customer.email) {
+          emailError = 'The customer record has no email address.';
+        } else {
+          emailSent = await sendReservationTicket({
+            bookingRecord: full,
+            type: 'grooming',
+            to: customer.email,
+            customer: full.customerDetails || customer,
+            pets: pets.filter(Boolean),
+          });
+          if (!emailSent) {
+            emailError = getEmailDeliveryConfig().configured
+              ? 'The email provider did not send the ticket. Check Render logs and verify your sender settings.'
+              : 'Email delivery is not configured. Add RESEND_API_KEY and RESEND_FROM_EMAIL, or SMTP_USER and SMTP_PASS, in Render Environment.';
+          }
+        }
       } catch (mailError) {
         console.error('Grooming reservation ticket email failed:', mailError);
+        emailError = 'The email provider returned an error. Check Render logs and verify your sender settings.';
       }
     }
-    res.json({ ...(await addRelatedRecords(full)), emailSent });
+    res.json({ ...(await addRelatedRecords(full)), emailSent, emailError });
   } catch (error) {
     next(error);
   }

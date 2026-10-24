@@ -4,9 +4,13 @@ const isPlaceholder = (value) => !value || value.includes('yourgmail.com') || va
 const hasMailConfig = !isPlaceholder(process.env.SMTP_USER) && !isPlaceholder(process.env.SMTP_PASS);
 const smtpPassword = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
 const hasResendConfig = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
+const getEmailDeliveryConfig = () => ({
+  configured: hasResendConfig || hasMailConfig,
+  providers: [hasResendConfig && 'Resend', hasMailConfig && 'SMTP'].filter(Boolean),
+});
 
 if (!hasMailConfig && !hasResendConfig) {
-  console.warn('Booking emails disabled: configure RESEND_API_KEY + RESEND_FROM_EMAIL or SMTP_USER + SMTP_PASS in .env / Railway variables.');
+  console.warn('Booking emails disabled: configure RESEND_API_KEY + RESEND_FROM_EMAIL or SMTP_USER + SMTP_PASS in .env / Render environment variables.');
 }
 
 const transporter = hasMailConfig
@@ -257,4 +261,4 @@ const sendServiceReminder = async ({ to, customerName, type, service, date, time
   });
 };
 
-module.exports = { sendBookingConfirmation, sendPayMongoReceipt, sendReservationTicket, sendServiceReminder };
+module.exports = { sendBookingConfirmation, sendPayMongoReceipt, sendReservationTicket, sendServiceReminder, getEmailDeliveryConfig };

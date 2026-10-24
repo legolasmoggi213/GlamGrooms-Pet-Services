@@ -6,7 +6,7 @@ const hotelController = require('../controllers/hotelController');
 const bookingController = require('../controllers/bookingController');
 const adminController = require('../controllers/adminController');
 const operationsController = require('../controllers/operationsController');
-const { Employee } = require('../models');
+const { Customer, Employee, Pet } = require('../models');
 const { parseToken } = require('../util/adminAuth');
 const { groomingServiceDuration } = require('../util/bookingCalculations');
 
@@ -75,26 +75,40 @@ const adminOrStaff = async (req, res, next) => {
   }
 };
 
-router.use('/customers', adminOnly);
-router.use('/pets', adminOnly);
 router.use('/grooming', adminOrStaff);
 router.use('/hotel', adminOrStaff);
 router.use('/admin', adminOrStaff);
 router.use('/inventory', adminOrStaff);
 
 // Customers
-router.get('/customers', customerController.listCustomers);
-router.get('/customers/:id', customerController.getCustomer);
-router.post('/customers', customerController.createCustomer);
-router.put('/customers/:id', customerController.updateCustomer);
-router.delete('/customers/:id', customerController.deleteCustomer);
+router.get('/customers', adminOrStaff, async (req, res, next) => {
+  if (!req.authEmployee) return customerController.listCustomers(req, res, next);
+  try {
+    const customers = await Customer.findAll({ order: [['createdAt', 'DESC']] });
+    res.json(customers.map(({ id, name }) => ({ id, name })));
+  } catch (error) {
+    next(error);
+  }
+});
+router.get('/customers/:id', adminOnly, customerController.getCustomer);
+router.post('/customers', adminOnly, customerController.createCustomer);
+router.put('/customers/:id', adminOnly, customerController.updateCustomer);
+router.delete('/customers/:id', adminOnly, customerController.deleteCustomer);
 
 // Pets
-router.get('/pets', petController.listPets);
-router.get('/pets/:id', petController.getPet);
-router.post('/pets', petController.createPet);
-router.put('/pets/:id', petController.updatePet);
-router.delete('/pets/:id', petController.deletePet);
+router.get('/pets', adminOrStaff, async (req, res, next) => {
+  if (!req.authEmployee) return petController.listPets(req, res, next);
+  try {
+    const pets = await Pet.findAll({ order: [['createdAt', 'DESC']] });
+    res.json(pets.map(({ id, name, customerId }) => ({ id, name, customerId })));
+  } catch (error) {
+    next(error);
+  }
+});
+router.get('/pets/:id', adminOnly, petController.getPet);
+router.post('/pets', adminOnly, petController.createPet);
+router.put('/pets/:id', adminOnly, petController.updatePet);
+router.delete('/pets/:id', adminOnly, petController.deletePet);
 
 // Grooming appointments
 router.get('/grooming', groomingController.listAppointments);

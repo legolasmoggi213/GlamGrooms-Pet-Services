@@ -55,6 +55,7 @@
   const petCount = document.getElementById('pet-count');
   const petFields = document.getElementById('pet-fields');
   const form = document.getElementById('hotel-form');
+  const getField = (name) => form?.elements?.namedItem?.(name) || document.querySelector(`[name="${name}"]`);
   let roomAvailable = false;
   let availabilityRequest = 0;
   let quoteRequest = 0;
@@ -94,6 +95,7 @@
     const petText = pets.map((pet) => `${pet.name || 'Unnamed pet'} (${pet.species}, age ${pet.age ?? 'not entered'}, ${pet.breed || 'breed not entered'})`).join(', ');
     const quoteKey = JSON.stringify({ checkIn: checkInInput.value, checkOut: checkOutInput.value, roomTypes: pets.map((pet) => pet.roomType) });
     const quote = latestQuoteKey === quoteKey ? latestQuote : null;
+    const notesValue = getField('notes')?.value || '';
     const rows = [
       ...pets.map((pet, index) => {
         const roomField = petFields.querySelector(`[name="roomType-${index}"]`);
@@ -111,7 +113,7 @@
         ...(quote.longStayDiscount ? [['5+ night discount', `−${fmtMoney(quote.longStayDiscount)}`]] : []),
         ...(quote.complimentaryBath ? [['Complimentary bath & dry', 'Included']] : []),
       ] : []),
-      ['Special care', form.notes.value || 'Not entered'],
+      ['Special care', notesValue || 'Not entered'],
       ['Total', quote ? fmtMoney(quote.total) : latestQuoteMessage],
     ];
 
@@ -350,12 +352,19 @@ const checkAvailability = async () => {
     submitBtn.disabled = true;
     submitBtn.textContent = 'Reserving...';
 
+    const customerName = getField('name')?.value || '';
+    const customerEmail = getField('email')?.value || '';
+    const customerPhone = getField('phone')?.value || '';
+    const customerAddress = getField('address')?.value || '';
+    const notesValue = getField('notes')?.value || '';
+    const paymentMethod = form.querySelector('input[name="paymentMethod"]:checked')?.value || 'cash';
+
     const payload = {
       customer: {
-        name: form.name.value.trim(),
-        email: form.email.value.trim(),
-        phone: form.phone.value.trim(),
-        address: form.address.value.trim() || null,
+        name: customerName.trim(),
+        email: customerEmail.trim(),
+        phone: customerPhone.trim(),
+        address: customerAddress.trim() || null,
       },
       pets: collectPets(),
       roomType: collectPets()[0]?.roomType || roomSelect.value,
@@ -363,8 +372,8 @@ const checkAvailability = async () => {
       checkInTime: checkInTime.value,
       checkOut: checkOutInput.value,
       checkOutTime: checkOutTime.value,
-      notes: form.notes.value.trim() || null,
-      paymentMethod: form.paymentMethod.value,
+      notes: notesValue.trim() || null,
+      paymentMethod,
     };
 
     try {

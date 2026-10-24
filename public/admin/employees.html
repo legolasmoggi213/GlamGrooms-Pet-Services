@@ -31,12 +31,22 @@
     renderSidebar('Employees');
     const rows = document.getElementById('employee-rows');
 
+    function isStrongPassword(value) {
+      return typeof value === 'string'
+        && value.length >= 8
+        && /[a-z]/.test(value)
+        && /[A-Z]/.test(value)
+        && /\d/.test(value)
+        && /[^A-Za-z0-9]/.test(value);
+    }
+
     function employeeForm(employee = {}) {
       return `<form id="employee-form" class="form-grid">
         <div class="field full"><label for="employee-name">Name</label><input id="employee-name" name="name" maxlength="120" required value="${escapeHtml(employee.name || '')}"></div>
         <div class="field full"><label for="employee-email">Email</label><input id="employee-email" name="email" type="email" maxlength="254" required value="${escapeHtml(employee.email || '')}"></div>
         <div class="field full"><label for="employee-phone">Phone</label><input id="employee-phone" name="phone" maxlength="40" value="${escapeHtml(employee.phone || '')}"></div>
-        <div class="field full"><label for="employee-password">${employee.id ? 'New password (leave blank to keep current)' : 'Temporary password'}</label><input id="employee-password" name="password" type="password" minlength="8" ${employee.id ? '' : 'required'} autocomplete="new-password"></div>
+        <div class="field full"><label for="employee-password">${employee.id ? 'New password (leave blank to keep current)' : 'Temporary password'}</label><input id="employee-password" name="password" type="password" minlength="8" ${employee.id ? '' : 'required'} autocomplete="new-password" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}" aria-describedby="employee-password-help"></div>
+        <div id="employee-password-help" class="field-note full">Use at least 8 characters with uppercase, lowercase, a number, and a symbol.</div>
         <div class="form-actions full"><button class="btn btn-primary" type="submit">Save Employee</button><button class="btn btn-outline" type="button" onclick="closeModal()">Cancel</button></div>
       </form>`;
     }
@@ -45,12 +55,22 @@
       document.getElementById('employee-form').addEventListener('submit', async (event) => {
         event.preventDefault();
         const form = event.currentTarget;
+        const password = form.elements.namedItem('password').value;
+        if (!employee.id && !password) {
+          alert('Please enter a temporary password for the employee.');
+          return;
+        }
+        if (password && !isStrongPassword(password)) {
+          alert('Password must be at least 8 characters, include uppercase and lowercase letters, a number, and a special character.');
+          return;
+        }
+
         const body = {
           name: form.elements.namedItem('name').value.trim(),
           email: form.elements.namedItem('email').value.trim(),
           phone: form.elements.namedItem('phone').value.trim(),
         };
-        if (form.elements.namedItem('password').value) body.password = form.elements.namedItem('password').value;
+        if (password) body.password = password;
         try {
           if (employee.id) await apiPut(`/admin/employees/${encodeURIComponent(employee.id)}`, body);
           else await apiPost('/admin/employees', body);

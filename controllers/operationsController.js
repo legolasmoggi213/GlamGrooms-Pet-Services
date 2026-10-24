@@ -29,8 +29,11 @@ const createEmployee = async (req, res, next) => {
     const email = cleanText(req.body.email, 254).toLowerCase();
     const phone = cleanText(req.body.phone, 40);
     const password = String(req.body.password || '');
-    if (!name || !validEmail(email) || !isStrongPassword(password)) {
-      return res.status(400).json({ error: 'Enter a name, valid email, and a strong initial password.' });
+    if (!name || !validEmail(email)) {
+      return res.status(400).json({ error: 'Enter a valid name and email address.' });
+    }
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters, include uppercase and lowercase letters, a number, and a symbol.' });
     }
     if (await Employee.findOne({ where: { email } })) {
       return res.status(409).json({ error: 'An employee already uses that email.' });
@@ -66,7 +69,7 @@ const updateEmployee = async (req, res, next) => {
     }
     if (req.body.phone !== undefined) updates.phone = cleanText(req.body.phone, 40);
     if (req.body.password) {
-      if (!isStrongPassword(req.body.password)) return res.status(400).json({ error: 'Password does not meet the password policy.' });
+      if (!isStrongPassword(req.body.password)) return res.status(400).json({ error: 'Password must be at least 8 characters, include uppercase and lowercase letters, a number, and a symbol.' });
       updates.passwordHash = bcrypt.hashSync(String(req.body.password), 10);
     }
     await employee.update(updates);

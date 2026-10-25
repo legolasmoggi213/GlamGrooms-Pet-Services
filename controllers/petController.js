@@ -1,4 +1,5 @@
 const { Pet, Customer } = require('../models');
+const { isDigitsOnly } = require('../util/numericValidation');
 
 const toCustomerSummary = (customer) => {
   if (!customer) return null;
@@ -60,6 +61,9 @@ const getPet = async (req, res, next) => {
 const createPet = async (req, res, next) => {
   try {
     const { name, species, breed, age, notes, customerId } = req.body;
+    if (age != null && age !== '' && !isDigitsOnly(age)) {
+      return res.status(400).json({ error: 'Age must contain digits only.' });
+    }
     const customer = await Customer.findByPk(customerId);
     if (!customer) {
       return res.status(400).json({ error: 'A valid customerId is required' });
@@ -79,6 +83,9 @@ const updatePet = async (req, res, next) => {
       return res.status(404).json({ error: 'Pet not found' });
     }
     const { name, species, breed, age, notes, customerId } = req.body;
+    if (age != null && age !== '' && !isDigitsOnly(age)) {
+      return res.status(400).json({ error: 'Age must contain digits only.' });
+    }
     let customer = null;
     if (customerId) {
       customer = await Customer.findByPk(customerId);

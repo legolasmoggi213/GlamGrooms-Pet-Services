@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { Employee, InventoryItem, StockRequest } = require('../models');
 const { isStrongPassword } = require('../util/passwordPolicy');
+const { isDecimalNumber, isDigitsOnly, isOptionalPhoneNumber } = require('../util/numericValidation');
 
 const employeeResponse = (employee) => ({
   id: employee.id,
@@ -28,6 +29,7 @@ const createEmployee = async (req, res, next) => {
     const name = cleanText(req.body.name, 120);
     const email = cleanText(req.body.email, 254).toLowerCase();
     const phone = cleanText(req.body.phone, 40);
+    if (!isOptionalPhoneNumber(phone)) return res.status(400).json({ error: 'Phone number must contain digits only.' });
     const password = String(req.body.password || '');
     if (!name || !validEmail(email)) {
       return res.status(400).json({ error: 'Enter a valid name and email address.' });
@@ -67,7 +69,10 @@ const updateEmployee = async (req, res, next) => {
         return res.status(409).json({ error: 'An employee already uses that email.' });
       }
     }
-    if (req.body.phone !== undefined) updates.phone = cleanText(req.body.phone, 40);
+    if (req.body.phone !== undefined) {
+      updates.phone = cleanText(req.body.phone, 40);
+      if (!isOptionalPhoneNumber(updates.phone)) return res.status(400).json({ error: 'Phone number must contain digits only.' });
+    }
     if (req.body.password) {
       if (!isStrongPassword(req.body.password)) return res.status(400).json({ error: 'Password must be at least 8 characters, include uppercase and lowercase letters, a number, and a symbol.' });
       updates.passwordHash = bcrypt.hashSync(String(req.body.password), 10);
@@ -91,9 +96,15 @@ const normalizeProduct = (body, partial = false) => {
   for (const [field, maxLength] of [['name', 120], ['category', 80], ['unit', 30]]) {
     if (!partial || body[field] !== undefined) product[field] = cleanText(body[field], maxLength);
   }
-  if (!partial || body.price !== undefined) product.price = Number(body.price);
+  if (!partial || body.price !== undefined) {
+    if (!isDecimalNumber(body.price)) return { error: 'Product price must contain numbers only.' };
+    product.price = Number(body.price);
+  }
   for (const field of ['quantity', 'reorderLevel']) {
-    if (!partial || body[field] !== undefined) product[field] = Number(body[field]);
+    if (!partial || body[field] !== undefined) {
+      if (!isDigitsOnly(body[field])) return { error: 'Quantity and reorder level must contain whole numbers only.' };
+      product[field] = Number(body[field]);
+    }
   }
   if ((!partial && (!product.name || !product.category || !product.unit))
     || (product.name !== undefined && !product.name)
@@ -157,6 +168,9 @@ const listStockRequests = async (req, res, next) => {
 
 const createStockRequest = async (req, res, next) => {
   try {
+    if (!isDigitsOnly(req.body.quantity)) {
+      return res.status(400).json({ error: 'Requested quantity must contain whole numbers only.' });
+    }
     const item = await InventoryItem.findByPk(req.body.itemId);
     const quantity = Number(req.body.quantity);
     if (!item) return res.status(404).json({ error: 'Inventory item not found.' });

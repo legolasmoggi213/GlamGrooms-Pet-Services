@@ -128,9 +128,9 @@ form.addEventListener('submit', async (event) => {
     }
     if (form.action.endsWith('/customer/register')) {
       const phoneInput = form.elements.phone;
-      if (phoneInput && /[^0-9+()\-\s]/.test(phoneInput.value)) {
+      if (phoneInput && /[^0-9]/.test(phoneInput.value)) {
         phoneInput.focus();
-        showAuthError({ message: 'Phone number must contain only numbers and valid formatting characters.' });
+        showAuthError({ message: 'Phone number must contain digits only.' });
         return;
       }
       const termsCheckbox = document.getElementById('privacy-panel-accept');

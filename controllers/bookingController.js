@@ -18,6 +18,7 @@ const { hotelStayAvailability, claimHotelStayCapacity, HOTEL_PET_CAPACITY } = re
 const { validateTime, validatePickupTime, validateAppointmentDuration } = require('../util/businessHours');
 const { sendPayMongoReceipt, sendReservationTicket } = require('../util/mailer');
 const { markBookingPaidAndConfirmed } = require('../util/paymentConfirmation');
+const { isDigitsOnly, isOptionalPhoneNumber } = require('../util/numericValidation');
 const {
   quoteHotelStay,
   validateFutureDate,
@@ -170,6 +171,9 @@ const cleanupAbandonedPayMongoBookings = async () => {
     if (!customerData || !petsData[0]) {
       return res.status(400).json({ error: 'Customer and pet information are required' });
     }
+    if (!isOptionalPhoneNumber(customerData.phone)) {
+      return res.status(400).json({ error: 'Phone number must contain digits only.' });
+    }
     const signedInCustomer = await getSignedInCustomer(req);
     if (!signedInCustomer || String(signedInCustomer.email).toLowerCase() !== String(customerData.email).trim().toLowerCase()) {
       return res.status(401).json({ error: 'Please sign in with the customer account used for this booking.' });
@@ -182,7 +186,7 @@ const cleanupAbandonedPayMongoBookings = async () => {
     if (petsData.some((pet) => !['dog', 'cat'].includes(String(pet.species).toLowerCase()) || !String(pet.name || '').trim())) {
       return res.status(400).json({ error: 'Our services are available for cats and dogs only, and each pet needs a name' });
     }
-    if (petsData.some((pet) => !String(pet.breed || '').trim() || pet.age === undefined || pet.age === null || String(pet.age).trim() === '' || !Number.isFinite(Number(pet.age)) || Number(pet.age) < 0)) {
+    if (petsData.some((pet) => !String(pet.breed || '').trim() || !isDigitsOnly(pet.age) || Number(pet.age) > 50)) {
       return res.status(400).json({ error: 'Each pet needs a breed and valid age' });
     }
     if (petServiceKeys.some((petService) => !Object.prototype.hasOwnProperty.call(SERVICE_PRICES, petService))) {
@@ -296,6 +300,9 @@ const bookHotel = async (req, res, next) => {
     if (!customerData || !petsData[0]) {
       return res.status(400).json({ error: 'Customer and pet information are required' });
     }
+    if (!isOptionalPhoneNumber(customerData.phone)) {
+      return res.status(400).json({ error: 'Phone number must contain digits only.' });
+    }
     const signedInCustomer = await getSignedInCustomer(req);
     if (!signedInCustomer || String(signedInCustomer.email).toLowerCase() !== String(customerData.email).trim().toLowerCase()) {
       return res.status(401).json({ error: 'Please sign in with the customer account used for this booking.' });
@@ -308,7 +315,7 @@ const bookHotel = async (req, res, next) => {
     if (petsData.some((pet) => !['dog', 'cat'].includes(String(pet.species).toLowerCase()) || !String(pet.name || '').trim())) {
       return res.status(400).json({ error: 'Our services are available for cats and dogs only, and each pet needs a name' });
     }
-    if (petsData.some((pet) => !String(pet.breed || '').trim() || pet.age === undefined || pet.age === null || String(pet.age).trim() === '' || !Number.isFinite(Number(pet.age)) || Number(pet.age) < 0)) {
+    if (petsData.some((pet) => !String(pet.breed || '').trim() || !isDigitsOnly(pet.age) || Number(pet.age) > 50)) {
       return res.status(400).json({ error: 'Each pet needs a breed and valid age' });
     }
     if (petRoomTypes.some((petRoomType) => !Object.prototype.hasOwnProperty.call(ROOM_PRICES, petRoomType))) {

@@ -105,6 +105,12 @@
     let paymentRetryStarted = false;
     let autoRefresh = null;
 
+    const bookingCreatedAt = (item) => {
+      const timestamp = item.createdAt || item.date || item.checkIn;
+      const time = timestamp instanceof Date ? timestamp.getTime() : new Date(timestamp).getTime();
+      return Number.isNaN(time) ? 0 : time;
+    };
+
     if (showSuccessToast) {
       const toast = document.getElementById('toast');
       toast.classList.add('show');
@@ -171,10 +177,23 @@
 
         const editButton = document.getElementById('edit-profile-btn');
         const editForm = document.getElementById('profile-edit');
+        const phoneInput = editForm.elements.namedItem('phone');
+        phoneInput.type = 'tel';
+        phoneInput.inputMode = 'numeric';
+        phoneInput.pattern = '[0-9]*';
+        phoneInput.value = phoneInput.value.replace(/[^0-9]/g, '');
+        phoneInput.addEventListener('input', () => {
+          phoneInput.value = phoneInput.value.replace(/[^0-9]/g, '');
+        });
         editButton.addEventListener('click', () => editForm.classList.add('open'));
         document.getElementById('cancel-profile-btn').addEventListener('click', () => editForm.classList.remove('open'));
         editForm.addEventListener('submit', async (event) => {
           event.preventDefault();
+          if (/[^0-9]/.test(phoneInput.value)) {
+            phoneInput.focus();
+            alert('Phone number must contain digits only.');
+            return;
+          }
           const formData = new FormData(editForm);
           const response = await fetch('/customer/profile', {
             method: 'PUT',
@@ -201,7 +220,9 @@
             `).join('')}</ul>`
           : '<div class="empty-state">No pets registered yet.</div>';
 
-        const grooming = (data.grooming || []).map(item => {
+        const groomingBookings = [...(data.grooming || [])].sort((a, b) => bookingCreatedAt(b) - bookingCreatedAt(a));
+        const hotelBookings = [...(data.hotel || [])].sort((a, b) => bookingCreatedAt(b) - bookingCreatedAt(a));
+        const grooming = groomingBookings.map(item => {
           const statusClass = item.status === 'completed' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
           const serviceSummary = Array.isArray(item.petServices) && item.petServices.length
             ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ')
@@ -220,7 +241,7 @@
           `;
         }).join('') || '<div class="empty-state">No grooming appointments yet.</div>';
 
-        const hotel = (data.hotel || []).map(item => {
+        const hotel = hotelBookings.map(item => {
           const statusClass = item.status === 'checked-out' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
           const roomSummary = Array.isArray(item.petRooms) && item.petRooms.length
             ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ')
@@ -240,13 +261,13 @@
         }).join('') || '<div class="empty-state">No hotel reservations yet.</div>';
 
         const recent = [
-          ...(data.grooming || []).map(item => ({ type: 'Grooming', bookingType: 'grooming', booking: item, date: item.date, createdAt: item.createdAt, label: Array.isArray(item.petServices) && item.petServices.length ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ') : (item.service || 'Grooming'), details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
-          ...(data.hotel || []).map(item => ({ type: 'Hotel', bookingType: 'hotel', booking: item, date: item.checkIn, createdAt: item.createdAt, label: Array.isArray(item.petRooms) && item.petRooms.length ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ') : `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
-        ].sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)).slice(0, 5);
+          ...groomingBookings.map(item => ({ type: 'Grooming', bookingType: 'grooming', booking: item, date: item.date, createdAt: item.createdAt, label: Array.isArray(item.petServices) && item.petServices.length ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ') : (item.service || 'Grooming'), details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
+          ...hotelBookings.map(item => ({ type: 'Hotel', bookingType: 'hotel', booking: item, date: item.checkIn, createdAt: item.createdAt, label: Array.isArray(item.petRooms) && item.petRooms.length ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ') : `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
+        ].sort((a, b) => bookingCreatedAt(b.booking) - bookingCreatedAt(a.booking)).slice(0, 5);
         const recentHtml = recent.length
           ? `<ul class="transaction-list">${recent.map(item => {
               const statusClass = ['completed', 'checked-out'].includes(item.status) ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
-              return `<li><div><strong>${escapeHtml(item.type)}: ${escapeHtml(item.label)}</strong><div class="transaction-meta">${escapeHtml(item.details)} • ${escapeHtml(item.pets)}</div>${paymentReceiptMarkup(item.booking, item.bookingType, p)}</div><span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span></li>`;
+              return recentBookingCardMarkup(item, pets, p, statusClass);
             }).join('')}</ul>`
           : '<div class="empty-state">No recent transactions yet.</div>';
 
@@ -370,6 +391,56 @@
 
     function formatMoney(value) {
       return `PHP ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    function recentBookingCardMarkup(item, pets, profile, statusClass) {
+      const booking = item.booking;
+      const isHotel = item.bookingType === 'hotel';
+      const customer = booking.customerDetails || profile;
+      const linkedPets = (booking.petIds || (booking.petId ? [booking.petId] : []))
+        .map(id => pets.find(pet => String(pet.id) === String(id)))
+        .filter(Boolean);
+      const petDetails = linkedPets.length
+        ? linkedPets.map(pet => `${pet.name || 'Pet'}${pet.species ? ` (${pet.species})` : ''}${pet.breed ? `, ${pet.breed}` : ''}${pet.age != null ? `, ${pet.age} yrs` : ''}${pet.medicalHistory ? ` — Medical history: ${pet.medicalHistory}` : ''}`).join('\n')
+        : item.pets;
+      const schedule = isHotel
+        ? `Check-in: ${formatDate(booking.checkIn)}${booking.checkInTime ? ` at ${booking.checkInTime}` : ''}; Check-out: ${formatDate(booking.checkOut)}${booking.checkOutTime ? ` at ${booking.checkOutTime}` : ''}`
+        : `Appointment: ${formatDate(booking.date)} at ${booking.time || 'Time TBA'}${booking.pickupTime ? `; Pickup: ${booking.pickupTime}` : ''}`;
+      const payment = booking.paymentMethod === 'qrph'
+        ? (booking.paymentStatus === 'paid' ? 'Paid online via GCash' : 'GCash payment pending')
+        : (booking.paymentStatus === 'paid' ? 'Cash paid' : 'Cash due at counter');
+      const detailRows = [
+        ['Booking reference', booking.id],
+        ['Booked on', bookingCreatedAt(booking) ? new Date(bookingCreatedAt(booking)).toLocaleString() : 'Not available'],
+        ['Customer', customer.name || 'Customer'],
+        ['Email', customer.email || profile.email],
+        ['Phone', customer.phone || profile.phone],
+        ['Address', customer.address || profile.address],
+        ['Pet(s) and medical records', petDetails],
+        [isHotel ? 'Room(s)' : 'Service(s)', item.label],
+        ['Schedule', schedule],
+        ['Payment', payment],
+        ['Payment reference', booking.paymentReference || 'Not available'],
+        ['Total', formatMoney(isHotel ? booking.totalPrice : booking.price)],
+      ];
+      if (booking.notes) detailRows.splice(detailRows.length - 2, 0, ['Special requests', booking.notes]);
+
+      return `<li class="recent-booking-card">
+        <details class="recent-booking-expand">
+          <summary class="recent-booking-summary">
+            <span class="recent-booking-heading"><strong>${escapeHtml(item.type)}: ${escapeHtml(item.label)}</strong><span class="transaction-meta">${escapeHtml(item.details)} • ${escapeHtml(item.pets)}</span></span>
+            <span class="recent-booking-summary-side"><span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span><span class="recent-booking-toggle" aria-hidden="true"></span></span>
+          </summary>
+          <div class="recent-booking-details">
+            <dl class="recent-booking-detail-list">
+              ${detailRows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || 'Not provided')}</dd></div>`).join('')}
+            </dl>
+            ${bookingActionsMarkup(booking, item.bookingType)}
+            ${paymentReceiptMarkup(booking, item.bookingType, profile)}
+            ${reservationTicketMarkup(booking, item.bookingType, pets, profile)}
+          </div>
+        </details>
+      </li>`;
     }
 
     function paymentReceiptMarkup(item, type, profile) {

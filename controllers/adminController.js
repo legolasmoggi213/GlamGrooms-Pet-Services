@@ -1,5 +1,6 @@
 const { Customer, Pet, GroomingAppointment, HotelReservation, CashTransaction } = require('../models');
 const { firestore } = require('../config/firebase');
+const { isDecimalNumber, isDigitsOnly, isOptionalPhoneNumber } = require('../util/numericValidation');
 const { SERVICE_PRICES } = require('./groomingController');
 const { ROOM_PRICES } = require('./hotelController');
 
@@ -471,6 +472,12 @@ const createCashTransaction = async (req, res, next) => {
       const customerName = String(body.customerName || 'Walk-in customer').trim();
       const paymentMethod = String(body.paymentMethod || 'cash').trim().toLowerCase();
       const hasItems = Array.isArray(body.items);
+      if (!isOptionalPhoneNumber(body.contact)) {
+        return res.status(400).json({ error: 'Contact number must contain digits only.' });
+      }
+      if (hasItems && body.items.some((item) => !isDigitsOnly(item && item.quantity) || !isDecimalNumber(item && item.unitPrice))) {
+        return res.status(400).json({ error: 'Item quantities must be whole numbers and prices must contain numbers only.' });
+      }
       const items = hasItems ? body.items.map((item) => {
         const name = String(item && item.name || '').trim();
         const quantity = Number(item && item.quantity);
@@ -495,6 +502,9 @@ const createCashTransaction = async (req, res, next) => {
       const amount = hasItems
         ? Math.round(items.reduce((total, item) => total + item.lineTotal, 0) * 100) / 100
         : Number(body.amount);
+      if (!hasItems && !isDecimalNumber(body.amount)) {
+        return res.status(400).json({ error: 'Amount must contain numbers only.' });
+      }
       if (!customerName || !description || !Number.isFinite(amount) || amount <= 0 || amount > 10000000) {
         return res.status(400).json({ error: 'Customer name, item or service, and a valid positive amount are required.' });
       }
@@ -609,6 +619,9 @@ const createCashTransaction = async (req, res, next) => {
       const tenderedAmount = paymentMethod === 'cash'
         ? Number(body.tenderedAmount == null ? amount : body.tenderedAmount)
         : amount;
+      if (paymentMethod === 'cash' && body.tenderedAmount != null && !isDecimalNumber(body.tenderedAmount)) {
+        return res.status(400).json({ error: 'Cash received must contain numbers only.' });
+      }
       if (!Number.isFinite(tenderedAmount) || tenderedAmount < amount || tenderedAmount > 10000000) {
         return res.status(400).json({ error: 'Cash received must cover the sale total.' });
       }

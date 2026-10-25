@@ -44,6 +44,7 @@
     const rowsEl = document.getElementById('rows');
     let customersCache = [];
     let petsCache = [];
+    const bookingActionsInProgress = new Set();
 
     const SERVICES = ['bath', 'nail-trim', 'haircut', 'deshedding', 'full-groom'];
     const STATUSES = ['pending', 'scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled'];
@@ -204,11 +205,14 @@
     };
 
     window.confirmAppt = async (id, button) => {
+      const bookingId = String(id);
+      if (bookingActionsInProgress.has(bookingId)) return;
+      bookingActionsInProgress.add(bookingId);
       const originalLabel = button ? button.textContent : 'Confirm';
       if (button) button.disabled = true;
       if (button) button.textContent = originalLabel === 'Send Ticket' ? 'Sending ticket...' : 'Confirming...';
       try {
-        const result = await apiPut(`/grooming/${id}`, { status: 'confirmed' });
+        const result = await apiPut(`/grooming/${encodeURIComponent(bookingId)}`, { status: 'confirmed' });
         if (result.emailSent) {
           showAdminNotice('Appointment confirmed and reservation ticket emailed.');
         } else {
@@ -217,14 +221,15 @@
       } catch (error) {
         showAdminNotice(error.message, 'error');
       } finally {
+        bookingActionsInProgress.delete(bookingId);
+        if (button && button.isConnected) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
         try {
           await loadAppointments();
         } catch (error) {
           showAdminNotice(`Booking action finished, but the appointments could not be refreshed: ${error.message}`, 'error');
-          if (button && button.isConnected) {
-            button.disabled = false;
-            button.textContent = originalLabel;
-          }
         }
       }
     };

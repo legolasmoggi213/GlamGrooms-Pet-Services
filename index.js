@@ -7,6 +7,7 @@ const apiRouter = require('./routes');
 const db = require('./models');
 const { auth } = require('./config/firebase');
 const { notFoundHandler, errorHandler } = require('./util/errorHandler');
+const { isOptionalPhoneNumber } = require('./util/numericValidation');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -93,6 +94,7 @@ app.post('/customer/register-profile', async (req, res) => {
     const address = String(profile.address || '').trim();
     if (!email || email !== profileEmail) return res.status(403).json({ error: 'Registration email does not match the Firebase account' });
     if (!name || !phone || !address) return res.status(400).json({ error: 'Name, phone, and address are required' });
+    if (!isOptionalPhoneNumber(phone)) return res.status(400).json({ error: 'Phone number must contain digits only.' });
 
     let customer = await db.Customer.findOne({ where: { email } });
     const customerProfile = { name, email, phone, address, uid: decoded.uid };
@@ -233,8 +235,8 @@ app.post('/customer/delete-account', async (req, res) => {
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
     const [pets, grooming, hotel] = await Promise.all([
       db.Pet.findAll({ where: { customerId: customer.id } }),
-      db.GroomingAppointment.findAll({ where: { customerId: customer.id }, order: [['date', 'DESC']] }),
-      db.HotelReservation.findAll({ where: { customerId: customer.id }, order: [['checkIn', 'DESC']] }),
+      db.GroomingAppointment.findAll({ where: { customerId: customer.id }, order: [['createdAt', 'DESC']] }),
+      db.HotelReservation.findAll({ where: { customerId: customer.id }, order: [['createdAt', 'DESC']] }),
     ]);
     const attachPet = async (booking) => {
       if (booking.petId) booking.Pet = await db.Pet.findByPk(booking.petId);
@@ -264,6 +266,7 @@ app.put('/customer/profile', async (req, res) => {
     const { name, phone, address } = req.body || {};
     const cleanName = String(name || '').trim();
     if (!cleanName) return res.status(400).json({ error: 'Name is required' });
+    if (!isOptionalPhoneNumber(phone)) return res.status(400).json({ error: 'Phone number must contain digits only.' });
 
     await customer.update({
       name: cleanName,

@@ -52,13 +52,14 @@
       rowsEl.innerHTML = customers
         .map(
           (c) => `
-        <tr>
+        <tr class="customer-row" data-customer-id="${escapeHtml(c.id)}" tabindex="0" aria-label="View details for ${escapeHtml(c.name)}">
           <td>${c.id}</td>
           <td><strong>${escapeHtml(c.name)}</strong></td>
           <td>${escapeHtml(c.email)}</td>
           <td>${escapeHtml(c.phone)}</td>
           <td>${(c.Pets || []).map((p) => escapeHtml(p.name)).join(', ') || '—'}</td>
           <td>
+            <button class="btn btn-outline btn-sm" onclick='event.stopPropagation(); viewCustomerDetails(${escapeHtml(JSON.stringify(c.id))})'>View details</button>
             <button class="btn btn-outline btn-sm" onclick='editCustomer(${escapeHtml(JSON.stringify(c.id))})'>Edit</button>
             <button class="btn btn-danger btn-sm" onclick='removeCustomer(${escapeHtml(JSON.stringify(c.id))}, ${escapeHtml(JSON.stringify(c.name))})'>Delete</button>
           </td>
@@ -66,6 +67,75 @@
         )
         .join('');
     }
+
+    function customerBookingRows(bookings, type) {
+      if (!bookings.length) return '<p class="customer-detail-empty">No bookings on record.</p>';
+      return `<div class="customer-booking-list">${bookings.map((booking) => {
+        const isGrooming = type === 'Grooming';
+        const items = isGrooming
+          ? (booking.petServices || []).map((service) => `${service.petName || 'Pet'}: ${service.service || 'Grooming'}`).join(', ') || booking.service || 'Grooming'
+          : (booking.petRooms || []).map((room) => `${room.petName || 'Pet'}: ${room.roomType || 'Hotel room'}`).join(', ') || booking.roomType || 'Hotel stay';
+        const schedule = isGrooming
+          ? `${fmtDate(booking.date)} at ${escapeHtml(booking.time || 'Time not set')}`
+          : `${fmtDate(booking.checkIn)} to ${fmtDate(booking.checkOut)}`;
+        const amount = isGrooming ? booking.price : booking.totalPrice;
+        return `<article class="customer-booking-item">
+          <div><strong>${escapeHtml(items)}</strong><span>${schedule}</span></div>
+          <div>${statusBadge(booking.status)}<strong>${fmtMoney(amount)}</strong></div>
+          ${booking.notes ? `<p><strong>Special requests:</strong> ${escapeHtml(booking.notes)}</p>` : ''}
+          <small>Payment: ${escapeHtml(booking.paymentStatus || 'unpaid')} · ${escapeHtml(booking.paymentMethod === 'qrph' ? 'GCash (PayMongo)' : 'Cash')}</small>
+        </article>`;
+      }).join('')}</div>`;
+    }
+
+    window.viewCustomerDetails = async (id) => {
+      openModal('Customer details', '<div class="loading">Loading customer details…</div>');
+      try {
+        const customer = await apiGet(`/customers/${encodeURIComponent(id)}`);
+        const pets = customer.Pets || [];
+        const petDetails = pets.length
+          ? `<div class="customer-pet-list">${pets.map((pet) => `<article class="customer-pet-item">
+              <strong>${escapeHtml(pet.name || 'Pet')}</strong>
+              <span>${escapeHtml([pet.species, pet.breed, pet.age != null ? `${pet.age} yrs` : ''].filter(Boolean).join(' · ') || 'Pet details not provided')}</span>
+              <span><strong>Medical history:</strong> ${escapeHtml(pet.medicalHistory || 'None recorded')}</span>
+              ${pet.notes ? `<span><strong>Notes:</strong> ${escapeHtml(pet.notes)}</span>` : ''}
+            </article>`).join('')}</div>`
+          : '<p class="customer-detail-empty">No pets registered.</p>';
+
+        document.getElementById('modal-body').innerHTML = `
+          <section class="customer-detail-section">
+            <h4>Account information</h4>
+            <dl class="customer-detail-grid">
+              <div><dt>Name</dt><dd>${escapeHtml(customer.name || 'Not provided')}</dd></div>
+              <div><dt>Email</dt><dd>${escapeHtml(customer.email || 'Not provided')}</dd></div>
+              <div><dt>Phone</dt><dd>${escapeHtml(customer.phone || 'Not provided')}</dd></div>
+              <div><dt>Address</dt><dd>${escapeHtml(customer.address || 'Not provided')}</dd></div>
+              <div><dt>Customer since</dt><dd>${fmtDateTime(customer.createdAt)}</dd></div>
+            </dl>
+          </section>
+          <section class="customer-detail-section"><h4>Pets and medical records</h4>${petDetails}</section>
+          <section class="customer-detail-section"><h4>Grooming bookings</h4>${customerBookingRows(customer.GroomingAppointments || [], 'Grooming')}</section>
+          <section class="customer-detail-section"><h4>Hotel bookings</h4>${customerBookingRows(customer.HotelReservations || [], 'Hotel')}</section>
+          <div class="form-actions"><button type="button" class="btn btn-outline" onclick="closeModal()">Close</button></div>`;
+      } catch (error) {
+        document.getElementById('modal-body').innerHTML = `
+          <p class="text-error">Unable to load customer details: ${escapeHtml(error.message)}</p>
+          <div class="form-actions"><button type="button" class="btn btn-outline" onclick="closeModal()">Close</button></div>`;
+      }
+    };
+
+    rowsEl.addEventListener('click', (event) => {
+      if (event.target.closest('button')) return;
+      const row = event.target.closest('[data-customer-id]');
+      if (row) viewCustomerDetails(row.dataset.customerId);
+    });
+    rowsEl.addEventListener('keydown', (event) => {
+      if (event.target.closest('button') || !['Enter', ' '].includes(event.key)) return;
+      const row = event.target.closest('[data-customer-id]');
+      if (!row) return;
+      event.preventDefault();
+      viewCustomerDetails(row.dataset.customerId);
+    });
 
     function customerForm(c = {}) {
       return `

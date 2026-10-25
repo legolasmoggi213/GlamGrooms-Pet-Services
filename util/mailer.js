@@ -1,13 +1,25 @@
 const nodemailer = require('nodemailer');
+const EMAIL_DELIVERY_TIMEOUT_MS = 15000;
 
 const isPlaceholder = (value) => !value || value.includes('yourgmail.com') || value.includes('your_16_character');
+const senderAddress = (value) => {
+  const sender = String(value || '').trim();
+  const formattedAddress = sender.match(/<([^<>]+)>/);
+  return (formattedAddress ? formattedAddress[1] : sender).trim();
+};
+const isValidSender = (value) => /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(senderAddress(value));
 const hasMailConfig = !isPlaceholder(process.env.SMTP_USER) && !isPlaceholder(process.env.SMTP_PASS);
 const smtpPassword = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
-const hasResendConfig = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
+const hasResendApiKey = Boolean(process.env.RESEND_API_KEY);
+const hasResendConfig = Boolean(hasResendApiKey && isValidSender(process.env.RESEND_FROM_EMAIL));
 const getEmailDeliveryConfig = () => ({
   configured: hasResendConfig || hasMailConfig,
   providers: [hasResendConfig && 'Resend', hasMailConfig && 'SMTP'].filter(Boolean),
 });
+
+if (hasResendApiKey && !isValidSender(process.env.RESEND_FROM_EMAIL)) {
+  console.warn('Resend email disabled: RESEND_FROM_EMAIL must be a mailbox address or a display name followed by a mailbox address.');
+}
 
 if (!hasMailConfig && !hasResendConfig) {
   console.warn('Booking emails disabled: configure RESEND_API_KEY + RESEND_FROM_EMAIL or SMTP_USER + SMTP_PASS in .env / Render environment variables.');
@@ -17,6 +29,9 @@ const transporter = hasMailConfig
   ? nodemailer.createTransport({
       service: process.env.SMTP_SERVICE || 'gmail',
       family: 4,
+      connectionTimeout: EMAIL_DELIVERY_TIMEOUT_MS,
+      greetingTimeout: EMAIL_DELIVERY_TIMEOUT_MS,
+      socketTimeout: EMAIL_DELIVERY_TIMEOUT_MS,
       auth: {
         user: process.env.SMTP_USER,
         pass: smtpPassword,
@@ -29,6 +44,7 @@ const sendWithResend = async ({ to, subject, text, html, from }) => {
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
+    signal: AbortSignal.timeout(EMAIL_DELIVERY_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       'Content-Type': 'application/json',
@@ -55,15 +71,22 @@ const sendEmail = async ({ to, subject, text, html, from }) => {
 
   if (hasResendConfig) {
     try {
-      return await sendWithResend({ to, subject, text, html, from });
+      return await sendWithResend({ to, subject, text, html, from: process.env.RESEND_FROM_EMAIL });
     } catch (error) {
       console.error('Resend email failed, falling back to SMTP:', error.message);
+      if (error.name === 'TimeoutError' || error.name === 'AbortError') throw error;
     }
   }
 
   if (!transporter) return false;
 
-  await transporter.sendMail({ from, to, subject, text, html });
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER || from,
+    to,
+    subject,
+    text,
+    html,
+  });
   return true;
 };
 

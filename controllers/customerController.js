@@ -1,4 +1,5 @@
 const { Customer, Pet, GroomingAppointment, HotelReservation } = require('../models');
+const { isOptionalPhoneNumber } = require('../util/numericValidation');
 
 const attachPet = async (booking) => {
   if (!booking || !booking.petId) return booking;
@@ -37,8 +38,8 @@ const getCustomer = async (req, res, next) => {
     }
     await attachCustomerPets(customer);
     const [grooming, hotel] = await Promise.all([
-      GroomingAppointment.findAll({ where: { customerId: customer.id }, order: [['date', 'DESC']] }),
-      HotelReservation.findAll({ where: { customerId: customer.id }, order: [['checkIn', 'DESC']] }),
+      GroomingAppointment.findAll({ where: { customerId: customer.id }, order: [['createdAt', 'DESC']] }),
+      HotelReservation.findAll({ where: { customerId: customer.id }, order: [['createdAt', 'DESC']] }),
     ]);
     customer.GroomingAppointments = await Promise.all(grooming.map(attachPet));
     customer.HotelReservations = await Promise.all(hotel.map(attachPet));
@@ -51,6 +52,7 @@ const getCustomer = async (req, res, next) => {
 const createCustomer = async (req, res, next) => {
   try {
     const { name, email, phone, address } = req.body;
+    if (!isOptionalPhoneNumber(phone)) return res.status(400).json({ error: 'Phone number must contain digits only.' });
     const customer = await Customer.create({ name, email, phone, address });
     res.status(201).json(customer);
   } catch (error) {
@@ -65,6 +67,7 @@ const updateCustomer = async (req, res, next) => {
       return res.status(404).json({ error: 'Customer not found' });
     }
     const { name, email, phone, address } = req.body;
+    if (!isOptionalPhoneNumber(phone)) return res.status(400).json({ error: 'Phone number must contain digits only.' });
     await customer.update({ name, email, phone, address });
     res.json(customer);
   } catch (error) {

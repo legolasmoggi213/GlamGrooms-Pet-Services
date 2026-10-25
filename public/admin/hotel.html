@@ -41,6 +41,7 @@
     renderSidebar('Hotel');
 
     const rowsEl = document.getElementById('rows');
+    const bookingActionsInProgress = new Set();
     const roomSummary = (reservation) => Array.isArray(reservation.petRooms) && reservation.petRooms.length
       ? reservation.petRooms.map((petRoom) => `${escapeHtml(petRoom.petName || 'Pet')}: ${escapeHtml(String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' '))}`).join('<br>')
       : escapeHtml(capitalize(reservation.roomType));
@@ -130,11 +131,14 @@
     };
 
     window.confirmRes = async (id, button) => {
+      const bookingId = String(id);
+      if (bookingActionsInProgress.has(bookingId)) return;
+      bookingActionsInProgress.add(bookingId);
       const originalLabel = button ? button.textContent : 'Confirm';
       if (button) button.disabled = true;
       if (button) button.textContent = originalLabel === 'Send Ticket' ? 'Sending ticket...' : 'Confirming...';
       try {
-        const result = await apiPut(`/hotel/${id}`, { status: 'confirmed' });
+        const result = await apiPut(`/hotel/${encodeURIComponent(bookingId)}`, { status: 'confirmed' });
         if (result.emailSent) {
           showAdminNotice('Reservation confirmed and ticket emailed.');
         } else {
@@ -143,14 +147,15 @@
       } catch (error) {
         showAdminNotice(error.message, 'error');
       } finally {
+        bookingActionsInProgress.delete(bookingId);
+        if (button && button.isConnected) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
         try {
           await loadReservations();
         } catch (error) {
           showAdminNotice(`Booking action finished, but reservations could not be refreshed: ${error.message}`, 'error');
-          if (button && button.isConnected) {
-            button.disabled = false;
-            button.textContent = originalLabel;
-          }
         }
       }
     };
@@ -171,21 +176,37 @@
       const button = event.target.closest('[data-save-reservation-status]');
       if (!button) return;
       const id = button.dataset.saveReservationStatus;
+      const bookingId = String(id);
+      if (bookingActionsInProgress.has(bookingId)) return;
       const select = rowsEl.querySelector(`[data-reservation-status="${CSS.escape(id)}"]`);
       if (!select) return;
+      bookingActionsInProgress.add(bookingId);
+      const nextStatus = select.value;
+      const originalLabel = button.textContent;
       button.disabled = true;
+      select.disabled = true;
+      button.textContent = nextStatus === 'confirmed' ? 'Confirming...' : 'Updating...';
       try {
-        const result = await apiPut(`/hotel/${encodeURIComponent(id)}`, { status: select.value });
-        if (select.value === 'confirmed' && !result.emailSent) {
+        const result = await apiPut(`/hotel/${encodeURIComponent(bookingId)}`, { status: nextStatus });
+        if (nextStatus === 'confirmed' && !result.emailSent) {
           showAdminNotice(`Reservation status updated, but the ticket email was not sent. ${result.emailError || 'Check the provider response in Render logs, sender address/domain, and email credentials.'}`, 'error');
-        } else if (select.value === 'confirmed') {
+        } else if (nextStatus === 'confirmed') {
           showAdminNotice('Reservation confirmed and ticket emailed.');
         }
-        await loadReservations();
       } catch (error) {
-        alert(error.message);
+        showAdminNotice(error.message, 'error');
       } finally {
-        button.disabled = false;
+        bookingActionsInProgress.delete(bookingId);
+        if (button.isConnected) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
+        if (select.isConnected) select.disabled = false;
+        try {
+          await loadReservations();
+        } catch (error) {
+          showAdminNotice(`Booking action finished, but reservations could not be refreshed: ${error.message}`, 'error');
+        }
       }
     });
 

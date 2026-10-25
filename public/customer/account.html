@@ -18,7 +18,7 @@
       <a href="/grooming.html">Grooming</a>
       <a href="/hotel.html">Pet Hotel</a>
       <a href="/customer/account.html" class="active">My Account</a>
-      <a href="/customer/logout">Logout</a>
+      <a href="/customer/logout" data-confirm-logout>Logout</a>
     </nav>
   </header>
 
@@ -86,6 +86,13 @@
     const paymentBookingType = params.get('booking_type') || '';
     const paymentBookingId = params.get('booking_id') || '';
     const deleteBtn = document.getElementById('delete-account-btn');
+    document.addEventListener('click', (event) => {
+      const logoutLink = event.target.closest('[data-confirm-logout]');
+      if (logoutLink && !window.confirm('Are you sure you want to log out?')) {
+        event.preventDefault();
+      }
+    });
+
     const deleteModal = document.getElementById('confirm-delete');
     const cancelDelete = document.getElementById('cancel-delete');
     const confirmDelete = document.getElementById('confirm-delete-btn');
@@ -281,60 +288,38 @@
     }
 
     function bookingActionsMarkup(item, type) {
-      const inactive = type === 'grooming'
-        ? ['cancelled', 'completed'].includes(item.status)
-        : ['cancelled', 'checked-in', 'checked-out'].includes(item.status);
-      if (inactive) return '';
+      if (item.status !== 'pending' || item.confirmedAt) return '';
       const id = escapeHtml(item.id);
-      const paidNotice = item.paymentStatus === 'paid'
-        ? '<span class="transaction-meta">For cancellation of a paid booking, contact the business to discuss a refund.</span>'
-        : `<button class="btn btn-danger btn-sm" type="button" data-cancel-booking="${id}" data-booking-type="${type}">Cancel booking</button>`;
       return `<div class="booking-actions">
-        <button class="btn btn-outline btn-sm" type="button" data-reschedule-booking="${id}" data-booking-type="${type}">Reschedule</button>
-        ${paidNotice}
+        <button class="btn btn-outline btn-sm" type="button" data-reschedule-booking="${id}" data-booking-type="${type}">Edit booking</button>
       </div>`;
     }
 
     function openRescheduleDialog(type, booking) {
       const isHotel = type === 'hotel';
-      document.getElementById('booking-action-title').textContent = `Reschedule ${isHotel ? 'hotel stay' : 'grooming appointment'}`;
+      document.getElementById('booking-action-title').textContent = `Edit ${isHotel ? 'hotel stay' : 'grooming appointment'}`;
       bookingActionForm.dataset.type = type;
       bookingActionForm.dataset.id = booking.id;
+      const cancellationButton = booking.status === 'pending' && !booking.confirmedAt
+        ? `<button class="btn btn-danger" type="button" data-cancel-edit-booking="${escapeHtml(String(booking.id))}" data-booking-type="${type}">Cancel booking</button>`
+        : '';
       bookingActionForm.innerHTML = isHotel ? `
         <div class="field"><label for="reschedule-check-in">Check-in date</label><input id="reschedule-check-in" name="checkIn" type="date" required value="${escapeHtml(booking.checkIn || '')}"></div>
         <div class="field"><label for="reschedule-check-in-time">Check-in time</label><input id="reschedule-check-in-time" name="checkInTime" type="time" required value="${escapeHtml(booking.checkInTime || '')}"></div>
         <div class="field"><label for="reschedule-check-out">Check-out date</label><input id="reschedule-check-out" name="checkOut" type="date" required value="${escapeHtml(booking.checkOut || '')}"></div>
         <div class="field"><label for="reschedule-check-out-time">Check-out time</label><input id="reschedule-check-out-time" name="checkOutTime" type="time" required value="${escapeHtml(booking.checkOutTime || '')}"></div>
-        <div class="form-actions full"><button class="btn btn-primary" type="submit">Save new schedule</button></div>` : `
+        <div class="form-actions full"><button class="btn btn-primary" type="submit">Save changes</button>${cancellationButton}</div>` : `
         <div class="field"><label for="reschedule-date">Appointment date</label><input id="reschedule-date" name="date" type="date" required value="${escapeHtml(booking.date || '')}"></div>
         <div class="field"><label for="reschedule-time">Appointment time</label><input id="reschedule-time" name="time" type="time" required value="${escapeHtml(booking.time || '')}"></div>
         <div class="field"><label for="reschedule-pickup">Pickup time</label><input id="reschedule-pickup" name="pickupTime" type="time" value="${escapeHtml(booking.pickupTime || '')}"></div>
-        <div class="form-actions full"><button class="btn btn-primary" type="submit">Save new schedule</button></div>`;
+        <div class="form-actions full"><button class="btn btn-primary" type="submit">Save changes</button>${cancellationButton}</div>`;
       clearInterval(autoRefresh);
       autoRefresh = null;
       bookingActionDialog.showModal();
     }
 
     document.getElementById('bookings').addEventListener('click', async (event) => {
-      const cancelButton = event.target.closest('[data-cancel-booking]');
       const rescheduleButton = event.target.closest('[data-reschedule-booking]');
-      if (cancelButton) {
-        const type = cancelButton.dataset.bookingType;
-        if (!window.confirm('Cancel this booking? This cannot be undone online.')) return;
-        cancelButton.disabled = true;
-        try {
-          const response = await fetch(`/customer/bookings/${type}/${encodeURIComponent(cancelButton.dataset.cancelBooking)}/cancel`, {
-            method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}',
-          });
-          const result = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(result.error || 'Unable to cancel this booking.');
-          await loadProfile();
-        } catch (error) {
-          alert(error.message);
-          cancelButton.disabled = false;
-        }
-        return;
-      }
       if (rescheduleButton) {
         const type = rescheduleButton.dataset.bookingType;
         try {
@@ -344,6 +329,25 @@
           if (!booking) throw new Error('Booking not found. Refresh the page and try again.');
           openRescheduleDialog(type, booking);
         } catch (error) { alert(error.message); }
+      }
+    });
+
+    bookingActionForm.addEventListener('click', async (event) => {
+      const cancelButton = event.target.closest('[data-cancel-edit-booking]');
+      if (!cancelButton) return;
+      if (!window.confirm('Cancel this booking? This cannot be undone online.')) return;
+      cancelButton.disabled = true;
+      try {
+        const response = await fetch(`/customer/bookings/${cancelButton.dataset.bookingType}/${encodeURIComponent(cancelButton.dataset.cancelEditBooking)}/cancel`, {
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Unable to cancel this booking.');
+        bookingActionDialog.close();
+        await loadProfile();
+      } catch (error) {
+        alert(error.message);
+        cancelButton.disabled = false;
       }
     });
 
@@ -379,22 +383,51 @@
         : `Appointment: ${formatDate(item.date)} at ${item.time || 'Time TBA'}${item.pickupTime ? `; Pickup: ${item.pickupTime}` : ''}`;
       const amount = isHotel ? item.totalPrice : item.price;
       const paidAt = item.paymentPaidAt || item.updatedAt;
+      const receiptItems = isHotel
+        ? (item.petRooms || []).map((room, index) => ({
+            label: `${room.petName || 'Pet'} — ${String(room.roomType || item.roomType || 'Hotel stay').replace(/^staycation-/, '').replace(/-/g, ' ')}`,
+            amount: Number(item.pricingBreakdown?.petQuotes?.[index]?.total ?? (Number(amount || 0) / Math.max(1, item.petRooms.length))),
+            unitLabel: room.pricePerNight ? `${formatMoney(room.pricePerNight)} per night` : '',
+          }))
+        : (item.petServices || []).map(service => ({
+            label: `${service.petName || 'Pet'} — ${String(service.service || 'Grooming').replace(/^grooming-/, '').replace(/^ayurveda-herb-/, '').replace(/^ayurveda-pkg-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`,
+            amount: Number(service.price || 0),
+            unitLabel: '',
+          }));
+      if (!receiptItems.length) receiptItems.push({
+        label: isHotel ? (item.roomType || 'Pet hotel stay') : (item.service || 'Grooming service'),
+        amount: Number(amount || 0),
+        unitLabel: '',
+      });
       return `
         <details class="reservation-ticket payment-receipt-summary" data-payment-receipt data-booking-id="${escapeHtml(String(item.id))}" data-booking-type="${escapeHtml(type)}">
           <summary class="receipt-link">View payment receipt</summary>
-          <div class="info-list" style="margin-top:0.75rem">
-            <div class="info-row"><strong>Receipt</strong><span>Paid receipt #${escapeHtml(String(item.id))}</span></div>
-            <div class="info-row"><strong>Customer</strong><span>${escapeHtml(profile.name || 'Customer')}</span></div>
-            <div class="info-row"><strong>Email</strong><span>${escapeHtml(profile.email || 'Not set')}</span></div>
-            <div class="info-row"><strong>Pet(s)</strong><span>${escapeHtml((item.petNames || []).join(', ') || (item.Pet && item.Pet.name) || 'Not provided')}</span></div>
-            <div class="info-row"><strong>${isHotel ? 'Room(s)' : 'Service(s)'}</strong><span style="white-space:pre-line">${escapeHtml(services)}</span></div>
-            <div class="info-row"><strong>Schedule</strong><span>${escapeHtml(schedule)}</span></div>
-            <div class="info-row"><strong>Payment</strong><span>Paid online via GCash (PayMongo)</span></div>
-            <div class="info-row"><strong>Payment reference</strong><span>${escapeHtml(item.paymentReference)}</span></div>
-            <div class="info-row"><strong>Paid at</strong><span>${escapeHtml(paidAt ? new Date(paidAt).toLocaleString() : 'Confirmed')}</span></div>
-            <div class="info-row"><strong>Total paid</strong><span>${formatMoney(amount)}</span></div>
+          <div class="receipt-document">
+            <header class="receipt-brand">
+              <div class="receipt-brand-mark" aria-hidden="true">GG</div>
+              <div><h2>Glam Grooms</h2><p>Pet Spa &amp; Hotel</p></div>
+              <span class="receipt-status">PAID</span>
+            </header>
+            <div class="receipt-title"><h3>Payment receipt</h3><p>Thank you for choosing Glam Grooms.</p></div>
+            <dl class="receipt-meta-grid">
+              <div><dt>Receipt no.</dt><dd>${escapeHtml(String(item.id))}</dd></div>
+              <div><dt>Date &amp; time</dt><dd>${escapeHtml(paidAt ? new Date(paidAt).toLocaleString() : 'Confirmed')}</dd></div>
+              <div><dt>Customer</dt><dd>${escapeHtml(profile.name || 'Customer')}</dd></div>
+              <div><dt>Email</dt><dd>${escapeHtml(profile.email || 'Not set')}</dd></div>
+              <div><dt>Phone</dt><dd>${escapeHtml(profile.phone || 'Not set')}</dd></div>
+              <div><dt>Pet(s)</dt><dd>${escapeHtml((item.petNames || []).join(', ') || (item.Pet && item.Pet.name) || 'Not provided')}</dd></div>
+              <div><dt>Payment method</dt><dd>GCash (PayMongo)</dd></div>
+              <div><dt>Transaction ID</dt><dd>${escapeHtml(item.paymentReference)}</dd></div>
+              <div><dt>Schedule</dt><dd>${escapeHtml(schedule)}</dd></div>
+            </dl>
+            <table class="receipt-items">
+              <thead><tr><th>${isHotel ? 'Room / pet' : 'Service / pet'}</th><th>Details</th><th>Amount</th></tr></thead>
+              <tbody>${receiptItems.map(line => `<tr><td>${escapeHtml(line.label)}</td><td>${escapeHtml(line.unitLabel || (isHotel ? schedule : 'Grooming service'))}</td><td>${formatMoney(line.amount)}</td></tr>`).join('')}</tbody>
+            </table>
+            <div class="receipt-total"><span>Total paid</span><strong>${formatMoney(amount)}</strong></div>
+            <footer class="receipt-footer"><strong>Thank you for trusting us with your pet’s care.</strong><span>Glam Grooms Pet Spa &amp; Hotel</span></footer>
           </div>
-          <button class="btn btn-outline btn-sm print-payment-receipt" type="button">Print receipt</button>
+          <div class="receipt-actions"><button class="btn btn-outline btn-sm print-payment-receipt" type="button">Print receipt</button></div>
         </details>
       `;
     }

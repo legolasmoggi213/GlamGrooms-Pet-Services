@@ -25,7 +25,7 @@ async function renderSidebar(activeLabel) {
   }
   const pages = role === 'admin'
     ? ADMIN_PAGES
-    : ADMIN_PAGES.filter((page) => ['Dashboard', 'Reports', 'Grooming', 'Hotel', 'Inventory'].includes(page.label));
+    : ADMIN_PAGES.filter((page) => page.label !== 'Employees');
   const links = pages.map(
     (page) => `<a href="${page.href}" class="${page.label === activeLabel ? 'active' : ''}">${page.label}</a>`
   ).join('');
@@ -33,9 +33,31 @@ async function renderSidebar(activeLabel) {
     <a class="brand" href="/admin/index.html">Glam Grooms Pet Spa & Hotel</a>
     ${links}
     <a href="/" style="margin-top:1rem;">← Back to site</a>
-    <a href="/admin/logout" style="margin-top:0.6rem;color:var(--danger);">Logout</a>
+    <a href="/admin/logout" data-confirm-logout style="margin-top:0.6rem;color:var(--danger);">Logout</a>
   `;
 }
+
+function showAdminNotice(message, type = 'success') {
+  let notice = document.getElementById('admin-action-notice');
+  if (!notice) {
+    notice = document.createElement('div');
+    notice.id = 'admin-action-notice';
+    notice.className = 'alert';
+    notice.setAttribute('role', 'status');
+    notice.setAttribute('aria-live', 'polite');
+    const main = document.querySelector('.admin-main');
+    if (main) main.prepend(notice);
+  }
+  notice.className = `alert alert-${type} show`;
+  notice.textContent = message;
+}
+
+document.addEventListener('click', (event) => {
+  const logoutLink = event.target.closest('[data-confirm-logout]');
+  if (logoutLink && !window.confirm('Are you sure you want to log out?')) {
+    event.preventDefault();
+  }
+});
 
 function openModal(title, bodyHtml) {
   let backdrop = document.getElementById('modal-backdrop');

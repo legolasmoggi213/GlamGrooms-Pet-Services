@@ -106,6 +106,7 @@ const formatServiceName = (value) => String(value || 'Grooming service')
 
 const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) => {
   const isGrooming = type === 'grooming';
+  const total = Number(isGrooming ? booking.price : booking.totalPrice);
   const petDetails = (pets || []).map((pet) => {
     const age = pet.age == null ? 'Age not provided' : `${pet.age} year${Number(pet.age) === 1 ? '' : 's'}`;
     return `${pet.name || 'Pet'} (${pet.species || 'Species not provided'}, ${pet.breed || 'Breed not provided'}, ${age})`;
@@ -117,6 +118,21 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
     : Array.isArray(booking.petRooms) && booking.petRooms.length
       ? booking.petRooms.map((petRoom) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || 'Pet hotel').replace(/^staycation-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())} (${formatCurrency(petRoom.pricePerNight)} per night)`)
       : [`${booking.roomType || 'Pet hotel'} (${formatCurrency(booking.pricePerNight)} per night)`];
+  const receiptItems = isGrooming
+    ? Array.isArray(booking.petServices) && booking.petServices.length
+      ? booking.petServices.map((item) => ({
+        label: `${item.petName || 'Pet'} — ${formatServiceName(item.service)}`,
+        detail: 'Grooming service',
+        amount: Number(item.price || 0),
+      }))
+      : [{ label: formatServiceName(booking.service), detail: 'Grooming service', amount: total }]
+    : Array.isArray(booking.petRooms) && booking.petRooms.length
+      ? booking.petRooms.map((item, index) => ({
+        label: `${item.petName || 'Pet'} — ${String(item.roomType || 'Pet hotel').replace(/^staycation-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())}`,
+        detail: `${booking.checkIn || 'Check-in not provided'} to ${booking.checkOut || 'Check-out not provided'}`,
+        amount: Number(booking.pricingBreakdown?.petQuotes?.[index]?.total ?? (total / booking.petRooms.length)),
+      }))
+      : [{ label: booking.roomType || 'Pet hotel', detail: `${booking.checkIn || 'Check-in not provided'} to ${booking.checkOut || 'Check-out not provided'}`, amount: total }];
   const rows = [
     ['Booking reference', booking.id],
     ['Customer', customer.name],
@@ -149,9 +165,19 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
       : Number(booking.pricePerNight || 0) * Math.max(1, (booking.petIds || []).length);
     if (nightlyTotal) rows.push(['Total per night', formatCurrency(nightlyTotal)]);
   }
-  rows.push(['Total', formatCurrency(isGrooming ? booking.price : booking.totalPrice)]);
+  rows.push(['Total', formatCurrency(total)]);
 
   const title = receipt ? 'Payment receipt' : 'Reservation ticket';
+  const issuedAt = booking.paymentPaidAt || booking.updatedAt || booking.createdAt;
+  const emailDetailRows = receipt
+    ? rows.filter(([label]) => label !== 'Total' && label !== (isGrooming ? 'Service(s)' : 'Room(s)'))
+    : rows;
+  const receiptRows = receiptItems.map((item) => `
+    <tr>
+      <td style="padding:11px 12px;border-bottom:1px solid #e5e7eb;color:#111827">${escapeHtml(item.label)}</td>
+      <td style="padding:11px 12px;border-bottom:1px solid #e5e7eb;color:#475569">${escapeHtml(item.detail)}</td>
+      <td style="padding:11px 12px;text-align:right;border-bottom:1px solid #e5e7eb;color:#111827;font-weight:700">${formatCurrency(item.amount)}</td>
+    </tr>`).join('');
   const intro = receipt
     ? 'Your online payment through GCash has been processed. This email is your paid receipt.'
     : 'Your booking has been confirmed by our team. Please present this reservation ticket when you arrive.';
@@ -165,23 +191,31 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
     '',
     'Glam Grooms Pet Spa & Hotel',
   ].join('\n');
-  const htmlRows = rows.map(([label, value]) => `
+  const htmlRows = emailDetailRows.map(([label, value]) => `
     <tr>
       <th style="padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid #e5e7eb;color:#475569">${escapeHtml(label)}</th>
       <td style="padding:10px 12px;white-space:pre-line;border-bottom:1px solid #e5e7eb;color:#111827">${escapeHtml(value || 'Not provided')}</td>
     </tr>`).join('');
   const html = `
     <div style="margin:0;padding:28px 12px;background:#f3f4f6;font-family:Arial,sans-serif;color:#111827">
-      <div style="max-width:680px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
-        <div style="padding:22px 26px;background:#111827;color:#fff">
-          <div style="font-size:20px;font-weight:700">Glam Grooms</div>
-          <div style="margin-top:4px;color:#d1d5db">Pet Spa &amp; Hotel</div>
+      <div style="max-width:720px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden">
+        <div style="padding:24px 28px;background:#263238;color:#fff">
+          <div style="font-size:22px;font-weight:700;letter-spacing:.2px">Glam Grooms</div>
+          <div style="margin-top:4px;color:#f5df8d">Pet Spa &amp; Hotel</div>
         </div>
-        <div style="padding:24px 26px">
-          <h1 style="margin:0 0 10px;font-size:22px">${title}</h1>
-          <p style="margin:0 0 20px;line-height:1.5">Hello ${escapeHtml(customer.name || 'Customer')}, ${intro}</p>
+        <div style="padding:26px 28px">
+          <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start">
+            <div><h1 style="margin:0 0 7px;font-size:24px;color:#263238">${title}</h1><p style="margin:0 0 20px;line-height:1.5;color:#5f6b73">Hello ${escapeHtml(customer.name || 'Customer')}, ${intro}</p></div>
+            ${receipt ? '<span style="padding:7px 12px;border-radius:999px;background:#e7f5ec;color:#176b45;font-size:12px;font-weight:700">PAID</span>' : ''}
+          </div>
+          ${receipt ? `<div style="margin-bottom:18px;padding:14px 16px;background:#f7f6f1;border-radius:8px"><div style="margin-bottom:6px"><strong>Receipt / booking ID:</strong> ${escapeHtml(booking.id)}</div><div><strong>Transaction date:</strong> ${escapeHtml(issuedAt ? new Date(issuedAt).toLocaleString('en-PH') : 'Confirmed')}</div></div>
+          <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:18px">
+            <thead><tr style="background:#f7f6f1"><th style="padding:11px 12px;text-align:left">Service / room</th><th style="padding:11px 12px;text-align:left">Details</th><th style="padding:11px 12px;text-align:right">Amount</th></tr></thead>
+            <tbody>${receiptRows}</tbody>
+            <tfoot><tr><th colspan="2" style="padding:14px 12px;text-align:right;font-size:15px;border-top:2px solid #d9d6cc">TOTAL PAID</th><th style="padding:14px 12px;text-align:right;font-size:18px;color:#8a6900;border-top:2px solid #d9d6cc">${formatCurrency(total)}</th></tr></tfoot>
+          </table>` : ''}
           <table style="width:100%;border-collapse:collapse;font-size:14px">${htmlRows}</table>
-          <p style="margin:22px 0 0;color:#6b7280;font-size:12px">Please keep this email for your records.</p>
+          <p style="margin:22px 0 0;color:#6b7280;font-size:12px">Please keep this email for your records. Thank you for trusting us with your pet’s care.</p>
         </div>
       </div>
     </div>`;

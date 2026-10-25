@@ -1,5 +1,7 @@
 const { Customer, Pet, GroomingAppointment, HotelReservation, CashTransaction } = require('../models');
 const { firestore } = require('../config/firebase');
+const { SERVICE_PRICES } = require('./groomingController');
+const { ROOM_PRICES } = require('./hotelController');
 
 const ACTIVE_GROOMING_STATUSES = ['scheduled', 'in-progress'];
 const ACTIVE_HOTEL_STATUSES = ['pending', 'reserved', 'confirmed', 'checked-in'];
@@ -68,20 +70,81 @@ const aggregateRevenue = (records, amountField, period, buckets) => {
   for (const record of records) {
     const dateKey = revenueDateKey(record);
     if (!dateKey) continue;
-    let key = dateKey;
-    if (period === 'weekly') {
-      const date = new Date(`${dateKey}T00:00:00.000Z`);
-      date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
-      key = date.toISOString().slice(0, 10);
-    } else if (period === 'monthly') {
-      key = dateKey.slice(0, 7);
-    }
+    const key = revenuePeriodKey(dateKey, period);
     const bucket = values.get(key);
     if (!bucket) continue;
     bucket.revenue += Number(record[amountField] || 0);
     bucket.count += 1;
   }
   return buckets.map(({ key, label }) => ({ label, ...values.get(key) }));
+};
+
+const revenuePeriodKey = (dateKey, period) => {
+  if (period === 'weekly') {
+    const date = new Date(`${dateKey}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+    return date.toISOString().slice(0, 10);
+  }
+  return period === 'monthly' ? dateKey.slice(0, 7) : dateKey;
+};
+
+const readableRevenueLabel = (value) => String(value || 'Other')
+  .replace(/^grooming-/, '')
+  .replace(/^ayurveda-herb-/, 'Ayurveda Herb ')
+  .replace(/^ayurveda-pkg-/, 'Ayurveda Package ')
+  .replace(/^staycation-/, 'Staycation ')
+  .replace(/^day-care-/, 'Day Care ')
+  .replace(/-/g, ' ')
+  .replace(/\b\w/g, (letter) => letter.toUpperCase())
+  .replace(/\bXl\b/g, 'XL');
+
+const groomingRevenueItems = (booking) => (
+  Array.isArray(booking.petServices) && booking.petServices.length
+    ? booking.petServices.map((assignment) => ({
+      category: assignment.service || booking.service || 'Other',
+      revenue: Number(assignment.price || 0),
+    }))
+    : [{ category: booking.service || 'Other', revenue: Number(booking.price || 0) }]
+);
+
+const hotelRevenueItems = (reservation) => {
+  const rooms = Array.isArray(reservation.petRooms) && reservation.petRooms.length
+    ? reservation.petRooms
+    : (reservation.roomTypes || [reservation.roomType]).filter(Boolean).map((roomType) => ({ roomType }));
+  if (!rooms.length) return [{ category: reservation.roomType || 'Other', revenue: Number(reservation.totalPrice || 0) }];
+
+  const petQuotes = reservation.pricingBreakdown?.petQuotes || [];
+  const fallbackRevenue = Number(reservation.totalPrice || 0) / rooms.length;
+  return rooms.map((room, index) => ({
+    category: room.roomType || reservation.roomType || 'Other',
+    revenue: Number(petQuotes[index]?.total ?? fallbackRevenue),
+  }));
+};
+
+const aggregateRevenueByCategory = (records, period, buckets, getItems, categories) => {
+  const values = new Map();
+  for (const category of categories) values.set(category, { revenue: 0, count: 0 });
+  const validPeriodKeys = new Set(buckets.map(({ key }) => key));
+
+  for (const record of records) {
+    const dateKey = revenueDateKey(record);
+    if (!dateKey || !validPeriodKeys.has(revenuePeriodKey(dateKey, period))) continue;
+    for (const item of getItems(record)) {
+      const category = item.category || 'Other';
+      const value = values.get(category) || { revenue: 0, count: 0 };
+      value.revenue += Number(item.revenue || 0);
+      value.count += 1;
+      values.set(category, value);
+    }
+  }
+
+  return [...values.entries()]
+    .map(([category, value]) => ({
+      label: readableRevenueLabel(category),
+      revenue: Math.round(value.revenue * 100) / 100,
+      count: value.count,
+    }))
+    .sort((left, right) => right.revenue - left.revenue || left.label.localeCompare(right.label));
 };
 
 // GET /api/v1/admin/stats — overview numbers for the admin dashboard.
@@ -122,6 +185,15 @@ const getStats = async (req, res, next) => {
     const hotelRevenue = hotelRecords
       .reduce((total, record) => total + Number(record.totalPrice || 0), 0);
     const overTheCounterRevenue = cashTransactions.reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
+    const productSalesRevenue = cashTransactions.reduce((total, transaction) => {
+      const productItems = Array.isArray(transaction.items)
+        ? transaction.items.filter((item) => item.inventoryId)
+        : [];
+      return total + productItems.reduce((subtotal, item) => {
+        const lineTotal = Number(item.lineTotal);
+        return subtotal + (Number.isFinite(lineTotal) ? lineTotal : Number(item.unitPrice || 0) * Number(item.quantity || 0));
+      }, 0);
+    }, 0);
     res.json({
       customers,
       pets,
@@ -138,6 +210,7 @@ const getStats = async (req, res, next) => {
         revenue: hotelRevenue || 0,
       },
       overTheCounterRevenue,
+      productSalesRevenue,
       totalRevenue: (groomingRevenue || 0) + (hotelRevenue || 0) + overTheCounterRevenue,
     });
   } catch (error) {
@@ -284,6 +357,20 @@ const getRevenueAnalytics = async (req, res, next) => {
     const buckets = createRevenueBuckets(period, businessDateKey());
     const groomingBuckets = aggregateRevenue(grooming, 'price', period, buckets);
     const hotelBuckets = aggregateRevenue(hotel, 'totalPrice', period, buckets);
+    const groomingServices = aggregateRevenueByCategory(
+      grooming,
+      period,
+      buckets,
+      groomingRevenueItems,
+      Object.keys(SERVICE_PRICES),
+    );
+    const hotelServices = aggregateRevenueByCategory(
+      hotel,
+      period,
+      buckets,
+      hotelRevenueItems,
+      Object.keys(ROOM_PRICES),
+    );
     const groomingRevenue = groomingBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
     const hotelRevenue = hotelBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
 
@@ -291,6 +378,8 @@ const getRevenueAnalytics = async (req, res, next) => {
       period,
       grooming: groomingBuckets,
       hotel: hotelBuckets,
+      groomingServices,
+      hotelServices,
       totals: {
         grooming: groomingRevenue,
         hotel: hotelRevenue,
@@ -392,6 +481,7 @@ const createCashTransaction = async (req, res, next) => {
           unitPrice,
           lineTotal: Math.round(unitPrice * 100) * quantity / 100,
           category: String(item && item.category || 'Custom').trim().slice(0, 80),
+          ...(item && item.inventoryId ? { inventoryId: String(item.inventoryId).trim() } : {}),
         };
       }) : [];
       if (hasItems && (!items.length || items.length > 50 || items.some((item) => !item.name || item.name.length > 160
@@ -410,6 +500,111 @@ const createCashTransaction = async (req, res, next) => {
       }
       if (!['cash', 'gcash', 'card'].includes(paymentMethod)) {
         return res.status(400).json({ error: 'Choose cash, GCash, or card as the payment method.' });
+      }
+      if (items.some((item) => item.inventoryId)) {
+        const transactionRef = firestore.collection('cashTransactions').doc();
+        let responseTransaction;
+        await firestore.runTransaction(async (firestoreTransaction) => {
+          const inventoryIds = [...new Set(items.filter((item) => item.inventoryId).map((item) => item.inventoryId))];
+          const inventoryRefs = inventoryIds.map((id) => firestore.collection('inventoryItems').doc(id));
+          const snapshots = await Promise.all(inventoryRefs.map((ref) => firestoreTransaction.get(ref)));
+          const products = new Map();
+          snapshots.forEach((snapshot, index) => {
+            if (!snapshot.exists) {
+              const error = new Error('A product in this sale no longer exists.');
+              error.status = 409;
+              throw error;
+            }
+            products.set(inventoryIds[index], { ref: inventoryRefs[index], ...snapshot.data() });
+          });
+
+          const saleItems = items.map((item) => {
+            if (!item.inventoryId) return item;
+            const product = products.get(item.inventoryId);
+            const unitPrice = Number(product.price);
+            if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+              const error = new Error(`${product.name || 'This product'} needs a valid price before it can be sold.`);
+              error.status = 409;
+              throw error;
+            }
+            return {
+              ...item,
+              name: String(product.name || ''),
+              unitPrice,
+              lineTotal: Math.round(unitPrice * 100) * item.quantity / 100,
+              category: String(product.category || 'Product'),
+            };
+          });
+          const quantityByProduct = new Map();
+          for (const item of saleItems) {
+            if (item.inventoryId) quantityByProduct.set(item.inventoryId, (quantityByProduct.get(item.inventoryId) || 0) + item.quantity);
+          }
+          for (const [id, quantity] of quantityByProduct) {
+            if (Number(products.get(id).quantity) < quantity) {
+              const error = new Error(`Not enough stock for ${products.get(id).name}. Refresh products and try again.`);
+              error.status = 409;
+              throw error;
+            }
+          }
+
+          const saleDescription = saleItems.map((item) => `${item.quantity}x ${item.name}`).join(', ').slice(0, 160);
+          const saleAmount = Math.round(saleItems.reduce((total, item) => total + item.lineTotal, 0) * 100) / 100;
+          const saleTenderedAmount = paymentMethod === 'cash'
+            ? Number(body.tenderedAmount == null ? saleAmount : body.tenderedAmount)
+            : saleAmount;
+          if (!Number.isFinite(saleTenderedAmount) || saleTenderedAmount < saleAmount || saleTenderedAmount > 10000000) {
+            const error = new Error('Cash received must cover the sale total.');
+            error.status = 400;
+            throw error;
+          }
+          const saleChangeDue = Math.round((saleTenderedAmount - saleAmount) * 100) / 100;
+          const paidAt = new Date();
+          const receipt = {
+            receiptNumber: transactionRef.id,
+            customerName,
+            contact: String(body.contact || '').trim() || null,
+            paymentMethod,
+            amount: saleAmount,
+            tenderedAmount: saleTenderedAmount,
+            changeDue: saleChangeDue,
+            items: saleItems,
+            paidAt,
+            description: saleDescription,
+          };
+          for (const [id, quantity] of quantityByProduct) {
+            const product = products.get(id);
+            firestoreTransaction.update(product.ref, {
+              quantity: Number(product.quantity) - quantity,
+              updatedAt: paidAt,
+            });
+          }
+          firestoreTransaction.set(transactionRef, {
+            type: 'walk-in',
+            customerName,
+            contact: receipt.contact,
+            description: saleDescription,
+            amount: saleAmount,
+            items: saleItems,
+            paymentMethod,
+            tenderedAmount: saleTenderedAmount,
+            changeDue: saleChangeDue,
+            paidAt,
+            recordedBy: 'ADMIN',
+            notes: String(body.notes || '').trim(),
+            receipt,
+            createdAt: paidAt,
+            updatedAt: paidAt,
+          });
+          responseTransaction = {
+            id: transactionRef.id,
+            amount: saleAmount,
+            tenderedAmount: saleTenderedAmount,
+            changeDue: saleChangeDue,
+            paidAt,
+            receipt,
+          };
+        });
+        return res.status(201).json({ success: true, transaction: responseTransaction });
       }
       const tenderedAmount = paymentMethod === 'cash'
         ? Number(body.tenderedAmount == null ? amount : body.tenderedAmount)

@@ -24,10 +24,11 @@
 
       <div class="pos-layout">
         <section class="panel pos-workspace" aria-label="Sale items">
-          <div class="pos-categories" role="group" aria-label="Service category">
+          <div class="pos-categories" role="group" aria-label="Sale category">
             <button type="button" data-category="all" aria-pressed="true">All</button>
             <button type="button" data-category="grooming" aria-pressed="false">Grooming</button>
             <button type="button" data-category="ayurveda" aria-pressed="false">Ayurveda</button>
+            <button type="button" data-category="products" aria-pressed="false">Products</button>
           </div>
           <div id="pos-products" class="pos-products"><div class="loading">Loading services…</div></div>
         </section>
@@ -109,13 +110,14 @@
 
     function renderProducts() {
       const visible = catalog.filter((product) => {
-        const matchesCategory = categoryFilter === 'all' || product.kind === categoryFilter;
+        const matchesCategory = categoryFilter === 'all'
+          || (categoryFilter === 'products' ? product.kind === 'product' : product.kind === categoryFilter);
         return matchesCategory;
       });
       productContainer.innerHTML = visible.length ? visible.map((product) => `
-        <button type="button" class="pos-product" data-product-id="${escapeHtml(product.id)}">
+        <button type="button" class="pos-product" data-product-id="${escapeHtml(product.id)}" ${product.kind === 'product' && (!product.price || product.quantity < 1) ? 'disabled' : ''}>
           <strong>${escapeHtml(product.label)}</strong>
-          <span>${money(product.price)}</span>
+          <span>${product.kind === 'product' && product.quantity < 1 ? 'Out of stock' : product.price ? money(product.price) : 'Set price in Inventory'}</span>
         </button>`).join('') : '<div class="empty">No matching services.</div>';
     }
 
@@ -141,7 +143,11 @@
     }
 
     function addItem(item) {
-      const existing = cart.find((line) => line.name === item.name && line.unitPrice === item.unitPrice);
+      const existing = cart.find((line) => line.name === item.name && line.unitPrice === item.unitPrice && line.inventoryId === item.inventoryId);
+      if (existing && item.inventoryId && existing.quantity >= item.stockQuantity) {
+        showMessage(`Only ${item.stockQuantity} ${item.unit || 'unit(s)'} of this product are in stock.`, 'error');
+        return;
+      }
       if (existing) existing.quantity += 1;
       else cart.push({ ...item, quantity: 1 });
       renderCart();
@@ -168,25 +174,49 @@
 
     function renderReceipt(transaction, sale, paymentMethod, tenderedAmount, customerName) {
       const receipt = document.getElementById('pos-receipt');
-      const receiptNumber = transaction?.receipt?.receiptNumber || transaction?.id || 'POS-000';
-      const total = Number(transaction?.amount ?? sale.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0));
-      const changeDue = Number(transaction?.changeDue ?? Math.max(0, tenderedAmount - total));
-      const lines = (sale.length ? sale : (transaction?.receipt?.items || [])).map((item) => {
+      const savedReceipt = transaction?.receipt || {};
+      const receiptNumber = savedReceipt.receiptNumber || transaction?.id || 'POS-000';
+      const receiptItems = Array.isArray(savedReceipt.items) && savedReceipt.items.length
+        ? savedReceipt.items
+        : (sale.length ? sale : []);
+      const total = Number(savedReceipt.amount ?? transaction?.amount ?? receiptItems.reduce((sum, item) => sum + Number(item.lineTotal ?? Number(item.unitPrice || 0) * Number(item.quantity || 1)), 0));
+      const received = Number(savedReceipt.tenderedAmount ?? transaction?.tenderedAmount ?? tenderedAmount ?? total);
+      const changeDue = Number(savedReceipt.changeDue ?? transaction?.changeDue ?? Math.max(0, received - total));
+      const paidAt = savedReceipt.paidAt || transaction?.paidAt || new Date().toISOString();
+      const method = paymentMethod || savedReceipt.paymentMethod || 'cash';
+      const lines = receiptItems.map((item) => {
         const itemName = item.name || item.label || 'Item';
         const quantity = Number(item.quantity || 1);
-        const unitPrice = Number(item.unitPrice || item.lineTotal || 0);
+        const unitPrice = Number(item.unitPrice || 0);
         const lineTotal = Number(item.lineTotal ?? quantity * unitPrice);
-        return `<tr><td>${escapeHtml(itemName)} × ${quantity}</td><td>${money(lineTotal)}</td></tr>`;
+        return `<tr><td>${escapeHtml(itemName)}${item.category ? `<span class="receipt-item-note">${escapeHtml(item.category)}</span>` : ''}</td><td>${quantity}</td><td>${money(unitPrice || lineTotal)}</td><td>${money(lineTotal)}</td></tr>`;
       }).join('');
       receipt.innerHTML = `
-        <h1>Glam Grooms Pet Spa &amp; Hotel</h1>
-        <p>Sale receipt · ${escapeHtml(fmtDateTime(transaction?.paidAt || new Date().toISOString()))}</p>
-        <p>Receipt: ${escapeHtml(receiptNumber)}<br>Customer: ${escapeHtml(customerName || transaction?.receipt?.customerName || 'Walk-in customer')}<br>Payment: ${escapeHtml(capitalize(paymentMethod || transaction?.receipt?.paymentMethod || 'cash'))}</p>
-        <table><thead><tr><th>Item</th><th>Amount</th></tr></thead><tbody>${lines}</tbody></table>
-        <p><strong>Total: ${money(total)}</strong></p>
-        ${paymentMethod === 'cash' || transaction?.receipt?.paymentMethod === 'cash' ? `<p>Cash received: ${money(Number(tenderedAmount ?? transaction?.receipt?.tenderedAmount ?? total))}<br>Change: ${money(changeDue)}</p>` : ''}
-        <p>Thank you for your visit.</p>
-        <button type="button" class="btn btn-primary" onclick="window.print()">Print receipt</button>`;
+        <article class="receipt-document">
+          <header class="receipt-brand">
+            <div class="receipt-brand-mark" aria-hidden="true">GG</div>
+            <div><h1>Glam Grooms</h1><p>Pet Spa &amp; Hotel</p></div>
+            <span class="receipt-status">PAID</span>
+          </header>
+          <div class="receipt-title"><h2>Sales receipt</h2><p>Thank you for choosing Glam Grooms.</p></div>
+          <dl class="receipt-meta-grid">
+            <div><dt>Receipt no.</dt><dd>${escapeHtml(String(receiptNumber))}</dd></div>
+            <div><dt>Date &amp; time</dt><dd>${escapeHtml(fmtDateTime(paidAt))}</dd></div>
+            <div><dt>Customer</dt><dd>${escapeHtml(customerName || savedReceipt.customerName || 'Walk-in customer')}</dd></div>
+            <div><dt>Contact</dt><dd>${escapeHtml(savedReceipt.contact || '—')}</dd></div>
+            <div><dt>Payment method</dt><dd>${escapeHtml(capitalize(method))}</dd></div>
+            <div><dt>Transaction ID</dt><dd>${escapeHtml(String(transaction?.id || receiptNumber))}</dd></div>
+          </dl>
+          <table class="receipt-items">
+            <thead><tr><th>Service / product</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead>
+            <tbody>${lines || '<tr><td colspan="4">No item details available.</td></tr>'}</tbody>
+          </table>
+          <div class="receipt-total"><span>Total paid</span><strong>${money(total)}</strong></div>
+          ${String(method).toLowerCase() === 'cash' ? `<dl class="receipt-payment-summary"><div><dt>Cash received</dt><dd>${money(received)}</dd></div><div><dt>Change</dt><dd>${money(changeDue)}</dd></div></dl>` : ''}
+          <footer class="receipt-footer"><strong>Thank you for trusting us with your pet’s care.</strong><span>Glam Grooms Pet Spa &amp; Hotel</span></footer>
+        </article>
+        <div class="receipt-actions"><button type="button" class="btn btn-primary" onclick="window.print()">Print receipt</button></div>`;
+      receipt.classList.add('is-visible');
       receipt.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
@@ -256,7 +286,16 @@
       const button = event.target.closest('[data-product-id]');
       if (!button) return;
       const product = catalog.find((item) => item.id === button.dataset.productId);
-      if (product) addItem({ name: product.label, unitPrice: product.price, category: product.category });
+      if (product) addItem({
+        name: product.label,
+        unitPrice: product.price,
+        category: product.category,
+        ...(product.kind === 'product' ? {
+          inventoryId: product.inventoryId,
+          stockQuantity: product.quantity,
+          unit: product.unit,
+        } : {}),
+      });
     });
 
     cartRows.addEventListener('click', (event) => {
@@ -265,7 +304,13 @@
       const index = Number(button.dataset.index);
       const item = cart[index];
       if (!item) return;
-      if (button.dataset.cartAction === 'increase') item.quantity += 1;
+      if (button.dataset.cartAction === 'increase') {
+        if (item.inventoryId && item.quantity >= item.stockQuantity) {
+          showMessage(`Only ${item.stockQuantity} ${item.unit || 'unit(s)'} of this product are in stock.`, 'error');
+          return;
+        }
+        item.quantity += 1;
+      }
       if (button.dataset.cartAction === 'decrease') item.quantity = Math.max(1, item.quantity - 1);
       if (button.dataset.cartAction === 'remove') cart.splice(index, 1);
       renderCart();
@@ -311,7 +356,10 @@
           contact: document.getElementById('sale-contact').value.trim(),
           paymentMethod,
           tenderedAmount,
-          items: sale.map(({ name, quantity, unitPrice, category }) => ({ name, quantity, unitPrice, category })),
+          items: sale.map(({ name, quantity, unitPrice, category, inventoryId }) => ({
+            name, quantity, unitPrice, category,
+            ...(inventoryId ? { inventoryId } : {}),
+          })),
         });
         cart.splice(0, cart.length);
         cashReceived.value = '';
@@ -328,7 +376,7 @@
       }
     });
 
-    apiGet('/admin/services').then((services) => {
+    Promise.all([apiGet('/admin/services'), apiGet('/inventory/products')]).then(([services, products]) => {
       const grooming = Array.isArray(services.grooming) ? services.grooming : [];
       catalog = grooming
         .filter((service) => service && service.name && (service.name.startsWith('grooming-') || service.name.startsWith('ayurveda-')))
@@ -340,6 +388,16 @@
           kind: service.name.startsWith('ayurveda-') ? 'ayurveda' : 'grooming',
         }))
         .filter((service) => Number.isFinite(service.price) && service.price > 0);
+      catalog.push(...(Array.isArray(products) ? products : []).map((product) => ({
+        id: `inventory-${product.id}`,
+        inventoryId: String(product.id),
+        label: product.name,
+        price: Number(product.price),
+        category: product.category || 'Product',
+        kind: 'product',
+        quantity: Number(product.quantity || 0),
+        unit: product.unit || 'unit(s)',
+      })));
       renderProducts();
     }).catch((error) => {
       productContainer.innerHTML = '<div class="alert alert-error show">Unable to load services. Sign in again and retry.</div>';

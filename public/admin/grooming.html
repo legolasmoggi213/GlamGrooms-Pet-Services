@@ -160,7 +160,7 @@
       const pet = a.Pet ? escapeHtml(a.Pet.name) : '—';
       const customer = a.Customer ? escapeHtml(a.Customer.name) : '—';
       const petIds = Array.isArray(a.petIds) && a.petIds.length ? a.petIds : (a.petId ? [a.petId] : []);
-      const petInfo = petIds.length
+      const petRecords = petIds.length
         ? petIds.map((petId) => {
             const petRecord = petsCache.find((item) => String(item.id) === String(petId));
             const details = petRecord || a.Pet;
@@ -168,10 +168,18 @@
             const species = details?.species || '—';
             const breed = details?.breed || '—';
             const age = details?.age != null ? details.age : '—';
-            const medicalHistory = details?.medicalHistory ? details.medicalHistory : '—';
-            return `${name}: Species: ${species}, Breed: ${breed}, Age: ${age}, Medical history: ${medicalHistory}`;
-          }).join('\n')
-        : (a.Pet ? `Species: ${escapeHtml(a.Pet.species || '—')}, Breed: ${escapeHtml(a.Pet.breed || '—')}, Age: ${a.Pet.age != null ? a.Pet.age : '—'}, Medical history: ${a.Pet.medicalHistory || '—'}` : '');
+            const medicalHistory = String(details?.medicalHistory || '').trim();
+            return {
+              details: `${name}: Species: ${species}, Breed: ${breed}, Age: ${age}`,
+              medicalHistory: `${name}: ${medicalHistory || 'No medical records provided.'}`,
+            };
+          })
+        : a.Pet ? [{
+            details: `Species: ${a.Pet.species || '—'}, Breed: ${a.Pet.breed || '—'}, Age: ${a.Pet.age != null ? a.Pet.age : '—'}`,
+            medicalHistory: `${a.Pet.name || 'Pet'}: ${String(a.Pet.medicalHistory || '').trim() || 'No medical records provided.'}`,
+          }] : [];
+      const petInfo = petRecords.map((record) => record.details).join('\n');
+      const medicalRecords = petRecords.map((record) => record.medicalHistory).join('\n');
       const customerInfo = a.Customer ? `Email: ${escapeHtml(a.Customer.email || '—')}, Phone: ${escapeHtml(a.Customer.phone || '—')}` : '';
       const serviceInfo = Array.isArray(a.petServices) && a.petServices.length
         ? a.petServices.map((item) => `${item.petName || 'Pet'}: ${serviceLabel(item.service)}`).join('\n')
@@ -187,7 +195,8 @@
           <div class="field"><label>Pickup Time</label><input type="text" readonly value="${escapeHtml(a.pickupTime || '—')}" /></div>
           <div class="field"><label>Price</label><input type="text" readonly value="${fmtMoney(a.price)}" /></div>
           <div class="field"><label>Status</label><input type="text" readonly value="${escapeHtml(a.status)}" /></div>
-          <div class="field full"><label>Pet Details</label><textarea rows="4" readonly>${escapeHtml(petInfo) || '—'}</textarea></div>
+          <div class="field full"><label>Pet Details</label><textarea rows="3" readonly>${escapeHtml(petInfo) || '—'}</textarea></div>
+          <div class="field full"><label>Medical Records</label><textarea rows="${Math.max(2, petRecords.length)}" readonly>${escapeHtml(medicalRecords) || 'No medical records available.'}</textarea></div>
           <div class="field full"><label>Customer Details</label><textarea rows="2" readonly>${customerInfo || '—'}</textarea></div>
           <div class="field full"><label>Customer Notes</label><textarea rows="3" readonly>${escapeHtml(a.notes || 'No notes.')}</textarea></div>
         </div>
@@ -195,20 +204,28 @@
     };
 
     window.confirmAppt = async (id, button) => {
-      if (button) {
-        button.disabled = true;
-        button.textContent = 'Confirming...';
-      }
+      const originalLabel = button ? button.textContent : 'Confirm';
+      if (button) button.disabled = true;
+      if (button) button.textContent = originalLabel === 'Send Ticket' ? 'Sending ticket...' : 'Confirming...';
       try {
         const result = await apiPut(`/grooming/${id}`, { status: 'confirmed' });
-        if (!result.emailSent) alert(`Appointment confirmed, but the ticket email was not sent. ${result.emailError || 'Check the customer email and Render email settings.'}`);
-        await loadAppointments();
-      } catch (error) {
-        if (button) {
-          button.disabled = false;
-          button.textContent = 'Confirm';
+        if (result.emailSent) {
+          showAdminNotice('Appointment confirmed and reservation ticket emailed.');
+        } else {
+          showAdminNotice(`Appointment confirmed, but the ticket email was not sent. ${result.emailError || 'Check the provider response in Render logs, sender address/domain, and email credentials. You can retry with Send Ticket.'}`, 'error');
         }
-        alert(error.message);
+      } catch (error) {
+        showAdminNotice(error.message, 'error');
+      } finally {
+        try {
+          await loadAppointments();
+        } catch (error) {
+          showAdminNotice(`Booking action finished, but the appointments could not be refreshed: ${error.message}`, 'error');
+          if (button && button.isConnected) {
+            button.disabled = false;
+            button.textContent = originalLabel;
+          }
+        }
       }
     };
 

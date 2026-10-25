@@ -81,22 +81,30 @@
     }
 
     window.viewRes = async (id) => {
-      const r = await apiGet(`/hotel/${id}`);
+      const [r, pets] = await Promise.all([apiGet(`/hotel/${id}`), apiGet('/pets')]);
       const pet = r.Pet ? escapeHtml(r.Pet.name) : '—';
       const customer = r.Customer ? escapeHtml(r.Customer.name) : '—';
       const petIds = Array.isArray(r.petIds) && r.petIds.length ? r.petIds : (r.petId ? [r.petId] : []);
-      const petInfo = petIds.length
+      const petRecords = petIds.length
         ? petIds.map((petId) => {
             const petRecord = Array.isArray(r.petDetails) ? r.petDetails.find((item) => String(item.id) === String(petId)) : null;
-            const details = petRecord || r.Pet;
+            const details = petRecord || pets.find((item) => String(item.id) === String(petId)) || r.Pet;
             const name = details?.name || 'Pet';
             const species = details?.species || '—';
             const breed = details?.breed || '—';
             const age = details?.age != null ? details.age : '—';
-            const medicalHistory = details?.medicalHistory ? details.medicalHistory : '—';
-            return `${name}: Species: ${species}, Breed: ${breed}, Age: ${age}, Medical history: ${medicalHistory}`;
-          }).join('\n')
-        : (r.Pet ? `Species: ${escapeHtml(r.Pet.species || '—')}, Breed: ${escapeHtml(r.Pet.breed || '—')}, Age: ${r.Pet.age != null ? r.Pet.age : '—'}, Medical history: ${r.Pet.medicalHistory || '—'}` : '');
+            const medicalHistory = String(details?.medicalHistory || '').trim();
+            return {
+              details: `${name}: Species: ${species}, Breed: ${breed}, Age: ${age}`,
+              medicalHistory: `${name}: ${medicalHistory || 'No medical records provided.'}`,
+            };
+          })
+        : r.Pet ? [{
+            details: `Species: ${r.Pet.species || '—'}, Breed: ${r.Pet.breed || '—'}, Age: ${r.Pet.age != null ? r.Pet.age : '—'}`,
+            medicalHistory: `${r.Pet.name || 'Pet'}: ${String(r.Pet.medicalHistory || '').trim() || 'No medical records provided.'}`,
+          }] : [];
+      const petInfo = petRecords.map((record) => record.details).join('\n');
+      const medicalRecords = petRecords.map((record) => record.medicalHistory).join('\n');
       const customerInfo = r.Customer ? `Email: ${escapeHtml(r.Customer.email || '—')}, Phone: ${escapeHtml(r.Customer.phone || '—')}` : '';
       const roomInfo = Array.isArray(r.petRooms) && r.petRooms.length
         ? r.petRooms.map((petRoom) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}, ${fmtMoney(petRoom.pricePerNight)} per night`).join('\n')
@@ -113,7 +121,8 @@
           <div class="field"><label>Check-out Time</label><input type="text" readonly value="${escapeHtml(r.checkOutTime || '—')}" /></div>
           <div class="field"><label>Total</label><input type="text" readonly value="${fmtMoney(r.totalPrice)}" /></div>
           <div class="field"><label>Status</label><input type="text" readonly value="${escapeHtml(r.status)}" /></div>
-          <div class="field full"><label>Pet Details</label><textarea rows="4" readonly>${escapeHtml(petInfo) || '—'}</textarea></div>
+          <div class="field full"><label>Pet Details</label><textarea rows="3" readonly>${escapeHtml(petInfo) || '—'}</textarea></div>
+          <div class="field full"><label>Medical Records</label><textarea rows="${Math.max(2, petRecords.length)}" readonly>${escapeHtml(medicalRecords) || 'No medical records available.'}</textarea></div>
           <div class="field full"><label>Customer Details</label><textarea rows="2" readonly>${customerInfo || '—'}</textarea></div>
           <div class="field full"><label>Customer Notes</label><textarea rows="3" readonly>${escapeHtml(r.notes || 'No notes.')}</textarea></div>
         </div>
@@ -121,20 +130,28 @@
     };
 
     window.confirmRes = async (id, button) => {
-      if (button) {
-        button.disabled = true;
-        button.textContent = 'Confirming...';
-      }
+      const originalLabel = button ? button.textContent : 'Confirm';
+      if (button) button.disabled = true;
+      if (button) button.textContent = originalLabel === 'Send Ticket' ? 'Sending ticket...' : 'Confirming...';
       try {
         const result = await apiPut(`/hotel/${id}`, { status: 'confirmed' });
-        if (!result.emailSent) alert(`Reservation confirmed, but the ticket email was not sent. ${result.emailError || 'Check the customer email and Render email settings.'}`);
-        await loadReservations();
-      } catch (error) {
-        if (button) {
-          button.disabled = false;
-          button.textContent = 'Confirm';
+        if (result.emailSent) {
+          showAdminNotice('Reservation confirmed and ticket emailed.');
+        } else {
+          showAdminNotice(`Reservation confirmed, but the ticket email was not sent. ${result.emailError || 'Check the provider response in Render logs, sender address/domain, and email credentials. You can retry with Send Ticket.'}`, 'error');
         }
-        alert(error.message);
+      } catch (error) {
+        showAdminNotice(error.message, 'error');
+      } finally {
+        try {
+          await loadReservations();
+        } catch (error) {
+          showAdminNotice(`Booking action finished, but reservations could not be refreshed: ${error.message}`, 'error');
+          if (button && button.isConnected) {
+            button.disabled = false;
+            button.textContent = originalLabel;
+          }
+        }
       }
     };
 
@@ -160,7 +177,9 @@
       try {
         const result = await apiPut(`/hotel/${encodeURIComponent(id)}`, { status: select.value });
         if (select.value === 'confirmed' && !result.emailSent) {
-          alert('Reservation status updated, but the customer confirmation email was not sent. Check the email configuration.');
+          showAdminNotice(`Reservation status updated, but the ticket email was not sent. ${result.emailError || 'Check the provider response in Render logs, sender address/domain, and email credentials.'}`, 'error');
+        } else if (select.value === 'confirmed') {
+          showAdminNotice('Reservation confirmed and ticket emailed.');
         }
         await loadReservations();
       } catch (error) {

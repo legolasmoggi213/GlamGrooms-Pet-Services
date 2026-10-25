@@ -59,6 +59,17 @@
             <div id="hotel-revenue-chart" class="revenue-bars"></div>
           </section>
         </div>
+        <h4 class="revenue-breakdown-title">Service Sales Breakdown</h4>
+        <div class="revenue-chart-grid">
+          <section class="revenue-chart-panel grooming-chart">
+            <div class="flex-between"><h4>Sales by Grooming Service</h4><strong id="grooming-service-total">₱0.00</strong></div>
+            <div id="grooming-service-chart" class="revenue-bars service-revenue-bars"></div>
+          </section>
+          <section class="revenue-chart-panel hotel-chart">
+            <div class="flex-between"><h4>Sales by Hotel Room</h4><strong id="hotel-service-total">₱0.00</strong></div>
+            <div id="hotel-service-chart" class="revenue-bars service-revenue-bars"></div>
+          </section>
+        </div>
       </section>
 
       <section class="panel" id="booking-report" aria-label="Booking report">
@@ -117,6 +128,7 @@
           statCard('Upcoming Arrivals', s.hotel.upcomingArrivals, 'orange') +
           statCard('Grooming Revenue', fmtMoney(s.grooming.revenue), 'green') +
           statCard('Hotel Revenue', fmtMoney(s.hotel.revenue), 'green') +
+          statCard('Product Sales', fmtMoney(s.productSalesRevenue), 'green') +
           statCard('Walk-in Cash Sales', fmtMoney(s.overTheCounterRevenue), 'green') +
           statCard('Total Revenue', fmtMoney(s.totalRevenue), 'purple');
       }
@@ -222,17 +234,33 @@
         document.getElementById('revenue-period-label').textContent = periods[data.period];
         document.getElementById('revenue-combined').textContent = `Combined revenue: ${fmtMoney(data.totals.combined)}`;
 
-        const renderChart = (buckets) => {
+        const renderChart = (buckets, countLabel = 'bookings') => {
           const maximum = Math.max(0, ...buckets.map((bucket) => Number(bucket.revenue) || 0));
           return buckets.map((bucket) => {
             const value = Number(bucket.revenue) || 0;
             const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
             return `
-              <div class="revenue-bar-column" title="${escapeHtml(`${bucket.label}: ${fmtMoney(value)}, ${bucket.count} bookings`)}">
+              <div class="revenue-bar-column" title="${escapeHtml(`${bucket.label}: ${fmtMoney(value)}, ${bucket.count} ${countLabel}`)}">
                 <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
                 <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
                 <span class="revenue-bar-label">${escapeHtml(bucket.label)}</span>
-                <span class="revenue-bar-count">${bucket.count} ${bucket.count === 1 ? 'booking' : 'bookings'}</span>
+                <span class="revenue-bar-count">${bucket.count} ${countLabel}</span>
+              </div>`;
+          }).join('');
+        };
+
+        const renderCategoryChart = (items, countLabel) => {
+          if (!items.length) return '<div class="empty">No sales recorded for this period.</div>';
+          const maximum = Math.max(0, ...items.map((item) => Number(item.revenue) || 0));
+          return items.map((item) => {
+            const value = Number(item.revenue) || 0;
+            const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
+            return `
+              <div class="revenue-bar-column" title="${escapeHtml(`${item.label}: ${fmtMoney(value)}, ${item.count} ${countLabel}`)}">
+                <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
+                <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
+                <span class="revenue-bar-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+                <span class="revenue-bar-count">${item.count} ${item.count === 1 ? countLabel : `${countLabel}s`}</span>
               </div>`;
           }).join('');
         };
@@ -243,6 +271,12 @@
         document.getElementById('hotel-revenue-total').textContent = fmtMoney(hotelTotal);
         document.getElementById('grooming-revenue-chart').innerHTML = renderChart(data.grooming);
         document.getElementById('hotel-revenue-chart').innerHTML = renderChart(data.hotel);
+        const groomingServiceTotal = (data.groomingServices || []).reduce((total, item) => total + Number(item.revenue || 0), 0);
+        const hotelServiceTotal = (data.hotelServices || []).reduce((total, item) => total + Number(item.revenue || 0), 0);
+        document.getElementById('grooming-service-total').textContent = fmtMoney(groomingServiceTotal);
+        document.getElementById('hotel-service-total').textContent = fmtMoney(hotelServiceTotal);
+        document.getElementById('grooming-service-chart').innerHTML = renderCategoryChart(data.groomingServices || [], 'service');
+        document.getElementById('hotel-service-chart').innerHTML = renderCategoryChart(data.hotelServices || [], 'stay');
       }
 
       let currentBookingReport = [];

@@ -370,17 +370,24 @@ app.get('/admin/nav-status', async (req, res) => {
 app.post('/admin/change-password', (req, res) => {
   (async () => {
     const admin = await getAdminFromRequest(req);
-    if (!admin) return res.redirect('/admin/login.html');
+    const raw = req.headers.cookie || '';
+    const tokenCookie = raw.split(';').map((part) => part.trim()).find((part) => part.startsWith('admin_token='));
+    const identity = parseToken(tokenCookie ? decodeURIComponent(tokenCookie.split('=').slice(1).join('=')) : null);
+    const employee = !admin && typeof identity === 'string' && identity.startsWith('STAFF:')
+      ? await db.Employee.findByPk(identity.slice('STAFF:'.length))
+      : null;
+    const account = admin || (employee && employee.status === 'active' ? employee : null);
+    if (!account) return res.redirect('/admin/login.html');
 
     const { currentPassword, newPassword, confirmPassword } = req.body || {};
-    if (!currentPassword || !bcrypt.compareSync(currentPassword, admin.passwordHash)) {
+    if (!currentPassword || !bcrypt.compareSync(currentPassword, account.passwordHash)) {
       return res.redirect('/admin/change-password.html?passwordError=current');
     }
     if (!isStrongPassword(newPassword) || newPassword !== confirmPassword) {
       return res.redirect('/admin/change-password.html?passwordError=invalid');
     }
 
-    await admin.update({ passwordHash: bcrypt.hashSync(newPassword, 10) });
+    await account.update({ passwordHash: bcrypt.hashSync(newPassword, 10) });
     return res.redirect('/admin/change-password.html?passwordChanged=1');
   })().catch((error) => {
     console.error(error);
@@ -427,7 +434,17 @@ app.use('/admin', async (req, res, next) => {
     try {
       const employee = await db.Employee.findByPk(user.slice('STAFF:'.length));
       if (employee && employee.status === 'active') {
-        const staffPages = new Set(['/', '/index.html', '/grooming.html', '/hotel.html', '/inventory.html']);
+        const staffPages = new Set([
+          '/',
+          '/index.html',
+          '/grooming.html',
+          '/hotel.html',
+          '/inventory.html',
+          '/customers.html',
+          '/pets.html',
+          '/pos.html',
+          '/change-password.html',
+        ]);
         if (!staffPages.has(req.path)) return res.status(403).send('Admin access required.');
         return next();
       }
@@ -489,4 +506,3 @@ if (require.main === module) {
 }
 
 module.exports = app;
-

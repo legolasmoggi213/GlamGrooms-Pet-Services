@@ -22,8 +22,8 @@
         <h3>Products</h3>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Product</th><th>Category</th><th>Stock</th><th>Reorder at</th><th>Actions</th></tr></thead>
-            <tbody id="product-rows"><tr><td colspan="5" class="loading">Loading inventory…</td></tr></tbody>
+            <thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Reorder at</th><th>Actions</th></tr></thead>
+            <tbody id="product-rows"><tr><td colspan="6" class="loading">Loading inventory…</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -58,6 +58,7 @@
         <div class="field full"><label for="product-name">Product name</label><input id="product-name" name="name" maxlength="120" required value="${escapeHtml(product.name || '')}"></div>
         <div class="field"><label for="product-category">Category</label><input id="product-category" name="category" maxlength="80" required value="${escapeHtml(product.category || '')}"></div>
         <div class="field"><label for="product-unit">Unit</label><input id="product-unit" name="unit" maxlength="30" placeholder="bottle, pack, kg" required value="${escapeHtml(product.unit || '')}"></div>
+        <div class="field"><label for="product-price">Selling price (PHP)</label><input id="product-price" name="price" type="number" min="0.01" max="10000000" step="0.01" required value="${Number(product.price || '')}"></div>
         <div class="field"><label for="product-quantity">Current quantity</label><input id="product-quantity" name="quantity" type="number" min="0" max="1000000" step="1" required value="${Number(product.quantity || 0)}"></div>
         <div class="field"><label for="product-reorder">Low-stock threshold</label><input id="product-reorder" name="reorderLevel" type="number" min="0" max="1000000" step="1" required value="${Number(product.reorderLevel || 0)}"></div>
         <div class="form-actions full"><button class="btn btn-primary" type="submit">Save Product</button><button class="btn btn-outline" type="button" onclick="closeModal()">Cancel</button></div>
@@ -72,6 +73,7 @@
           name: form.elements.namedItem('name').value.trim(),
           category: form.elements.namedItem('category').value.trim(),
           unit: form.elements.namedItem('unit').value.trim(),
+          price: Number(form.elements.namedItem('price').value),
           quantity: Number(form.elements.namedItem('quantity').value),
           reorderLevel: Number(form.elements.namedItem('reorderLevel').value),
         };
@@ -101,11 +103,12 @@
           return `<tr>
             <td><strong>${escapeHtml(product.name)}</strong></td>
             <td>${escapeHtml(product.category)}</td>
+            <td>${fmtMoney(product.price)}</td>
             <td>${Number(product.quantity)} ${escapeHtml(product.unit)} ${low ? '<span class="status-badge status-pending">Low stock</span>' : ''}</td>
             <td>${Number(product.reorderLevel)} ${escapeHtml(product.unit)}</td>
             <td><button class="btn btn-outline btn-sm" type="button" data-edit-product="${escapeHtml(product.id)}">Manage</button> <button class="btn btn-primary btn-sm" type="button" data-request-stock="${escapeHtml(product.id)}">Request stock</button> <button class="btn btn-danger btn-sm" type="button" data-delete-product="${escapeHtml(product.id)}">Delete</button></td>
           </tr>`;
-        }).join('') : '<tr><td colspan="5" class="empty">No inventory products yet.</td></tr>';
+        }).join('') : '<tr><td colspan="6" class="empty">No inventory products yet.</td></tr>';
 
         const requests = await apiGet('/inventory/requests');
         requestRows.innerHTML = requests.length ? requests.map((request) => `<tr>
@@ -117,7 +120,7 @@
           <td>${isAdmin && request.status === 'pending' ? `<button class="btn btn-success btn-sm" type="button" data-review-request="${escapeHtml(request.id)}" data-status="approved">Approve</button> <button class="btn btn-danger btn-sm" type="button" data-review-request="${escapeHtml(request.id)}" data-status="rejected">Reject</button>` : '—'}</td>
         </tr>`).join('') : '<tr><td colspan="6" class="empty">No stock requests yet.</td></tr>';
       } catch (error) {
-        productRows.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(error.message)}</td></tr>`;
+        productRows.innerHTML = `<tr><td colspan="6" class="empty">${escapeHtml(error.message)}</td></tr>`;
       }
     }
 
@@ -176,7 +179,7 @@
     });
 
     loadRole().then(loadInventory).catch((error) => {
-      productRows.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(error.message)}</td></tr>`;
+      productRows.innerHTML = `<tr><td colspan="6" class="empty">${escapeHtml(error.message)}</td></tr>`;
     });
   </script>
 </body>

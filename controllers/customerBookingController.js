@@ -33,10 +33,9 @@ const cancelBooking = async (req, res, next) => {
     const context = await getBookingContext(req);
     if (context.error) return res.status(context.status || 400).json({ error: context.error });
     const { type, booking, updateController } = context;
-    const inactive = type === 'grooming'
-      ? ['cancelled', 'in-progress', 'completed'].includes(booking.status)
-      : ['cancelled', 'checked-out', 'checked-in'].includes(booking.status);
-    if (inactive) return res.status(409).json({ error: 'This booking can no longer be cancelled online.' });
+    if (booking.status !== 'pending' || booking.confirmedAt) {
+      return res.status(409).json({ error: 'This booking can no longer be cancelled online because it is no longer awaiting approval.' });
+    }
     if (booking.paymentStatus === 'paid') {
       return res.status(409).json({ error: 'This booking is paid. Please contact the business to cancel it and discuss any refund.' });
     }
@@ -54,10 +53,9 @@ const rescheduleBooking = async (req, res, next) => {
     const context = await getBookingContext(req);
     if (context.error) return res.status(context.status || 400).json({ error: context.error });
     const { type, booking, updateController } = context;
-    const inactive = type === 'grooming'
-      ? ['cancelled', 'in-progress', 'completed'].includes(booking.status)
-      : ['cancelled', 'checked-out', 'checked-in'].includes(booking.status);
-    if (inactive) return res.status(409).json({ error: 'This booking can no longer be rescheduled online.' });
+    if (booking.status !== 'pending' || booking.confirmedAt) {
+      return res.status(409).json({ error: 'This booking can no longer be edited because it is no longer awaiting approval.' });
+    }
     if (booking.paymentMethod === 'qrph' && booking.paymentStatus === 'pending') {
       return res.status(409).json({ error: 'Cancel or complete the pending GCash checkout before rescheduling this booking.' });
     }

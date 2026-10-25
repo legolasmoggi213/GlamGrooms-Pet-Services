@@ -91,6 +91,7 @@ const normalizeProduct = (body, partial = false) => {
   for (const [field, maxLength] of [['name', 120], ['category', 80], ['unit', 30]]) {
     if (!partial || body[field] !== undefined) product[field] = cleanText(body[field], maxLength);
   }
+  if (!partial || body.price !== undefined) product.price = Number(body.price);
   for (const field of ['quantity', 'reorderLevel']) {
     if (!partial || body[field] !== undefined) product[field] = Number(body[field]);
   }
@@ -99,6 +100,9 @@ const normalizeProduct = (body, partial = false) => {
     || (product.category !== undefined && !product.category)
     || (product.unit !== undefined && !product.unit)) {
     return { error: 'Name, category, and unit are required.' };
+  }
+  if (product.price !== undefined && (!Number.isFinite(product.price) || product.price <= 0 || product.price > 10000000)) {
+    return { error: 'Enter a product price greater than 0 and no more than 10,000,000.' };
   }
   for (const field of ['quantity', 'reorderLevel']) {
     if (product[field] !== undefined && !validCount(product[field])) {

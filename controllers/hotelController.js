@@ -319,7 +319,7 @@ const updateReservation = async (req, res, next) => {
         }
       } catch (mailError) {
         console.error('Hotel reservation ticket email failed:', mailError);
-        emailError = 'The email provider returned an error. Check Render logs and verify your sender settings.';
+        emailError = 'The email provider rejected the ticket. Check its response in Render logs, and verify the sender address/domain and provider credentials.';
       }
     }
     res.json({ ...(await addRelatedRecords(full)), emailSent, emailError });

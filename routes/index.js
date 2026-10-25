@@ -81,34 +81,18 @@ router.use('/admin', adminOrStaff);
 router.use('/inventory', adminOrStaff);
 
 // Customers
-router.get('/customers', adminOrStaff, async (req, res, next) => {
-  if (!req.authEmployee) return customerController.listCustomers(req, res, next);
-  try {
-    const customers = await Customer.findAll({ order: [['createdAt', 'DESC']] });
-    res.json(customers.map(({ id, name }) => ({ id, name })));
-  } catch (error) {
-    next(error);
-  }
-});
-router.get('/customers/:id', adminOnly, customerController.getCustomer);
-router.post('/customers', adminOnly, customerController.createCustomer);
-router.put('/customers/:id', adminOnly, customerController.updateCustomer);
-router.delete('/customers/:id', adminOnly, customerController.deleteCustomer);
+router.get('/customers', adminOrStaff, customerController.listCustomers);
+router.get('/customers/:id', adminOrStaff, customerController.getCustomer);
+router.post('/customers', adminOrStaff, customerController.createCustomer);
+router.put('/customers/:id', adminOrStaff, customerController.updateCustomer);
+router.delete('/customers/:id', adminOrStaff, customerController.deleteCustomer);
 
 // Pets
-router.get('/pets', adminOrStaff, async (req, res, next) => {
-  if (!req.authEmployee) return petController.listPets(req, res, next);
-  try {
-    const pets = await Pet.findAll({ order: [['createdAt', 'DESC']] });
-    res.json(pets.map(({ id, name, customerId }) => ({ id, name, customerId })));
-  } catch (error) {
-    next(error);
-  }
-});
-router.get('/pets/:id', adminOnly, petController.getPet);
-router.post('/pets', adminOnly, petController.createPet);
-router.put('/pets/:id', adminOnly, petController.updatePet);
-router.delete('/pets/:id', adminOnly, petController.deletePet);
+router.get('/pets', adminOrStaff, petController.listPets);
+router.get('/pets/:id', adminOrStaff, petController.getPet);
+router.post('/pets', adminOrStaff, petController.createPet);
+router.put('/pets/:id', adminOrStaff, petController.updatePet);
+router.delete('/pets/:id', adminOrStaff, petController.deletePet);
 
 // Grooming appointments
 router.get('/grooming', groomingController.listAppointments);
@@ -131,7 +115,7 @@ router.put('/inventory/products/:id', operationsController.updateProduct);
 router.delete('/inventory/products/:id', operationsController.deleteProduct);
 router.get('/inventory/requests', operationsController.listStockRequests);
 router.post('/inventory/requests', operationsController.createStockRequest);
-router.patch('/inventory/requests/:id', adminOnly, operationsController.updateStockRequest);
+router.patch('/inventory/requests/:id', adminOrStaff, operationsController.updateStockRequest);
 
 // Public one-shot bookings (customer + pet + booking in a single request)
 router.post('/bookings/grooming', bookingController.bookGrooming);
@@ -149,8 +133,8 @@ router.get('/admin/activity', adminController.getRecentActivity);
 router.get('/admin/occupancy', adminController.getOccupancy);
 router.get('/admin/revenue-by-service', adminController.getRevenueBreakdown);
 router.get('/admin/revenue-analytics', adminController.getRevenueAnalytics);
-router.get('/admin/cash-transactions', adminOnly, adminController.listCashTransactions);
-router.post('/admin/cash-transactions', adminOnly, adminController.createCashTransaction);
+router.get('/admin/cash-transactions', adminOrStaff, adminController.listCashTransactions);
+router.post('/admin/cash-transactions', adminOrStaff, adminController.createCashTransaction);
 router.get('/admin/employees', adminOnly, operationsController.listEmployees);
 router.post('/admin/employees', adminOnly, operationsController.createEmployee);
 router.put('/admin/employees/:id', adminOnly, operationsController.updateEmployee);

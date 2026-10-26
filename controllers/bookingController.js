@@ -20,7 +20,12 @@ const {
   releaseBookingSlotsByIds,
 } = require('../util/bookingLocks');
 const { validateTime, validatePickupTime } = require('../util/businessHours');
-const { validateFutureDate, getStayNights } = require('../util/bookingCalculations');
+const {
+  validateFutureDate,
+  getStayNights,
+  groomingBookingDuration,
+  groomingRecordDuration,
+} = require('../util/bookingCalculations');
 const { sendPayMongoReceipt } = require('../util/mailer');
 const { isValidMobileNumber } = require('../util/mobileNumber');
 const { notifyStaffOfBooking, notifyStaffOfCancellation } = require('../util/staffNotifications');

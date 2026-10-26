@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
+  <link rel="stylesheet" href="/css/style.css?v=reports-pdf-20261027" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -121,12 +121,121 @@
 
   <script src="/js/api.js"></script>
   <script src="/js/admin.js"></script>
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script>
     const initDashboard = () => {
       renderSidebar('Dashboard');
       let bookingReportRows = [];
+      let revenueAnalyticsData = null;
+
+      const reportDateRange = (start, end) => start || end
+        ? `${start ? fmtDate(start) : 'All dates'} – ${end ? fmtDate(end) : 'Present'}`
+        : 'All recorded dates';
+
+      const addPdfPageHeading = (pdf, title, subtitle) => {
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        pdf.setFillColor(32, 45, 50);
+        pdf.rect(0, 0, pageWidth, 28, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(17);
+        pdf.text(title, 12, 12);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(238, 234, 220);
+        pdf.text(subtitle, 12, 20);
+        pdf.setTextColor(37, 50, 56);
+        return 34;
+      };
+
+      const drawPdfTable = (pdf, { headers, rows, widths, y, title, subtitle, fontSize = 7.5 }) => {
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const margin = 12;
+        const drawHeader = () => {
+          pdf.setFillColor(235, 232, 223);
+          pdf.setDrawColor(207, 211, 205);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(fontSize);
+          let x = margin;
+          const rowHeight = 9;
+          headers.forEach((header, index) => {
+            pdf.rect(x, y, widths[index], rowHeight, 'FD');
+            pdf.setTextColor(37, 50, 56);
+            pdf.text(String(header), x + 2, y + 5.8, { maxWidth: widths[index] - 4 });
+            x += widths[index];
+          });
+          y += rowHeight;
+        };
+
+        if (title) {
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(10);
+          pdf.setTextColor(37, 50, 56);
+          pdf.text(title, margin, y);
+          y += 5;
+        }
+        if (subtitle) {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7.5);
+          pdf.setTextColor(102, 115, 122);
+          pdf.text(subtitle, margin, y);
+          y += 5;
+        }
+        drawHeader();
+
+        rows.forEach((row, rowIndex) => {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(fontSize);
+          const cellLines = row.map((value, index) =>
+            pdf.splitTextToSize(String(value == null || value === '' ? '—' : value), widths[index] - 4));
+          const rowHeight = Math.max(8, ...cellLines.map((lines) => lines.length * (fontSize * 0.42) + 4));
+          if (y + rowHeight > pageHeight - 13) {
+            pdf.addPage();
+            y = addPdfPageHeading(pdf, title || 'Glam Grooms Report', subtitle || '');
+            drawHeader();
+          }
+
+          let x = margin;
+          pdf.setDrawColor(220, 223, 218);
+          row.forEach((_, index) => {
+            if (rowIndex % 2 === 0) {
+              pdf.setFillColor(250, 249, 245);
+              pdf.rect(x, y, widths[index], rowHeight, 'F');
+            }
+            pdf.rect(x, y, widths[index], rowHeight, 'S');
+            pdf.setTextColor(37, 50, 56);
+            pdf.text(cellLines[index], x + 2, y + 4.8, { lineHeightFactor: 1.15 });
+            x += widths[index];
+          });
+          y += rowHeight;
+        });
+
+        return y;
+      };
+
+      const addPdfPageNumbers = (pdf) => {
+        const totalPages = pdf.getNumberOfPages();
+        for (let page = 1; page <= totalPages; page += 1) {
+          pdf.setPage(page);
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+          pdf.setDrawColor(220, 223, 218);
+          pdf.line(12, pageHeight - 9, pageWidth - 12, pageHeight - 9);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7);
+          pdf.setTextColor(102, 115, 122);
+          pdf.text(`Glam Grooms Pet Spa & Hotel  •  Page ${page} of ${totalPages}`, 12, pageHeight - 5);
+        }
+      };
+
+      const readableServiceName = (value) => String(value || 'Service')
+        .replace(/^grooming-/, '')
+        .replace(/^ayurveda-herb-/, 'Ayurveda Herb ')
+        .replace(/^ayurveda-pkg-/, 'Ayurveda Package ')
+        .replace(/^staycation-/, 'Staycation ')
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, (letter) => letter.toUpperCase())
+        .replace(/\bXl\b/g, 'XL');
 
       const statCard = (label, value, color, href) => `
         <a class="stat-card stat-card-link" href="${href}" aria-label="View ${escapeHtml(label)}">
@@ -167,18 +276,34 @@
             date: booking.date,
             type: 'Grooming',
             customer: booking.Customer?.name || booking.customerDetails?.name || 'Customer',
-            service: (booking.petServices || []).map((service) => service.service).filter(Boolean).join(', ') || booking.service || 'Grooming',
+            pets: (booking.petNames || []).join(', ') || booking.Pet?.name || 'Pet not listed',
+            service: (booking.petServices || []).map((service) =>
+              `${service.petName || 'Pet'}: ${readableServiceName(service.service)} (${fmtMoney(service.price)})`).join('; ')
+              || readableServiceName(booking.service || 'Grooming'),
+            schedule: `${booking.time || 'Time not set'}${booking.pickupTime ? ` · Pickup ${booking.pickupTime}` : ''}`,
             status: booking.status || 'unknown',
+            payment: `${booking.paymentMethod === 'qrph' ? 'GCash' : 'Cash'} · ${booking.paymentStatus || 'unpaid'}`,
             amount: Number(booking.price || 0),
           })),
-          ...hotel.map((booking) => ({
+          ...hotel.map((booking) => {
+            const assignedSlots = booking.hotelSlotAssignments?.[booking.checkIn]
+              || Object.values(booking.hotelSlotAssignments || {}).find(Array.isArray)
+              || booking.hotelSlotNumbers
+              || [];
+            return {
             date: booking.checkIn,
             type: 'Hotel',
             customer: booking.Customer?.name || booking.customerDetails?.name || 'Customer',
-            service: (booking.petRooms || []).map((room) => room.roomType).filter(Boolean).join(', ') || booking.roomType || 'Hotel stay',
+            pets: (booking.petNames || []).join(', ') || booking.Pet?.name || 'Pet not listed',
+            service: (booking.petRooms || []).map((room, index) =>
+              `${room.petName || 'Pet'}: ${readableServiceName(room.roomType || booking.roomType)}${assignedSlots[index] ? ` · Slot ${assignedSlots[index]}` : ''}${room.pricePerNight ? ` (${fmtMoney(room.pricePerNight)}/night)` : ''}`).join('; ')
+              || readableServiceName(booking.roomType || 'Hotel stay'),
+            schedule: `${booking.checkInTime || 'Time not set'} check-in · ${fmtDate(booking.checkOut)} ${booking.checkOutTime || ''}`.trim(),
             status: booking.status || 'unknown',
+            payment: `${booking.paymentMethod === 'qrph' ? 'GCash' : 'Cash'} · ${booking.paymentStatus || 'unpaid'}`,
             amount: Number(booking.totalPrice || 0),
-          })),
+            };
+          }),
         ]
           .filter((booking) => (!startDate || booking.date >= startDate) && (!endDate || booking.date <= endDate))
           .sort((left, right) => String(right.date).localeCompare(String(left.date)));
@@ -206,31 +331,37 @@
         }
 
         const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF();
-        const lines = [
-          'Booking Report',
-          '',
-          'Date | Type | Customer | Service / Room | Status | Amount',
-          ...bookingReportRows.map((booking) => [
+        const pdf = new jsPDF('l', 'mm', 'a4');
+        const startDate = document.getElementById('report-start').value;
+        const endDate = document.getElementById('report-end').value;
+        const range = reportDateRange(startDate, endDate);
+        let y = addPdfPageHeading(pdf, 'Booking Report', `Booking schedule and service details  •  ${range}`);
+        const groomingCount = bookingReportRows.filter((booking) => booking.type === 'Grooming').length;
+        const hotelCount = bookingReportRows.length - groomingCount;
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(37, 50, 56);
+        pdf.text(`Bookings: ${bookingReportRows.length}     Grooming: ${groomingCount}     Hotel: ${hotelCount}     Booking value: ${fmtMoney(bookingReportRows.reduce((sum, booking) => sum + booking.amount, 0))}`, 12, y);
+        y += 8;
+        drawPdfTable(pdf, {
+          headers: ['Date', 'Type', 'Customer', 'Pet(s)', 'Service / room details', 'Schedule', 'Status / payment', 'Amount'],
+          rows: bookingReportRows.map((booking) => [
             fmtDate(booking.date),
             booking.type,
             booking.customer,
+            booking.pets,
             booking.service,
-            booking.status,
+            booking.schedule,
+            `${booking.status} · ${booking.payment}`,
             fmtMoney(booking.amount),
-          ].join(' | ')),
-        ];
-        const pageHeight = pdf.internal.pageSize.getHeight();
-        let y = 15;
-        for (const line of lines) {
-          const wrapped = pdf.splitTextToSize(line, 180);
-          if (y + wrapped.length * 7 > pageHeight - 12) {
-            pdf.addPage();
-            y = 15;
-          }
-          pdf.text(wrapped, 15, y);
-          y += wrapped.length * 7;
-        }
+          ]),
+          widths: [22, 19, 33, 30, 69, 39, 39, 22],
+          y,
+          title: 'Booking details',
+          subtitle: 'Grooming service assignments include each pet, service, and price. Hotel entries include each pet’s room and stay schedule.',
+          fontSize: 7,
+        });
+        addPdfPageNumbers(pdf);
         pdf.save('booking-report.pdf');
       }
 
@@ -347,43 +478,96 @@
       });
 
       async function exportRevenuePdf() {
-        const revenueSection = document.getElementById('revenue');
-        if (!revenueSection) return;
-        if (!window.html2canvas || !window.jspdf) {
+        if (!revenueAnalyticsData || !window.jspdf) {
           alert('PDF export is unavailable right now. Please refresh and try again.');
           return;
         }
 
         try {
-          const canvas = await window.html2canvas(revenueSection, {
-            scale: 2,
-            backgroundColor: '#f7f3ee',
-            useCORS: true,
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF('l', 'mm', 'a4');
+          const data = revenueAnalyticsData;
+          const periodNames = { daily: 'Daily · last 7 days', weekly: 'Weekly · last 8 weeks', monthly: 'Monthly · last 6 months' };
+          const period = data.period || 'monthly';
+          const subtitle = `${periodNames[period] || period}  •  Generated ${new Date().toLocaleString()}`;
+          let y = addPdfPageHeading(pdf, 'Revenue & Sales Report', subtitle);
+          const summary = [
+            ['Grooming revenue', fmtMoney(data.totals.grooming)],
+            ['Hotel revenue', fmtMoney(data.totals.hotel)],
+            ['Combined revenue', fmtMoney(data.totals.combined)],
+          ];
+          const cardWidth = 82;
+          summary.forEach(([label, value], index) => {
+            const x = 12 + index * (cardWidth + 6);
+            pdf.setFillColor(index === 1 ? 237 : 250, index === 1 ? 246 : 247, index === 1 ? 244 : 238);
+            pdf.setDrawColor(220, 223, 218);
+            pdf.roundedRect(x, y, cardWidth, 18, 2, 2, 'FD');
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(7);
+            pdf.setTextColor(102, 115, 122);
+            pdf.text(label, x + 4, y + 6);
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(11);
+            pdf.setTextColor(37, 50, 56);
+            pdf.text(value, x + 4, y + 13.5);
+          });
+          y += 25;
+          y = drawPdfTable(pdf, {
+            headers: ['Period', 'Grooming bookings', 'Grooming revenue', 'Hotel bookings', 'Hotel revenue', 'Combined revenue'],
+            rows: (data.grooming || []).map((bucket, index) => {
+              const hotelBucket = data.hotel?.[index] || {};
+              return [
+                bucket.label,
+                String(bucket.count || 0),
+                fmtMoney(bucket.revenue),
+                String(hotelBucket.count || 0),
+                fmtMoney(hotelBucket.revenue),
+                fmtMoney(Number(bucket.revenue || 0) + Number(hotelBucket.revenue || 0)),
+              ];
+            }),
+            widths: [51, 38, 43, 35, 43, 44],
+            y,
+            title: 'Revenue by period',
+            fontSize: 8,
           });
 
-          const { jsPDF } = window.jspdf;
-          const pdf = new jsPDF('p', 'mm', 'a4');
-          const pageWidth = pdf.internal.pageSize.getWidth();
-          const pageHeight = pdf.internal.pageSize.getHeight();
-          const imageData = canvas.toDataURL('image/png');
-          const margin = 10;
-          const imageWidth = pageWidth - (margin * 2);
-          const imageHeight = (canvas.height * imageWidth) / canvas.width;
-
-          let position = margin;
-          let remainingHeight = imageHeight;
-          pdf.addImage(imageData, 'PNG', margin, position, imageWidth, imageHeight);
-          remainingHeight -= pageHeight - (margin * 2);
-
-          while (remainingHeight > 0) {
-            pdf.addPage();
-            position = margin - (pageHeight - (margin * 2));
-            pdf.addImage(imageData, 'PNG', margin, position, imageWidth, imageHeight);
-            remainingHeight -= pageHeight - (margin * 2);
-          }
-
-          const period = document.querySelector('.revenue-periods button[aria-pressed="true"]')?.dataset.period || 'monthly';
-          pdf.save(`revenue-analytics-${period}.pdf`);
+          const serviceTables = [
+            {
+              title: 'Grooming service sales',
+              entries: data.groomingServices || [],
+              total: Number(data.totals.grooming || 0),
+            },
+            {
+              title: 'Hotel room sales',
+              entries: data.hotelServices || [],
+              total: Number(data.totals.hotel || 0),
+            },
+          ];
+          serviceTables.forEach((table) => {
+            if (y > pdf.internal.pageSize.getHeight() - 48) {
+              pdf.addPage();
+              y = addPdfPageHeading(pdf, 'Revenue & Sales Report', subtitle);
+            }
+            y += 5;
+            y = drawPdfTable(pdf, {
+              headers: ['Service', 'Bookings / pets served', 'Revenue', 'Share of category revenue'],
+              rows: table.entries
+                .filter((entry) => Number(entry.count || 0) || Number(entry.revenue || 0))
+                .map((entry) => [
+                  entry.label || 'Other',
+                  String(entry.count || 0),
+                  fmtMoney(entry.revenue),
+                  table.total > 0 ? `${((Number(entry.revenue || 0) / table.total) * 100).toFixed(1)}%` : '0.0%',
+                ]),
+              widths: [105, 55, 55, 55],
+              y,
+              title: table.title,
+              subtitle: 'Includes service-level totals and counts for the selected reporting period.',
+              fontSize: 8,
+            });
+          });
+          addPdfPageNumbers(pdf);
+          pdf.save(`revenue-sales-report-${period}.pdf`);
         } catch (error) {
           console.error('Unable to export revenue PDF:', error);
           alert('Unable to export the PDF at the moment. Please try again.');
@@ -393,6 +577,7 @@
       async function loadRevenue() {
         const period = document.querySelector('.revenue-periods button[aria-pressed="true"]').dataset.period;
         const data = await apiGet(`/admin/revenue-analytics?period=${period}`);
+        revenueAnalyticsData = data;
         const periods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months' };
         document.getElementById('revenue-period-label').textContent = periods[data.period];
         document.getElementById('revenue-combined').textContent = `Combined revenue: ${fmtMoney(data.totals.combined)}`;
@@ -435,6 +620,26 @@
         document.getElementById('hotel-revenue-total').textContent = fmtMoney(hotelTotal);
         document.getElementById('grooming-revenue-chart').innerHTML = renderChart(data.grooming);
         document.getElementById('hotel-revenue-chart').innerHTML = renderChart(data.hotel);
+        const renderServiceChart = (entries) => {
+          const active = (entries || []).filter((entry) => Number(entry.revenue) || Number(entry.count));
+          const maximum = Math.max(0, ...active.map((entry) => Number(entry.revenue) || 0));
+          return active.length ? active.map((entry) => {
+            const value = Number(entry.revenue) || 0;
+            const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
+            return `<div class="revenue-bar-column" title="${escapeHtml(`${entry.label}: ${fmtMoney(value)}, ${entry.count} bookings`)}">
+              <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
+              <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
+              <span class="revenue-bar-label"><span>${escapeHtml(entry.label)}</span></span>
+              <span class="revenue-bar-count">${Number(entry.count) || 0}</span>
+            </div>`;
+          }).join('') : '<div class="empty">No service sales in this period.</div>';
+        };
+        const groomingServiceTotal = (data.groomingServices || []).reduce((sum, entry) => sum + Number(entry.revenue || 0), 0);
+        const hotelServiceTotal = (data.hotelServices || []).reduce((sum, entry) => sum + Number(entry.revenue || 0), 0);
+        document.getElementById('grooming-service-total').textContent = fmtMoney(groomingServiceTotal);
+        document.getElementById('hotel-service-total').textContent = fmtMoney(hotelServiceTotal);
+        document.getElementById('grooming-service-chart').innerHTML = renderServiceChart(data.groomingServices);
+        document.getElementById('hotel-service-chart').innerHTML = renderServiceChart(data.hotelServices);
         const forecast = data.forecast;
         const forecastValue = (metric, format) => metric.available
           ? format(metric.predicted)

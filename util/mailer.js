@@ -91,13 +91,17 @@ const sendEmail = async ({ to, subject, text, html, from }) => {
 };
 
 const sendLoginVerificationCode = ({ to, code, purpose }) => {
-  const subject = 'Your Glam Grooms sign-in verification code';
+  const isPasswordChange = purpose === 'customer-password-change';
+  const subject = isPasswordChange
+    ? 'Your Glam Grooms password change verification code'
+    : 'Your Glam Grooms sign-in verification code';
   const audience = purpose === 'staff' ? 'staff' : 'customer';
+  const action = isPasswordChange ? 'change your password' : 'finish signing in';
   return sendEmail({
     to,
     subject,
-    text: `Your ${audience} sign-in verification code is ${code}.\n\nIt expires in 10 minutes. If you did not try to sign in, you can ignore this email.\n\nGlam Grooms Pet Spa & Hotel`,
-    html: `<div style="font-family:Arial,sans-serif;color:#111827"><h2>Glam Grooms sign-in code</h2><p>Enter this code to finish signing in to your ${audience} account:</p><p style="font-size:28px;font-weight:700;letter-spacing:8px">${code}</p><p>This code expires in 10 minutes. If you did not try to sign in, you can ignore this email.</p></div>`,
+    text: `Your ${audience} verification code to ${action} is ${code}.\n\nIt expires in 10 minutes. If you did not request this, you can ignore this email.\n\nGlam Grooms Pet Spa & Hotel`,
+    html: `<div style="font-family:Arial,sans-serif;color:#111827"><h2>Glam Grooms verification code</h2><p>Enter this code to ${action} for your ${audience} account:</p><p style="font-size:28px;font-weight:700;letter-spacing:8px">${code}</p><p>This code expires in 10 minutes. If you did not request this, you can ignore this email.</p></div>`,
     from: process.env.RESEND_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER,
   });
 };

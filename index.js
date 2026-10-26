@@ -106,6 +106,86 @@ app.post('/customer/login/send-code', async (req, res) => {
   }
 });
 
+app.post('/customer/password/change/send-code', async (req, res) => {
+  try {
+    const customer = await customerFromRequest(req);
+    if (!customer) return res.status(401).json({ error: 'Please sign in again to change your password.' });
+
+    const email = String(customer.email || '').trim().toLowerCase();
+    if (!/^[^@\s]+@gmail\.com$/.test(email)) {
+      return res.status(400).json({ error: 'Password verification is available for Gmail accounts only.' });
+    }
+
+    const { challengeId } = await createVerificationChallenge({
+      email,
+      purpose: 'customer-password-change',
+    });
+    return res.json({
+      success: true,
+      challengeId,
+      email: email.replace(/^(.).+(@.*)$/, '$1••••$2'),
+    });
+  } catch (error) {
+    if (error instanceof VerificationError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    console.error('Customer password-change verification email failed:', error);
+    return res.status(503).json({ error: 'Could not send the verification code. Please try again later.' });
+  }
+});
+
+app.post('/customer/password/change', async (req, res) => {
+  try {
+    const customer = await customerFromRequest(req);
+    if (!customer) return res.status(401).json({ error: 'Please sign in again to change your password.' });
+
+    const { challengeId, verificationCode, newPassword, confirmPassword } = req.body || {};
+    if (!challengeId || !verificationCode) {
+      return res.status(400).json({ error: 'Request and enter the email verification code first.' });
+    }
+    if (typeof newPassword !== 'string' || newPassword.length > 24
+      || !isStrongPassword(newPassword)) {
+      return res.status(400).json({
+        error: 'Password must be 8–24 characters and include uppercase and lowercase letters, a number, and a special character.',
+      });
+    }
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: 'The new password and confirmation do not match.' });
+    }
+
+    const email = String(customer.email || '').trim().toLowerCase();
+    await verifyChallenge({
+      email,
+      purpose: 'customer-password-change',
+      challengeId,
+      code: verificationCode,
+    });
+
+    const firebaseUser = await auth.getUserByEmail(email);
+    if (customer.uid && String(customer.uid) !== String(firebaseUser.uid)) {
+      console.error(`Customer password change blocked because the Firebase UID does not match the customer profile (${customer.id}).`);
+      return res.status(403).json({ error: 'Unable to verify this account. Please contact support.' });
+    }
+    await auth.updateUser(firebaseUser.uid, { password: newPassword });
+    try {
+      await auth.revokeRefreshTokens(firebaseUser.uid);
+      return res.json({ success: true, message: 'Your password has been changed successfully.' });
+    } catch (error) {
+      console.error('Customer password changed, but Firebase sessions could not be revoked:', error);
+      return res.json({
+        success: true,
+        message: 'Your password has been changed, but we could not sign out your other Firebase sessions. Please contact support if you do not recognize a session.',
+      });
+    }
+  } catch (error) {
+    if (error instanceof VerificationError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    console.error('Customer password change failed:', error);
+    return res.status(500).json({ error: 'Unable to change your password right now. Please try again later.' });
+  }
+});
+
 app.post('/customer/session', async (req, res) => {
   try {
     const { idToken, profile = {}, verificationCode, challengeId } = req.body || {};

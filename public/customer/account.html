@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Account — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=receipt-print-20261027" />
+  <link rel="stylesheet" href="/css/style.css?v=customer-password-change-20261027" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -279,7 +279,25 @@
             <label>Phone<input name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number pattern="[0-9]{11}" title="Leave blank or enter exactly 11 digits." value="${escapeHtml(p.phone || '')}"></label>
             <label>Address<input name="address" value="${escapeHtml(p.address || '')}"></label>
             <div class="profile-actions"><button class="btn btn-primary btn-sm" type="submit">Save Changes</button><button id="cancel-profile-btn" class="btn btn-outline btn-sm" type="button">Cancel</button></div>
+            <button id="show-password-change" class="btn forgot-password-btn" type="button">Forgot or want to change your password?</button>
           </form>
+          <section id="password-change-panel" class="profile-edit" aria-label="Change password">
+            <p class="transaction-meta">We’ll send a one-time verification code to your account email.</p>
+            <button id="send-password-change-code" class="btn btn-outline btn-sm" type="button">Send email verification code</button>
+            <p id="password-change-message" class="text-muted" aria-live="polite"></p>
+            <form id="password-change-form" hidden>
+              <label for="password-change-code">Email verification code</label>
+              <input id="password-change-code" name="verificationCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+              <label for="new-customer-password">New password</label>
+              <input id="new-customer-password" name="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="24" required>
+              <label for="confirm-customer-password">Confirm new password</label>
+              <input id="confirm-customer-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="24" required>
+              <p class="transaction-meta">Use 8–24 characters, including uppercase and lowercase letters, a number, and a special character.</p>
+              <div class="profile-actions">
+                <button id="submit-password-change" class="btn btn-primary btn-sm" type="submit">Verify and change password</button>
+              </div>
+            </form>
+          </section>
         `;
 
         const editButton = document.getElementById('edit-profile-btn');
@@ -294,6 +312,75 @@
         });
         editButton.addEventListener('click', () => editForm.classList.add('open'));
         document.getElementById('cancel-profile-btn').addEventListener('click', () => editForm.classList.remove('open'));
+        const passwordChangePanel = document.getElementById('password-change-panel');
+        const passwordChangeForm = document.getElementById('password-change-form');
+        const passwordChangeMessage = document.getElementById('password-change-message');
+        const sendPasswordCodeButton = document.getElementById('send-password-change-code');
+        let passwordChangeChallengeId = '';
+        document.getElementById('show-password-change').addEventListener('click', () => {
+          passwordChangePanel.classList.toggle('open');
+        });
+        sendPasswordCodeButton.addEventListener('click', async () => {
+          sendPasswordCodeButton.disabled = true;
+          passwordChangeMessage.className = 'text-muted';
+          passwordChangeMessage.textContent = 'Sending a verification code to your account email…';
+          try {
+            const response = await fetch('/customer/password/change/send-code', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({}),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.error || 'Unable to send the verification code.');
+            passwordChangeChallengeId = result.challengeId || '';
+            if (!passwordChangeChallengeId) throw new Error('The verification request was incomplete. Please try again.');
+            passwordChangeForm.hidden = false;
+            passwordChangeMessage.className = 'text-success';
+            passwordChangeMessage.textContent = `A six-digit code was sent to ${result.email || 'your account email'}. It expires in 10 minutes.`;
+            document.getElementById('password-change-code').focus();
+          } catch (error) {
+            passwordChangeMessage.className = 'text-error';
+            passwordChangeMessage.textContent = error.message || 'Unable to send the verification code.';
+          } finally {
+            sendPasswordCodeButton.disabled = false;
+          }
+        });
+        passwordChangeForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          if (!passwordChangeForm.reportValidity()) return;
+          const values = Object.fromEntries(new FormData(passwordChangeForm));
+          values.challengeId = passwordChangeChallengeId;
+          if (values.newPassword !== values.confirmPassword) {
+            passwordChangeMessage.className = 'text-error';
+            passwordChangeMessage.textContent = 'The new password and confirmation do not match.';
+            return;
+          }
+          const submitButton = document.getElementById('submit-password-change');
+          submitButton.disabled = true;
+          passwordChangeMessage.className = 'text-muted';
+          passwordChangeMessage.textContent = 'Verifying your code and updating your password…';
+          try {
+            const response = await fetch('/customer/password/change', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(values),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.error || 'Unable to change your password.');
+            passwordChangeForm.reset();
+            passwordChangeForm.hidden = true;
+            passwordChangeChallengeId = '';
+            passwordChangeMessage.className = 'text-success';
+            passwordChangeMessage.textContent = result.message || 'Your password has been changed successfully.';
+          } catch (error) {
+            passwordChangeMessage.className = 'text-error';
+            passwordChangeMessage.textContent = error.message || 'Unable to change your password.';
+          } finally {
+            submitButton.disabled = false;
+          }
+        });
         editForm.addEventListener('submit', async (event) => {
           event.preventDefault();
           if (/[^0-9]/.test(phoneInput.value)) {

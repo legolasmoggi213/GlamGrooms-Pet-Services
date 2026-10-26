@@ -192,6 +192,30 @@
     document.addEventListener('DOMContentLoaded', updateCustomerNav);
     // Re-check on every page show (including back/forward cache restores)
     window.addEventListener('pageshow', updateCustomerNav);
+
+    document.addEventListener('click', async (event) => {
+      const link = event.target.closest('a[href]');
+      if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || (link.target && link.target !== '_self')) return;
+
+      const destination = new URL(link.href, window.location.href);
+      if (destination.origin !== window.location.origin || !['/grooming.html', '/hotel.html'].includes(destination.pathname)) return;
+
+      event.preventDefault();
+      try {
+        const response = await fetch('/customer/nav-status', { credentials: 'include', cache: 'no-store' });
+        if (!response.ok) throw new Error(`Customer session check failed (${response.status}).`);
+        const session = await response.json();
+        if (!session.authenticated) {
+          const returnTo = `${destination.pathname}${destination.search}${destination.hash}`;
+          window.location.href = `/customer/login.html?return=${encodeURIComponent(returnTo)}`;
+          return;
+        }
+        window.location.href = destination.href;
+      } catch (error) {
+        console.error('Unable to verify customer session before booking:', error);
+        window.location.href = destination.href;
+      }
+    });
   </script>
   <script>
     // Load Ayurveda services

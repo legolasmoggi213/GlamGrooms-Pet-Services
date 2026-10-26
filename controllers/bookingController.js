@@ -16,12 +16,16 @@ const {
   hotelDateKeys,
   getUnavailableBookingSlotIds,
   claimBookingSlots,
+  claimReplacementBookingSlots,
+  areBookingSlotsAvailable,
   releaseBookingSlots,
   releaseBookingSlotsByIds,
 } = require('../util/bookingLocks');
-const { validateTime, validatePickupTime } = require('../util/businessHours');
+const { validateTime, validatePickupTime, validateAppointmentDuration } = require('../util/businessHours');
 const {
   validateFutureDate,
+  validateFutureBookingTime,
+  timeToMinutes,
   getStayNights,
   groomingBookingDuration,
   groomingRecordDuration,

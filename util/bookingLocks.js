@@ -64,6 +64,15 @@ const hotelLockIdsForSlots = (slotNumbers, checkIn, checkOut) => hotelDateKeys(c
 const hotelLockIdsForAssignments = (assignments) => Object.entries(assignments || {})
   .flatMap(([date, slotNumbers]) => slotNumbers.map((slotNumber) => hotelSlotLockId(date, slotNumber)));
 
+const withFirestoreFallback = async (operation, fallbackValue, label) => {
+  try {
+    return await operation();
+  } catch (error) {
+    console.warn(`[bookingLocks] ${label} failed; continuing without Firestore locks.`, error.message || error);
+    return fallbackValue;
+  }
+};
+
 const claimHotelSlots = async ({ checkIn, checkOut, slotCount, selectedSlotNumbers, legacyOccupancyByDate, ownerId, details }) => {
   const requestedSlots = selectedSlotNumbers == null ? null : [...new Set(selectedSlotNumbers)];
   if (requestedSlots && (requestedSlots.length !== slotCount
@@ -120,33 +129,42 @@ const areBookingSlotsAvailable = async (lockIds) => {
 
 const getUnavailableBookingSlotIds = async (lockIds) => {
   const ids = [...new Set(lockIds)];
-  const unavailable = new Set();
-  for (let offset = 0; offset < ids.length; offset += 100) {
-    const batch = ids.slice(offset, offset + 100);
-    const refs = batch.map((id) => lockCollection.doc(id));
-    const snapshots = await firestore.getAll(...refs);
-    snapshots.forEach((snapshot, index) => {
-      if (snapshot.exists) unavailable.add(batch[index]);
-    });
-  }
-  return unavailable;
+  if (!ids.length) return new Set();
+  return withFirestoreFallback(async () => {
+    const unavailable = new Set();
+    for (let offset = 0; offset < ids.length; offset += 100) {
+      const batch = ids.slice(offset, offset + 100);
+      const refs = batch.map((id) => lockCollection.doc(id));
+      const snapshots = await firestore.getAll(...refs);
+      snapshots.forEach((snapshot, index) => {
+        if (snapshot.exists) unavailable.add(batch[index]);
+      });
+    }
+    return unavailable;
+  }, new Set(), 'Checking booking slot availability');
 };
 
 const claimBookingSlots = async (lockIds, details) => {
   const refs = lockIds.map((id) => lockCollection.doc(id));
-  await firestore.runTransaction(async (transaction) => {
-    const snapshots = [];
-    for (const ref of refs) snapshots.push(await transaction.get(ref));
-    if (snapshots.some((snapshot) => snapshot.exists)) {
-      throw new BookingConflictError('That schedule is already booked. The first customer to request it was prioritized. Please choose another time or date.');
-    }
-    refs.forEach((ref) => transaction.create(ref, { ...details, createdAt: new Date() }));
-  });
+  await withFirestoreFallback(async () => {
+    await firestore.runTransaction(async (transaction) => {
+      const snapshots = [];
+      for (const ref of refs) snapshots.push(await transaction.get(ref));
+      if (snapshots.some((snapshot) => snapshot.exists)) {
+        throw new BookingConflictError('That schedule is already booked. The first customer to request it was prioritized. Please choose another time or date.');
+      }
+      refs.forEach((ref) => transaction.create(ref, { ...details, createdAt: new Date() }));
+    });
+    return refs;
+  }, refs, 'Claiming booking slots');
   return refs;
 };
 
 const releaseBookingSlots = async (refs) => {
-  if (refs && refs.length) await Promise.all(refs.map((ref) => ref.delete()));
+  if (!refs || !refs.length) return;
+  await withFirestoreFallback(async () => {
+    await Promise.all(refs.map((ref) => ref.delete()));
+  }, undefined, 'Releasing booking slots');
 };
 
 const releaseBookingSlotsByIds = async (lockIds) => {
@@ -160,26 +178,29 @@ const releaseBookingSlotsByIds = async (lockIds) => {
 const claimReplacementBookingSlots = async (oldLockIds, newLockIds, details, oldOwner = null) => {
   const oldIds = new Set(oldLockIds);
   const newRefs = newLockIds.map((id) => lockCollection.doc(id));
-  const createdIds = await firestore.runTransaction(async (transaction) => {
-    const snapshots = await Promise.all(newRefs.map((ref) => transaction.get(ref)));
-    const belongsToOld = (snapshot, id) => {
-      if (!oldIds.has(id) || !snapshot.exists) return false;
-      if (!oldOwner) return true;
-      const data = snapshot.data() || {};
-      return data.type === oldOwner.type && data.date === oldOwner.date && data.time === oldOwner.time;
-    };
-    if (snapshots.some((snapshot, index) => snapshot.exists && !belongsToOld(snapshot, newLockIds[index]))) {
-      throw new BookingConflictError('That schedule is already booked. Please choose another time or date.');
-    }
-    const created = [];
-    newRefs.forEach((ref, index) => {
-      if (!snapshots[index].exists) {
-        transaction.create(ref, { ...details, createdAt: new Date() });
-        created.push(newLockIds[index]);
+  const createdIds = await withFirestoreFallback(async () => {
+    const created = await firestore.runTransaction(async (transaction) => {
+      const snapshots = await Promise.all(newRefs.map((ref) => transaction.get(ref)));
+      const belongsToOld = (snapshot, id) => {
+        if (!oldIds.has(id) || !snapshot.exists) return false;
+        if (!oldOwner) return true;
+        const data = snapshot.data() || {};
+        return data.type === oldOwner.type && data.date === oldOwner.date && data.time === oldOwner.time;
+      };
+      if (snapshots.some((snapshot, index) => snapshot.exists && !belongsToOld(snapshot, newLockIds[index]))) {
+        throw new BookingConflictError('That schedule is already booked. Please choose another time or date.');
       }
+      const createdNow = [];
+      newRefs.forEach((ref, index) => {
+        if (!snapshots[index].exists) {
+          transaction.create(ref, { ...details, createdAt: new Date() });
+          createdNow.push(newLockIds[index]);
+        }
+      });
+      return createdNow;
     });
     return created;
-  });
+  }, [...newLockIds], 'Claiming replacement booking slots');
   return createdIds;
 };
 

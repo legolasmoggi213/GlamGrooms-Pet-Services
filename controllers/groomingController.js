@@ -1,7 +1,13 @@
 const { GroomingAppointment, Customer, Pet } = require('../models');
 const { sendReservationTicket, sendBookingCancellation } = require('../util/mailer');
 const { groomingLockIds, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
-const { validateTime, validatePickupTime } = require('../util/businessHours');
+const { validateTime, validatePickupTime, validateAppointmentDuration } = require('../util/businessHours');
+const {
+  validateFutureBookingTime,
+  timeToMinutes,
+  groomingBookingDuration,
+  groomingRecordDuration,
+} = require('../util/bookingCalculations');
 const catalog = require('../util/serviceCatalog');
 
 // Exact service menus from the Glam Grooms flyers.

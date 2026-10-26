@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Account — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/style.css?v=receipt-print-20261027" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -783,11 +783,17 @@
       if (!event.target.closest('.print-payment-receipt')) return;
       const receipt = event.target.closest('details[data-payment-receipt]');
       if (!receipt) return;
-      receipt.classList.add('printing-receipt');
+      const receiptDocument = receipt.querySelector('.receipt-document');
+      if (!receiptDocument) return;
+      document.getElementById('payment-receipt-print-root')?.remove();
+      const printRoot = document.createElement('div');
+      printRoot.id = 'payment-receipt-print-root';
+      printRoot.append(receiptDocument.cloneNode(true));
+      document.body.append(printRoot);
       document.body.classList.add('printing-payment-receipt');
       window.addEventListener('afterprint', () => {
-        receipt.classList.remove('printing-receipt');
         document.body.classList.remove('printing-payment-receipt');
+        printRoot.remove();
       }, { once: true });
       window.print();
     });

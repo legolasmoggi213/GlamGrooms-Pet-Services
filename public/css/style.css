@@ -2446,21 +2446,88 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
   body.receipt-page .receipt-meta { color: #555; }
 }
 @media print {
-  body.printing-payment-receipt * { visibility: hidden !important; }
-  body.printing-payment-receipt details.printing-receipt,
-  body.printing-payment-receipt details.printing-receipt * { visibility: visible !important; }
-  body.printing-payment-receipt details.printing-receipt {
-    display: block;
-    position: absolute;
-    inset: 0;
+  @page { size: A4 portrait; margin: 10mm; }
+  body.printing-payment-receipt {
+    margin: 0 !important;
+    color: #111 !important;
+    background: #fff !important;
+  }
+  body.printing-payment-receipt > *:not(#payment-receipt-print-root) {
+    display: none !important;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root {
+    display: block !important;
     width: 100%;
-    border: 0;
     color: #111;
     background: #fff;
+    font: 9pt/1.25 Arial, sans-serif;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
-  body.printing-payment-receipt details.printing-receipt summary,
-  body.printing-payment-receipt details.printing-receipt button,
-  body.printing-payment-receipt details.printing-receipt .receipt-actions { display: none !important; }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-document {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    color: #111;
+    font: inherit;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-brand {
+    padding-bottom: 0.45rem;
+    border-bottom-width: 1px;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-brand-mark {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-title {
+    padding: 0.45rem 0 0.25rem;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-title h3 {
+    font-size: 1.15rem;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-meta-grid {
+    gap: 0.35rem 0.8rem;
+    margin: 0.4rem 0 0.55rem;
+    padding: 0.55rem;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-meta-grid dt {
+    font-size: 0.6rem;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-meta-grid dd {
+    margin-top: 0.05rem;
+    font-size: 0.75rem;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-items {
+    margin: 0.45rem 0;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-items th,
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-items td {
+    padding: 0.35rem;
+    font-size: 0.7rem;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-total {
+    padding: 0.45rem 0;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-total strong {
+    font-size: 1.1rem;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-footer {
+    gap: 0.1rem;
+    margin-top: 0.4rem;
+    padding-top: 0.4rem;
+    font-size: 0.7rem;
+  }
+  body.printing-payment-receipt #payment-receipt-print-root .receipt-footer strong {
+    font-size: 0.75rem;
+  }
 }
 
 /* ===== Home service overview ===== */

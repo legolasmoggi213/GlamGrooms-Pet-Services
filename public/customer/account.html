@@ -445,7 +445,7 @@
         const recent = [
           ...groomingBookings.map(item => ({ type: 'Grooming', bookingType: 'grooming', booking: item, date: item.date, createdAt: item.createdAt, label: Array.isArray(item.petServices) && item.petServices.length ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ') : (item.service || 'Grooming'), details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
           ...hotelBookings.map(item => ({ type: 'Hotel', bookingType: 'hotel', booking: item, date: item.checkIn, createdAt: item.createdAt, label: Array.isArray(item.petRooms) && item.petRooms.length ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ') : `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
-        ].sort((a, b) => bookingCreatedAt(b.booking) - bookingCreatedAt(a.booking)).slice(0, 5);
+        ].sort((a, b) => (bookingCreatedAt(b.booking) || 0) - (bookingCreatedAt(a.booking) || 0)).slice(0, 5);
         const recentHtml = recent.length
           ? `<ul class="transaction-list">${recent.map(item => {
               const statusClass = ['completed', 'checked-out'].includes(item.status) ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
@@ -509,6 +509,13 @@
       return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
+    function bookingCreatedAt(booking) {
+      const value = booking?.createdAt || booking?.created_at;
+      if (!value) return null;
+      const timestamp = new Date(value).getTime();
+      return Number.isNaN(timestamp) ? null : timestamp;
+    }
+
     function formatMoney(value) {
       return `PHP ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
@@ -529,9 +536,10 @@
       const payment = booking.paymentMethod === 'qrph'
         ? (booking.paymentStatus === 'paid' ? 'Paid online via GCash' : 'GCash payment pending')
         : (booking.paymentStatus === 'paid' ? 'Cash paid' : 'Cash due at counter');
+      const bookedAt = bookingCreatedAt(booking);
       const detailRows = [
         ['Booking reference', booking.id],
-        ['Booked on', bookingCreatedAt(booking) ? new Date(bookingCreatedAt(booking)).toLocaleString() : 'Not available'],
+        ['Booked on', bookedAt ? new Date(bookedAt).toLocaleString() : 'Not available'],
         ['Customer', customer.name || 'Customer'],
         ['Email', customer.email || profile.email],
         ['Phone', customer.phone || profile.phone],

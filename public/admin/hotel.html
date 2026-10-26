@@ -81,7 +81,7 @@
       const pet = r.Pet ? escapeHtml(r.Pet.name) : '—';
       const customer = r.Customer ? escapeHtml(r.Customer.name) : '—';
       const petInfo = (r.Pets || (r.Pet ? [r.Pet] : [])).map((item) =>
-        `ID: ${item.id}\nName: ${item.name || '—'}\nSpecies: ${item.species || '—'}\nBreed: ${item.breed || '—'}\nAge: ${item.age != null ? item.age : '—'}\nSize: ${item.size || '—'}\nCare notes: ${item.notes || '—'}`
+        `ID: ${item.id}\nName: ${item.name || '—'}\nSpecies: ${item.species || '—'}\nBreed: ${item.breed || '—'}\nAge: ${item.age != null ? item.age : '—'}\nSize: ${item.size || '—'}\nMedical history: ${item.medicalHistory || 'Not provided'}\nCare notes: ${item.notes || '—'}`
       ).join('\n\n');
       const customerInfo = r.Customer ? `ID: ${r.Customer.id}\nEmail: ${r.Customer.email || '—'}\nPhone: ${r.Customer.phone || '—'}\nAddress: ${r.Customer.address || '—'}` : '';
       const roomInfo = Array.isArray(r.petRooms) && r.petRooms.length

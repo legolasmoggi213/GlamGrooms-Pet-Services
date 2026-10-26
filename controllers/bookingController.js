@@ -204,12 +204,16 @@ const findOrCreateCustomerWithPets = async (customerData, petsData, signedInCust
   }
 
   const pets = await Promise.all(petsData.map(async (petData) => {
+    const medicalHistory = String(petData.medicalHistory || '').trim().slice(0, 1000) || null;
     if (petData.id) {
       const existingPet = await Pet.findByPk(petData.id);
       if (!existingPet || String(existingPet.customerId) !== String(customer.id)) {
         const error = new Error('A selected pet profile does not belong to your account.');
         error.status = 403;
         throw error;
+      }
+      if (Object.prototype.hasOwnProperty.call(petData, 'medicalHistory')) {
+        await existingPet.update({ medicalHistory });
       }
       return existingPet;
     }
@@ -218,6 +222,7 @@ const findOrCreateCustomerWithPets = async (customerData, petsData, signedInCust
       species: String(petData.species || '').trim().toLowerCase(),
       breed: String(petData.breed || '').trim(),
       age: Number(petData.age),
+      medicalHistory,
       customerId: customer.id,
     });
   }));
@@ -272,7 +277,7 @@ const cleanupAbandonedPayMongoBookings = async () => {
     });
     for (const resv of hotelPending) {
       const isExpired = resv.createdAt && (now - new Date(resv.createdAt).getTime() > EXPIRY_MS);
-      if (isOwner || isExpired) {
+      if (isExpired && await expireStaleCheckout(resv)) {
         const lockIds = hotelReservationLockIds(resv);
         await releaseBookingSlotsByIds(lockIds);
         await resv.destroy();

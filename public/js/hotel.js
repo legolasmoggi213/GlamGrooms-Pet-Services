@@ -129,6 +129,7 @@ const ROOM_PRICES = {
           </div>
           <dl class="booking-summary-details">
             <div><dt>Pet</dt><dd>${escapeSummary([pet.species, pet.breed, pet.age == null ? '' : `${pet.age} yrs`].filter(Boolean).join(' · ') || 'Details not entered')}</dd></div>
+            <div><dt>Medical history</dt><dd>${escapeSummary(pet.medicalHistory || 'Not provided')}</dd></div>
             <div><dt>Booked suite</dt><dd>${escapeSummary(roomText)}</dd></div>
             <div><dt>Reserved slot</dt><dd>${slot ? `Slot ${slot}` : 'Choose one available slot'}</dd></div>
             ${petQuote ? `<div><dt>Room subtotal</dt><dd>${fmtMoney(petQuote.baseAmount)}</dd></div>
@@ -267,6 +268,7 @@ const ROOM_PRICES = {
       <div class="field"><label for="pet-species-${index}">Species *</label><select id="pet-species-${index}" name="species-${index}"><option value="dog">Dog</option><option value="cat">Cat</option></select></div>
       <div class="field"><label for="pet-breed-${index}">Breed *</label><input id="pet-breed-${index}" name="breed-${index}" required /></div>
       <div class="field"><label for="pet-age-${index}">Age (years) *</label><input id="pet-age-${index}" name="age-${index}" type="number" min="0" max="50" required /></div>
+      <div class="field full"><label for="pet-medical-history-${index}">Medical History (Optional)</label><textarea id="pet-medical-history-${index}" name="medicalHistory-${index}" rows="3" maxlength="1000" placeholder="Share any allergies, ongoing conditions, or care needs."></textarea></div>
       <div class="field full"><label for="pet-room-${index}">Room for Pet ${index + 1} *</label><select id="pet-room-${index}" name="roomType-${index}" required>${roomSelect.innerHTML}</select><div class="hotel-room-preview" data-room-preview="${index}" aria-live="polite"></div></div>
     `).join('');
     Array.from({ length: Math.max(1, Math.min(5, Number(petCount.value) || 1)) }, (_, index) => updateRoomPreview(index));
@@ -463,6 +465,11 @@ const checkAvailability = async () => {
       setField('species', pet?.species || 'dog');
       setField('breed', pet?.breed || '');
       setField('age', pet?.age ?? '');
+      const medicalHistoryField = petFields.querySelector(`[name="medicalHistory-${index}"]`);
+      if (medicalHistoryField) {
+        medicalHistoryField.value = pet?.medicalHistory || '';
+        medicalHistoryField.readOnly = false;
+      }
     }
     selectedHotelSlots.clear();
     updatePrice();

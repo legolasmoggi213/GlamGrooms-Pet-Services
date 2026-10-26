@@ -154,6 +154,7 @@
       <div class="field"><label for="pet-species-${index}">Species *</label><select id="pet-species-${index}" name="species-${index}"><option value="dog">Dog</option><option value="cat">Cat</option></select></div>
       <div class="field"><label for="pet-breed-${index}">Breed *</label><input id="pet-breed-${index}" name="breed-${index}" required /></div>
       <div class="field"><label for="pet-age-${index}">Age (years) *</label><input id="pet-age-${index}" name="age-${index}" type="number" min="0" max="50" required /></div>
+      <div class="field full"><label for="pet-medical-history-${index}">Medical History (Optional)</label><textarea id="pet-medical-history-${index}" name="medicalHistory-${index}" rows="3" maxlength="1000" placeholder="Share any allergies, ongoing conditions, or care needs."></textarea></div>
       <div class="field full grooming-service-field"><label for="pet-service-${index}">Service for Pet ${index + 1} *</label><select id="pet-service-${index}" name="service-${index}" required>${serviceSelect.innerHTML}</select><div data-service-detail="${index}">${renderServiceDetail(serviceSelect.value)}</div></div>
     `).join('');
     updatePrice();
@@ -167,6 +168,7 @@
       species: String(field(`species-${index}`)?.value || 'dog').trim().toLowerCase(),
       breed: String(field(`breed-${index}`)?.value || '').trim() || null,
       age: field(`age-${index}`)?.value ? Number(field(`age-${index}`).value) : null,
+      medicalHistory: String(field(`medicalHistory-${index}`)?.value || '').trim() || null,
       service: String(field(`service-${index}`)?.value || ''),
     };
   });
@@ -453,6 +455,7 @@
           </div>
           <dl class="booking-summary-details">
             <div><dt>Pet</dt><dd>${escapeHtml([pet.species, pet.breed, pet.age == null ? '' : `${pet.age} yrs`].filter(Boolean).join(' · ') || 'Details not entered')}</dd></div>
+            <div><dt>Medical history</dt><dd>${escapeHtml(pet.medicalHistory || 'Not provided')}</dd></div>
             <div><dt>Selected service</dt><dd>${escapeHtml(serviceText)}</dd></div>
             <div><dt>Service includes</dt><dd>${escapeHtml(detail.includes.join(' · ') || detail.description)}</dd></div>
             <div><dt>Estimated duration</dt><dd>${duration ? `${duration} minutes` : 'To be confirmed'}</dd></div>
@@ -591,6 +594,11 @@
       setField('species', pet?.species || 'dog');
       setField('breed', pet?.breed || '');
       setField('age', pet?.age ?? '');
+      const medicalHistoryField = field(`medicalHistory-${index}`);
+      if (medicalHistoryField) {
+        medicalHistoryField.value = pet?.medicalHistory || '';
+        medicalHistoryField.readOnly = false;
+      }
     }
     const serviceSelect = event.target.closest('select[name^="service-"]');
     if (serviceSelect) {

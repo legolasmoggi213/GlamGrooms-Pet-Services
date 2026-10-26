@@ -5,9 +5,9 @@ const { auth } = require('./config/firebase');
 const db = require('./models');
 const { createToken } = require('./util/customerAuth');
 
-const EMAIL = '8261006@gmail.com';
-const PASSWORD = 'Alpha12!';
-const apiKey = 'AIzaSyChleSmcF_CablT8KfmnF9-C8Pw7jm-DNA';
+const EMAIL = process.env.TEST_CUSTOMER_EMAIL;
+const PASSWORD = process.env.TEST_CUSTOMER_PASSWORD;
+const apiKey = process.env.FIREBASE_WEB_API_KEY;
 const BASE = 'http://localhost:3000';
 
 function restRequest(hostname, path, method, body, extraHeaders) {
@@ -87,6 +87,13 @@ function httpPost(url, body, cookie) {
 }
 
 async function main() {
+  if (process.env.ALLOW_MUTATING_E2E !== 'true') {
+    throw new Error('Refusing to create bookings. Set ALLOW_MUTATING_E2E=true only for an isolated test environment.');
+  }
+  if (!EMAIL || !PASSWORD || !apiKey) {
+    throw new Error('Set TEST_CUSTOMER_EMAIL, TEST_CUSTOMER_PASSWORD, and FIREBASE_WEB_API_KEY for the isolated test account.');
+  }
+
   // Step 1: Sign in with Firebase REST API to get ID token
   console.log('Step 1: Firebase REST sign-in...');
   const signInResult = await restRequest(
@@ -102,7 +109,7 @@ async function main() {
     return;
   }
   const idToken = signInData.idToken;
-  console.log('  ID token obtained (first 30 chars):', idToken.slice(0, 30) + '...');
+  console.log('  ID token obtained.');
   console.log('  email_verified:', signInData.email_verified);
 
   // Step 2: Create session (sets customer_token cookie)
@@ -114,7 +121,6 @@ async function main() {
   console.log('  Status:', sessionResult.status);
   console.log('  Body:', sessionResult.body);
   const setCookie = sessionResult.headers['set-cookie'];
-  console.log('  Set-Cookie:', setCookie);
 
   if (!setCookie) {
     console.log('  FATAL: No cookie set');
@@ -129,7 +135,7 @@ async function main() {
     return;
   }
   const cookieToken = tokenMatch[1];
-  console.log('  Cookie token (first 30 chars):', cookieToken.slice(0, 30) + '...');
+  console.log('  Customer session cookie obtained.');
 
   // Step 3: Test customer profile endpoint
   console.log('\nStep 3: GET /customer/profile...');

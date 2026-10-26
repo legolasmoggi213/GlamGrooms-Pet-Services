@@ -328,6 +328,40 @@ const updateReservation = async (req, res, next) => {
   }
 };
 
+const resendReservationTicket = async (req, res, next) => {
+  try {
+    const reservation = await HotelReservation.findByPk(req.params.id);
+    if (!reservation) return res.status(404).json({ error: 'Reservation not found' });
+    if (!['confirmed', 'checked-in', 'checked-out'].includes(reservation.status)) {
+      return res.status(409).json({ error: 'Only confirmed reservations can receive a ticket.' });
+    }
+
+    const customer = await Customer.findByPk(reservation.customerId);
+    if (!customer || !customer.email) {
+      return res.status(400).json({ error: 'The customer record has no email address.' });
+    }
+    const petIds = reservation.petIds || (reservation.petId ? [reservation.petId] : []);
+    const pets = await Promise.all(petIds.map((id) => Pet.findByPk(id)));
+    const emailSent = await sendReservationTicket({
+      bookingRecord: reservation,
+      type: 'hotel',
+      to: customer.email,
+      customer: reservation.customerDetails || customer,
+      pets: pets.filter(Boolean),
+      force: true,
+    });
+    if (!emailSent) {
+      return res.status(502).json({ error: getEmailDeliveryConfig().configured
+        ? 'The email provider did not send the ticket. Check Render logs and verify your sender settings.'
+        : 'Email delivery is not configured.' });
+    }
+    return res.json({ emailSent: true });
+  } catch (error) {
+    console.error('Hotel reservation ticket resend failed:', error);
+    return next(error);
+  }
+};
+
 const deleteReservation = async (req, res, next) => {
   try {
     const reservation = await HotelReservation.findByPk(req.params.id);
@@ -351,5 +385,6 @@ module.exports = {
   getReservation,
   createReservation,
   updateReservation,
+  resendReservationTicket,
   deleteReservation,
 };

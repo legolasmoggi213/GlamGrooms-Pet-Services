@@ -65,7 +65,8 @@
           <td>${fmtMoney(r.totalPrice)}</td>
           <td>${statusBadge(r.status)}</td>
           <td>
-            ${r.status !== 'cancelled' && ((!r.confirmedAt && r.status !== 'checked-in' && r.status !== 'checked-out') || (r.confirmedAt && !r.reservationTicketEmailSentAt)) ? `<button class="btn btn-success btn-sm" onclick="confirmRes('${r.id}', this)">${r.confirmedAt ? 'Send Ticket' : 'Confirm'}</button>` : ''}
+            ${['pending', 'reserved'].includes(r.status) ? `<button class="btn btn-success btn-sm" onclick="confirmRes('${r.id}', this)">Confirm</button>` : ''}
+            ${['confirmed', 'checked-in', 'checked-out'].includes(r.status) ? `<button class="btn btn-success btn-sm" onclick='resendTicket(${escapeHtml(JSON.stringify(r.id))}, this)'>Send Ticket</button>` : ''}
             ${r.status === 'pending' || r.status === 'reserved' ? `<button class="btn btn-danger btn-sm" type="button" onclick='rejectRes(${escapeHtml(JSON.stringify(r.id))}, this)'>Reject</button>` : ''}
             <div class="booking-status-control">
               <select aria-label="Update reservation status" data-reservation-status="${escapeHtml(r.id)}">
@@ -156,6 +157,32 @@
           await loadReservations();
         } catch (error) {
           showAdminNotice(`Booking action finished, but reservations could not be refreshed: ${error.message}`, 'error');
+        }
+      }
+    };
+
+    window.resendTicket = async (id, button) => {
+      const bookingId = String(id);
+      if (bookingActionsInProgress.has(bookingId)) return;
+      bookingActionsInProgress.add(bookingId);
+      button.disabled = true;
+      const originalLabel = button.textContent;
+      button.textContent = 'Sending ticket...';
+      try {
+        const result = await apiPost(`/hotel/${encodeURIComponent(bookingId)}/resend-ticket`, {});
+        showAdminNotice(result.emailSent ? 'Reservation ticket emailed.' : 'The reservation ticket was not sent.', result.emailSent ? 'success' : 'error');
+      } catch (error) {
+        showAdminNotice(error.message, 'error');
+      } finally {
+        bookingActionsInProgress.delete(bookingId);
+        if (button.isConnected) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
+        try {
+          await loadReservations();
+        } catch (error) {
+          showAdminNotice(`Ticket action finished, but reservations could not be refreshed: ${error.message}`, 'error');
         }
       }
     };

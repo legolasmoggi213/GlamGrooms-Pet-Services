@@ -306,6 +306,40 @@ const deleteAppointment = async (req, res, next) => {
   }
 };
 
+const resendAppointmentTicket = async (req, res, next) => {
+  try {
+    const appointment = await GroomingAppointment.findByPk(req.params.id);
+    if (!appointment) return res.status(404).json({ error: 'Appointment not found' });
+    if (!['confirmed', 'in-progress', 'completed'].includes(appointment.status)) {
+      return res.status(409).json({ error: 'Only confirmed appointments can receive a ticket.' });
+    }
+
+    const customer = await Customer.findByPk(appointment.customerId);
+    if (!customer || !customer.email) {
+      return res.status(400).json({ error: 'The customer record has no email address.' });
+    }
+    const petIds = appointment.petIds || (appointment.petId ? [appointment.petId] : []);
+    const pets = await Promise.all(petIds.map((id) => Pet.findByPk(id)));
+    const emailSent = await sendReservationTicket({
+      bookingRecord: appointment,
+      type: 'grooming',
+      to: customer.email,
+      customer: appointment.customerDetails || customer,
+      pets: pets.filter(Boolean),
+      force: true,
+    });
+    if (!emailSent) {
+      return res.status(502).json({ error: getEmailDeliveryConfig().configured
+        ? 'The email provider did not send the ticket. Check Render logs and verify your sender settings.'
+        : 'Email delivery is not configured.' });
+    }
+    return res.json({ emailSent: true });
+  } catch (error) {
+    console.error('Grooming appointment ticket resend failed:', error);
+    return next(error);
+  }
+};
+
 module.exports = {
   SERVICE_PRICES,
   SERVICE_DETAILS,
@@ -313,5 +347,6 @@ module.exports = {
   getAppointment,
   createAppointment,
   updateAppointment,
+  resendAppointmentTicket,
   deleteAppointment,
 };

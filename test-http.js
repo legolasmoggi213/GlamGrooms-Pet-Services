@@ -1,8 +1,13 @@
 const http = require('http');
 const https = require('https');
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const BASE = 'http://localhost:3000';
-const EMAIL = '8261006@gmail.com';
+const EMAIL = process.env.TEST_CUSTOMER_EMAIL;
+if (process.env.ALLOW_MUTATING_E2E !== 'true' || !EMAIL) {
+  throw new Error('Set ALLOW_MUTATING_E2E=true and TEST_CUSTOMER_EMAIL only for an isolated test environment.');
+}
 
 // Generate a token the same way the server does
 const { createToken } = require('./util/customerAuth');
@@ -39,7 +44,7 @@ function request(method, path, body, cookie) {
 
 async function main() {
   const cookie = `customer_token=${token}; customer_logged_in=1`;
-  console.log('Using cookie:', cookie.slice(0, 60) + '...');
+  console.log('Using customer test session.');
 
   // Test 1: Profile endpoint
   console.log('\n--- Test 1: GET /customer/profile ---');

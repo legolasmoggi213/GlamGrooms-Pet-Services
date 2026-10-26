@@ -5,9 +5,9 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const { auth } = require('./config/firebase');
 const { createToken } = require('./util/customerAuth');
 
-const EMAIL = '8261006@gmail.com';
-const PASSWORD = 'Alpha12!';
-const apiKey = 'AIzaSyChleSmcF_CablT8KfmnF9-C8Pw7jm-DNA';
+const EMAIL = process.env.TEST_CUSTOMER_EMAIL;
+const PASSWORD = process.env.TEST_CUSTOMER_PASSWORD;
+const apiKey = process.env.FIREBASE_WEB_API_KEY;
 const BASE = 'http://localhost:3000';
 
 function httpsPost(hostname, path, body) {
@@ -52,6 +52,13 @@ function httpReq(method, path, body, cookie) {
 }
 
 async function main() {
+  if (process.env.ALLOW_MUTATING_E2E !== 'true') {
+    throw new Error('Refusing to create bookings. Set ALLOW_MUTATING_E2E=true only for an isolated test environment.');
+  }
+  if (!EMAIL || !PASSWORD || !apiKey) {
+    throw new Error('Set TEST_CUSTOMER_EMAIL, TEST_CUSTOMER_PASSWORD, and FIREBASE_WEB_API_KEY for the isolated test account.');
+  }
+
   // Step 1: Firebase sign-in to get ID token
   console.log('Step 1: Firebase REST sign-in...');
   const r1 = await httpsPost('identitytoolkit.googleapis.com',
@@ -60,7 +67,7 @@ async function main() {
   const data = JSON.parse(r1.body);
   if (data.error) { console.log('ERROR:', data.error.message); return; }
   const idToken = data.idToken;
-  console.log('  Got ID token, email_verified:', data.email_verified);
+  console.log('  Firebase sign-in succeeded; email verified:', data.email_verified);
 
   // Step 2: Create session (this is what customer-auth.js does)
   console.log('\nStep 2: POST /customer/session...');
@@ -69,7 +76,6 @@ async function main() {
   console.log('  Status:', r2.status);
   console.log('  Body:', r2.body);
   const setCookie = r2.headers['set-cookie'];
-  console.log('  Set-Cookie:', setCookie);
 
   if (!setCookie) { console.log('FATAL: No cookie'); return; }
 
@@ -78,7 +84,7 @@ async function main() {
   const tokenMatch = cookieStr.match(/customer_token=([^;]+)/);
   if (!tokenMatch) { console.log('FATAL: No customer_token'); return; }
   const cookieToken = tokenMatch[1];
-  console.log('  Cookie token (first 40):', cookieToken.slice(0, 40) + '...');
+  console.log('  Customer session cookie obtained.');
 
   // Step 3: Check nav-status
   console.log('\nStep 3: GET /customer/nav-status...');

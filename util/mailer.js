@@ -245,7 +245,7 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
   return { title, text, html };
 };
 
-const sendBookingEmailOnce = async ({ bookingRecord, type, customer, pets, to, paid, receipt = false }) => {
+const sendBookingEmailOnce = async ({ bookingRecord, type, customer, pets, to, paid, receipt = false, force = false }) => {
   const sentField = receipt ? 'paymentReceiptEmailSentAt' : 'reservationTicketEmailSentAt';
   const claimField = receipt ? 'paymentReceiptEmailClaimedAt' : 'reservationTicketEmailClaimedAt';
   const ref = bookingRecord && bookingRecord._ref;
@@ -256,7 +256,7 @@ const sendBookingEmailOnce = async ({ bookingRecord, type, customer, pets, to, p
       const snapshot = await transaction.get(ref);
       if (!snapshot.exists) return false;
       const data = snapshot.data() || {};
-      if (data[sentField]) return false;
+      if (data[sentField] && !force) return false;
       const claimedAt = data[claimField];
       const claimedAtMs = claimedAt && typeof claimedAt.toMillis === 'function'
         ? claimedAt.toMillis()
@@ -266,7 +266,7 @@ const sendBookingEmailOnce = async ({ bookingRecord, type, customer, pets, to, p
       return true;
     });
   } else {
-    claimed = !bookingRecord[sentField];
+    claimed = force || !bookingRecord[sentField];
   }
   if (!claimed) return false;
 

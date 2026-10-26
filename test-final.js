@@ -3,7 +3,10 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const { createToken } = require('./util/customerAuth');
 
-const EMAIL = '8261006@gmail.com';
+const EMAIL = process.env.TEST_CUSTOMER_EMAIL;
+if (process.env.ALLOW_MUTATING_E2E !== 'true' || !EMAIL) {
+  throw new Error('Set ALLOW_MUTATING_E2E=true and TEST_CUSTOMER_EMAIL only for an isolated test environment.');
+}
 
 // Generate token with the stable secret (same as server)
 const token = createToken(EMAIL);

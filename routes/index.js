@@ -98,6 +98,7 @@ router.delete('/pets/:id', adminOrStaff, petController.deletePet);
 router.get('/grooming', groomingController.listAppointments);
 router.get('/grooming/:id', groomingController.getAppointment);
 router.post('/grooming', groomingController.createAppointment);
+router.post('/grooming/:id/resend-ticket', groomingController.resendAppointmentTicket);
 router.put('/grooming/:id', groomingController.updateAppointment);
 router.delete('/grooming/:id', groomingController.deleteAppointment);
 
@@ -105,6 +106,7 @@ router.delete('/grooming/:id', groomingController.deleteAppointment);
 router.get('/hotel', hotelController.listReservations);
 router.get('/hotel/:id', hotelController.getReservation);
 router.post('/hotel', hotelController.createReservation);
+router.post('/hotel/:id/resend-ticket', hotelController.resendReservationTicket);
 router.put('/hotel/:id', hotelController.updateReservation);
 router.delete('/hotel/:id', hotelController.deleteReservation);
 

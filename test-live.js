@@ -3,11 +3,14 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const { createToken, parseToken } = require('./util/customerAuth');
 
-const EMAIL = '8261006@gmail.com';
+const EMAIL = process.env.TEST_CUSTOMER_EMAIL;
+if (process.env.ALLOW_MUTATING_E2E !== 'true' || !EMAIL) {
+  throw new Error('Set ALLOW_MUTATING_E2E=true and TEST_CUSTOMER_EMAIL only for an isolated test environment.');
+}
 
 // Generate a token with the stable secret
 const token = createToken(EMAIL);
-console.log('Generated token (first 50):', token.slice(0, 50) + '...');
+console.log('Generated customer test session token.');
 
 // Verify it parses
 const parsed = parseToken(token);

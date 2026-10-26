@@ -73,7 +73,8 @@
           <td>${fmtMoney(a.price)}</td>
           <td>${statusBadge(a.status)}</td>
           <td>
-            ${a.status !== 'cancelled' && ((!a.confirmedAt && a.status !== 'completed') || (a.confirmedAt && !a.reservationTicketEmailSentAt)) ? `<button class="btn btn-success btn-sm" onclick="confirmAppt('${a.id}', this)">${a.confirmedAt ? 'Send Ticket' : 'Confirm'}</button>` : ''}
+            ${['pending', 'scheduled'].includes(a.status) ? `<button class="btn btn-success btn-sm" onclick="confirmAppt('${a.id}', this)">Confirm</button>` : ''}
+            ${['confirmed', 'in-progress', 'completed'].includes(a.status) ? `<button class="btn btn-success btn-sm" onclick='resendApptTicket(${escapeHtml(JSON.stringify(a.id))}, this)'>Send Ticket</button>` : ''}
             ${a.status === 'pending' ? `<button class="btn btn-danger btn-sm" type="button" onclick='rejectAppt(${escapeHtml(JSON.stringify(a.id))}, this)'>Reject</button>` : ''}
             <button class="btn btn-outline btn-sm" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})'>View</button>
             <button class="btn btn-danger btn-sm" onclick='removeAppt(${escapeHtml(JSON.stringify(a.id))})'>Delete</button>
@@ -230,6 +231,32 @@
           await loadAppointments();
         } catch (error) {
           showAdminNotice(`Booking action finished, but the appointments could not be refreshed: ${error.message}`, 'error');
+        }
+      }
+    };
+
+    window.resendApptTicket = async (id, button) => {
+      const bookingId = String(id);
+      if (bookingActionsInProgress.has(bookingId)) return;
+      bookingActionsInProgress.add(bookingId);
+      button.disabled = true;
+      const originalLabel = button.textContent;
+      button.textContent = 'Sending ticket...';
+      try {
+        const result = await apiPost(`/grooming/${encodeURIComponent(bookingId)}/resend-ticket`, {});
+        showAdminNotice(result.emailSent ? 'Appointment ticket emailed.' : 'The appointment ticket was not sent.', result.emailSent ? 'success' : 'error');
+      } catch (error) {
+        showAdminNotice(error.message, 'error');
+      } finally {
+        bookingActionsInProgress.delete(bookingId);
+        if (button.isConnected) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
+        try {
+          await loadAppointments();
+        } catch (error) {
+          showAdminNotice(`Ticket action finished, but appointments could not be refreshed: ${error.message}`, 'error');
         }
       }
     };

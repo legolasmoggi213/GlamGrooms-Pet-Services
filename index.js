@@ -463,7 +463,15 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/api/v1', apiRouter);
 
-app.all('/api/cron/reminders', async (req, res) => {
+app.get('/api/cron/reminders', async (req, res) => {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    return res.status(503).json({ success: false, error: 'Reminder cron is not configured' });
+  }
+  if (req.get('authorization') !== `Bearer ${cronSecret}`) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
   try {
     const { sendReminders } = require('./util/reminders');
     const result = await sendReminders();

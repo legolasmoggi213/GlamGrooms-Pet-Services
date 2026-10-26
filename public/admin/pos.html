@@ -28,6 +28,7 @@
             <button type="button" data-category="all" aria-pressed="true">All</button>
             <button type="button" data-category="grooming" aria-pressed="false">Grooming</button>
             <button type="button" data-category="ayurveda" aria-pressed="false">Ayurveda</button>
+            <button type="button" data-category="hotel" aria-pressed="false">Hotel</button>
             <button type="button" data-category="products" aria-pressed="false">Products</button>
           </div>
           <div id="pos-products" class="pos-products"><div class="loading">Loading services…</div></div>
@@ -54,6 +55,10 @@
               <label for="sale-contact">Contact</label>
               <input id="sale-contact" maxlength="160" placeholder="Optional" />
             </div>
+            <div class="field" id="sale-pet-field" hidden>
+              <label for="sale-pet">Pet name</label>
+              <input id="sale-pet" maxlength="120" />
+            </div>
             <div class="field">
               <span class="field-label">Payment method</span>
               <div class="pos-tender-options">
@@ -73,6 +78,19 @@
           </form>
         </section>
       </div>
+
+      <section class="panel pos-sales-panel" aria-label="Walk-in sales overview">
+        <div class="flex-between pos-sales-heading">
+          <div><h3>Walk-in sales</h3><p class="text-muted">Sales from every completed POS transaction</p></div>
+          <label class="field"><span>Graph period</span><select id="pos-sales-period"><option value="daily">Daily · 7 days</option><option value="weekly">Weekly · 8 weeks</option><option value="monthly">Monthly · 6 months</option></select></label>
+        </div>
+        <div class="pos-sales-summary">
+          <div><span>All-time sales</span><strong id="pos-sales-all-time">PHP 0.00</strong></div>
+          <div><span>All-time transactions</span><strong id="pos-sales-transaction-count">0</strong></div>
+        </div>
+        <div id="pos-sales-chart" class="pos-sales-chart" role="img" aria-label="Walk-in sales chart"><div class="loading">Loading sales…</div></div>
+        <p id="pos-sales-message" class="text-muted" role="status" aria-live="polite" hidden></p>
+      </section>
 
       <section id="pos-receipt" class="pos-receipt" aria-live="polite"></section>
       <section class="panel" aria-label="Recent receipts">
@@ -95,16 +113,24 @@
     const checkoutButton = document.getElementById('complete-sale');
     const cashReceived = document.getElementById('cash-received');
     const cashField = document.getElementById('cash-received-field');
+    const petField = document.getElementById('sale-pet-field');
+    const petNameInput = document.getElementById('sale-pet');
+    const salesPeriod = document.getElementById('pos-sales-period');
+    const salesChart = document.getElementById('pos-sales-chart');
+    const salesMessage = document.getElementById('pos-sales-message');
     const cart = [];
     let catalog = [];
     let categoryFilter = 'all';
+    let salesRequest = 0;
 
     const money = (value) => fmtMoney(value);
+    const receiptMoney = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const saleTotal = () => Math.round(cart.reduce((total, item) => total + item.unitPrice * item.quantity, 0) * 100) / 100;
 
     const displayName = (service) => service.name
       .replace(/^grooming-/, '')
       .replace(/^ayurveda-(herb|pkg)-/, '')
+      .replace(/^(day-care|staycation)-/, '')
       .replace(/-/g, ' ')
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
@@ -117,7 +143,7 @@
       productContainer.innerHTML = visible.length ? visible.map((product) => `
         <button type="button" class="pos-product" data-product-id="${escapeHtml(product.id)}" ${product.kind === 'product' && (!product.price || product.quantity < 1) ? 'disabled' : ''}>
           <strong>${escapeHtml(product.label)}</strong>
-          <span>${product.kind === 'product' && product.quantity < 1 ? 'Out of stock' : product.price ? money(product.price) : 'Set price in Inventory'}</span>
+          <span>${product.kind === 'product' && product.quantity < 1 ? 'Out of stock' : product.price ? `${money(product.price)}${product.unit ? ` / ${escapeHtml(product.unit)}` : ''}` : 'Set price in Inventory'}</span>
         </button>`).join('') : '<div class="empty">No matching services.</div>';
     }
 
@@ -127,7 +153,7 @@
       } else {
         cartRows.innerHTML = cart.map((item, index) => `
           <tr>
-            <td class="pos-item-name">${escapeHtml(item.name)}<br><span class="text-muted">${money(item.unitPrice)} each</span></td>
+            <td class="pos-item-name">${escapeHtml(item.name)}<br><span class="text-muted">${money(item.unitPrice)}${item.unit ? ` / ${escapeHtml(item.unit)}` : ' each'}</span></td>
             <td><span class="pos-quantity">
               <button type="button" data-cart-action="decrease" data-index="${index}" aria-label="Decrease quantity">−</button>
               <span>${item.quantity}</span>
@@ -139,6 +165,10 @@
       }
       cartTotal.textContent = money(saleTotal());
       checkoutButton.disabled = !cart.length;
+      const includesHotel = cart.some((item) => item.kind === 'hotel');
+      petField.hidden = !includesHotel;
+      petNameInput.required = includesHotel;
+      if (!includesHotel) petNameInput.value = '';
       updateTender();
     }
 
@@ -172,10 +202,39 @@
       message.hidden = false;
     }
 
+    async function loadSalesAnalytics() {
+      const requestId = ++salesRequest;
+      salesMessage.hidden = true;
+      try {
+        const result = await apiGet(`/admin/pos-sales?period=${encodeURIComponent(salesPeriod.value)}`);
+        if (requestId !== salesRequest) return;
+        document.getElementById('pos-sales-all-time').textContent = receiptMoney(result.allTimeSales);
+        document.getElementById('pos-sales-transaction-count').textContent = Number(result.allTimeTransactions || 0).toLocaleString('en-PH');
+        const buckets = Array.isArray(result.buckets) ? result.buckets : [];
+        const maximum = Math.max(0, ...buckets.map((bucket) => Number(bucket.sales || 0)));
+        salesChart.innerHTML = buckets.length ? buckets.map((bucket) => {
+          const sales = Number(bucket.sales || 0);
+          const height = maximum ? Math.max(sales ? 3 : 0, sales / maximum * 100) : 0;
+          return `<div class="pos-sales-column" title="${escapeHtml(`${bucket.label}: ${receiptMoney(sales)}, ${bucket.count} sales`)}">
+            <strong>${sales ? receiptMoney(sales) : '—'}</strong>
+            <div class="pos-sales-track"><span style="height:${height}%"></span></div>
+            <span class="pos-sales-label">${escapeHtml(bucket.label)}</span>
+            <small>${Number(bucket.count || 0).toLocaleString('en-PH')} sales</small>
+          </div>`;
+        }).join('') : '<div class="empty">No walk-in sales in this period.</div>';
+      } catch (error) {
+        if (requestId !== salesRequest) return;
+        salesChart.innerHTML = '<div class="empty">Unable to load POS sales.</div>';
+        salesMessage.textContent = error.message || 'Unable to load POS sales.';
+        salesMessage.hidden = false;
+      }
+    }
+
     function renderReceipt(transaction, sale, paymentMethod, tenderedAmount, customerName) {
       const receipt = document.getElementById('pos-receipt');
       const savedReceipt = transaction?.receipt || {};
       const receiptNumber = savedReceipt.receiptNumber || transaction?.id || 'POS-000';
+      const receiptPetName = savedReceipt.petName || transaction?.petName;
       const receiptItems = Array.isArray(savedReceipt.items) && savedReceipt.items.length
         ? savedReceipt.items
         : (sale.length ? sale : []);
@@ -189,7 +248,7 @@
         const quantity = Number(item.quantity || 1);
         const unitPrice = Number(item.unitPrice || 0);
         const lineTotal = Number(item.lineTotal ?? quantity * unitPrice);
-        return `<tr><td>${escapeHtml(itemName)}${item.category ? `<span class="receipt-item-note">${escapeHtml(item.category)}</span>` : ''}</td><td>${quantity}</td><td>${money(unitPrice || lineTotal)}</td><td>${money(lineTotal)}</td></tr>`;
+        return `<tr><td>${escapeHtml(itemName)}${item.category ? `<span class="receipt-item-note">${escapeHtml(item.category)}</span>` : ''}</td><td>${quantity}</td><td>${receiptMoney(unitPrice || lineTotal)}</td><td>${receiptMoney(lineTotal)}</td></tr>`;
       }).join('');
       receipt.innerHTML = `
         <article class="receipt-document">
@@ -203,6 +262,7 @@
             <div><dt>Receipt no.</dt><dd>${escapeHtml(String(receiptNumber))}</dd></div>
             <div><dt>Date &amp; time</dt><dd>${escapeHtml(fmtDateTime(paidAt))}</dd></div>
             <div><dt>Customer</dt><dd>${escapeHtml(customerName || savedReceipt.customerName || 'Walk-in customer')}</dd></div>
+            ${receiptPetName ? `<div><dt>Pet</dt><dd>${escapeHtml(receiptPetName)}</dd></div>` : ''}
             <div><dt>Contact</dt><dd>${escapeHtml(savedReceipt.contact || '—')}</dd></div>
             <div><dt>Payment method</dt><dd>${escapeHtml(capitalize(method))}</dd></div>
             <div><dt>Transaction ID</dt><dd>${escapeHtml(String(transaction?.id || receiptNumber))}</dd></div>
@@ -211,8 +271,8 @@
             <thead><tr><th>Service / product</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead>
             <tbody>${lines || '<tr><td colspan="4">No item details available.</td></tr>'}</tbody>
           </table>
-          <div class="receipt-total"><span>Total paid</span><strong>${money(total)}</strong></div>
-          ${String(method).toLowerCase() === 'cash' ? `<dl class="receipt-payment-summary"><div><dt>Cash received</dt><dd>${money(received)}</dd></div><div><dt>Change</dt><dd>${money(changeDue)}</dd></div></dl>` : ''}
+          <div class="receipt-total"><span>Total paid</span><strong>${receiptMoney(total)}</strong></div>
+          ${String(method).toLowerCase() === 'cash' ? `<dl class="receipt-payment-summary"><div><dt>Cash received</dt><dd>${receiptMoney(received)}</dd></div><div><dt>Change</dt><dd>${receiptMoney(changeDue)}</dd></div></dl>` : ''}
           <footer class="receipt-footer"><strong>Thank you for trusting us with your pet’s care.</strong><span>Glam Grooms Pet Spa &amp; Hotel</span></footer>
         </article>
         <div class="receipt-actions"><button type="button" class="btn btn-primary" onclick="window.print()">Print receipt</button></div>`;
@@ -230,6 +290,7 @@
         const receipt = record.receipt || {
           receiptNumber: record.id,
           customerName: record.customerName || 'Walk-in customer',
+          petName: record.petName || null,
           paymentMethod: record.paymentMethod || 'cash',
           amount: Number(record.amount || 0),
           tenderedAmount: Number(record.tenderedAmount || record.amount || 0),
@@ -241,7 +302,7 @@
           <div class="saved-receipt-item">
             <div>
               <strong>Receipt #${escapeHtml(String(receipt.receiptNumber || record.id))}</strong><br>
-              <span>${escapeHtml(receipt.customerName || record.customerName || 'Walk-in customer')} · ${escapeHtml(capitalize(receipt.paymentMethod || record.paymentMethod || 'cash'))}</span><br>
+              <span>${escapeHtml(receipt.customerName || record.customerName || 'Walk-in customer')}${receipt.petName || record.petName ? ` · ${escapeHtml(receipt.petName || record.petName)}` : ''} · ${escapeHtml(capitalize(receipt.paymentMethod || record.paymentMethod || 'cash'))}</span><br>
               <small>${escapeHtml(fmtDateTime(receipt.paidAt || record.paidAt || new Date().toISOString()))}</small>
             </div>
             <button type="button" class="btn btn-outline btn-sm" data-print-receipt="${escapeHtml(String(record.id))}">Print</button>
@@ -255,6 +316,7 @@
           const receiptData = record.receipt || {
             receiptNumber: record.id,
             customerName: record.customerName || 'Walk-in customer',
+            petName: record.petName || null,
             paymentMethod: record.paymentMethod || 'cash',
             amount: Number(record.amount || 0),
             tenderedAmount: Number(record.tenderedAmount || record.amount || 0),
@@ -267,6 +329,7 @@
             amount: Number(record.amount || 0),
             changeDue: Number(record.changeDue || 0),
             paidAt: record.paidAt || record.createdAt,
+            petName: record.petName || null,
             receipt: receiptData,
           }, receiptData.items.length ? receiptData.items : [{ name: record.description || 'Walk-in sale', quantity: 1, unitPrice: Number(record.amount || 0), lineTotal: Number(record.amount || 0) }], receiptData.paymentMethod || record.paymentMethod || 'cash', receiptData.tenderedAmount || record.tenderedAmount || Number(record.amount || 0), receiptData.customerName || record.customerName || 'Walk-in customer');
         });
@@ -290,6 +353,8 @@
         name: product.label,
         unitPrice: product.price,
         category: product.category,
+        kind: product.kind,
+        unit: product.unit,
         ...(product.kind === 'product' ? {
           inventoryId: product.inventoryId,
           stockQuantity: product.quantity,
@@ -328,6 +393,7 @@
 
     document.querySelectorAll('input[name="paymentMethod"]').forEach((input) => input.addEventListener('change', updateTender));
     cashReceived.addEventListener('input', updateTender);
+    salesPeriod.addEventListener('change', loadSalesAnalytics);
 
     document.getElementById('clear-cart').addEventListener('click', () => {
       cart.splice(0, cart.length);
@@ -356,6 +422,7 @@
           contact: document.getElementById('sale-contact').value.trim(),
           paymentMethod,
           tenderedAmount,
+          petName: petNameInput.value.trim(),
           items: sale.map(({ name, quantity, unitPrice, category, inventoryId }) => ({
             name, quantity, unitPrice, category,
             ...(inventoryId ? { inventoryId } : {}),
@@ -363,11 +430,12 @@
         });
         cart.splice(0, cart.length);
         cashReceived.value = '';
+        petNameInput.value = '';
         renderCart();
         document.getElementById('sale-contact').value = '';
         showMessage('Sale recorded.', 'success');
         renderReceipt(result.transaction, sale, paymentMethod, tenderedAmount, customerName);
-        await loadSavedReceipts();
+        await Promise.all([loadSavedReceipts(), loadSalesAnalytics()]);
       } catch (error) {
         showMessage(error.message || 'Unable to complete this sale.', 'error');
       } finally {
@@ -378,7 +446,7 @@
 
     Promise.all([apiGet('/admin/services'), apiGet('/inventory/products')]).then(([services, products]) => {
       const grooming = Array.isArray(services.grooming) ? services.grooming : [];
-      catalog = grooming
+      const groomingCatalog = grooming
         .filter((service) => service && service.name && (service.name.startsWith('grooming-') || service.name.startsWith('ayurveda-')))
         .map((service) => ({
           id: service.name,
@@ -388,6 +456,16 @@
           kind: service.name.startsWith('ayurveda-') ? 'ayurveda' : 'grooming',
         }))
         .filter((service) => Number.isFinite(service.price) && service.price > 0);
+      const hotel = Array.isArray(services.hotel) ? services.hotel : [];
+      const hotelCatalog = hotel.flatMap((service) => Object.entries(service.rates || { weekday: service.price }).map(([rateType, price]) => ({
+        id: `${service.name}-${rateType}`,
+        label: `${service.details && service.details.category || 'Hotel'} ${displayName(service)} · ${capitalize(rateType)} rate`,
+        price: Number(price),
+        category: `Hotel - ${service.details && service.details.category || 'Service'}`,
+        kind: 'hotel',
+        unit: service.unit || 'night',
+      }))).filter((service) => Number.isFinite(service.price) && service.price > 0);
+      catalog = [...groomingCatalog, ...hotelCatalog];
       catalog.push(...(Array.isArray(products) ? products : []).map((product) => ({
         id: `inventory-${product.id}`,
         inventoryId: String(product.id),
@@ -405,6 +483,7 @@
     });
 
     loadSavedReceipts();
+    loadSalesAnalytics();
     renderCart();
   </script>
 </body>

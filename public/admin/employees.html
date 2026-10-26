@@ -15,7 +15,7 @@
           <h1>Employees</h1>
           <p class="page-sub">Create staff accounts and manage access.</p>
         </div>
-        <button class="btn btn-primary" id="add-employee" type="button">+ Add Employee</button>
+        <button class="btn btn-primary" id="add-employee" type="button" hidden>+ Add Employee</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -28,7 +28,11 @@
   <script src="/js/api.js"></script>
   <script src="/js/admin.js"></script>
   <script>
-    renderSidebar('Employees');
+    renderSidebar('Employees').then(() => {
+      if (document.body.dataset.adminRole === 'admin') {
+        document.getElementById('add-employee').hidden = false;
+      }
+    });
     const rows = document.getElementById('employee-rows');
 
     function isStrongPassword(value) {

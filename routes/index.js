@@ -9,6 +9,7 @@ const operationsController = require('../controllers/operationsController');
 const { Customer, Employee, Pet } = require('../models');
 const { parseToken } = require('../util/adminAuth');
 const { groomingServiceDuration } = require('../util/bookingCalculations');
+const { HOTEL } = require('../util/serviceCatalog');
 
 const router = express.Router();
 
@@ -27,12 +28,18 @@ const getServices = async (req, res, next) => {
       };
     });
 
-    const roomServices = Object.entries(hotelPrices).map(([name, price]) => ({
-      name,
-      type: 'hotel',
-      price,
-      details: (hotelDetails && (hotelDetails[name] || hotelDetails[name.replace(/^(day-care|staycation)-/, '').replace(/-/g, '')])) || { category: 'Standard', size: 'Medium', occupancy: 2, amenities: [], description: 'Standard room' }
-    }));
+    const roomServices = Object.entries(hotelPrices).map(([name, price]) => {
+      const roomName = name.split('-').at(-1);
+      const rates = HOTEL.Staycation[roomName[0].toUpperCase() + roomName.slice(1)];
+      return {
+        name,
+        type: 'hotel',
+        price,
+        unit: 'night',
+        rates: { weekday: rates.weekday, weekend: rates.weekend },
+        details: (hotelDetails && (hotelDetails[name] || hotelDetails[name.replace(/^(day-care|staycation)-/, '').replace(/-/g, '')])) || { category: 'Standard', size: 'Medium', occupancy: 2, amenities: [], description: 'Standard room' },
+      };
+    });
 
     res.json({
       grooming: groomingServices,
@@ -135,6 +142,7 @@ router.get('/admin/activity', adminController.getRecentActivity);
 router.get('/admin/occupancy', adminController.getOccupancy);
 router.get('/admin/revenue-by-service', adminController.getRevenueBreakdown);
 router.get('/admin/revenue-analytics', adminController.getRevenueAnalytics);
+router.get('/admin/pos-sales', adminController.getWalkInSalesAnalytics);
 router.get('/admin/cash-transactions', adminOrStaff, adminController.listCashTransactions);
 router.post('/admin/cash-transactions', adminOrStaff, adminController.createCashTransaction);
 router.get('/admin/employees', adminOnly, operationsController.listEmployees);
@@ -147,7 +155,7 @@ router.get('/admin/services', adminOrStaff, getServices);
 
 // Service reminders (admin-triggered)
 const { sendReminders } = require('../util/reminders');
-router.post('/reminders/run', adminOnly, async (req, res, next) => {
+router.post('/reminders/run', adminOrStaff, async (req, res, next) => {
   try {
     const result = await sendReminders();
     res.json(result);

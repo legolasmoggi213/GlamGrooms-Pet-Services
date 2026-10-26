@@ -23,6 +23,7 @@ async function renderSidebar(activeLabel) {
   } catch (error) {
     console.error('Unable to load account role:', error);
   }
+  document.body.dataset.adminRole = role || '';
   const pages = role === 'admin'
     ? ADMIN_PAGES
     : ADMIN_PAGES.filter((page) => page.label !== 'Employees');

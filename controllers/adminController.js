@@ -89,6 +89,46 @@ const revenuePeriodKey = (dateKey, period) => {
   return period === 'monthly' ? dateKey.slice(0, 7) : dateKey;
 };
 
+const walkInSalesDateKey = (transaction) => {
+  const value = transaction.paidAt || transaction.createdAt;
+  if (!value) return null;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = value instanceof Date
+    ? value
+    : value && typeof value.toDate === 'function' ? value.toDate() : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : businessDateKey(date);
+};
+
+const getWalkInSalesAnalytics = async (req, res, next) => {
+  try {
+    const period = ['daily', 'weekly', 'monthly'].includes(req.query.period) ? req.query.period : 'daily';
+    const transactions = await CashTransaction.findAll({ where: { type: 'walk-in' } });
+    const buckets = createRevenueBuckets(period, businessDateKey());
+    const values = new Map(buckets.map(({ key }) => [key, { sales: 0, count: 0 }]));
+    let allTimeSales = 0;
+
+    for (const transaction of transactions) {
+      const amount = Number(transaction.amount || 0);
+      allTimeSales += Number.isFinite(amount) ? amount : 0;
+      const dateKey = walkInSalesDateKey(transaction);
+      if (!dateKey) continue;
+      const value = values.get(revenuePeriodKey(dateKey, period));
+      if (!value) continue;
+      value.sales += Number.isFinite(amount) ? amount : 0;
+      value.count += 1;
+    }
+
+    return res.json({
+      period,
+      allTimeSales,
+      allTimeTransactions: transactions.length,
+      buckets: buckets.map(({ key, label }) => ({ key, label, ...values.get(key) })),
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const readableRevenueLabel = (value) => String(value || 'Other')
   .replace(/^grooming-/, '')
   .replace(/^ayurveda-herb-/, 'Ayurveda Herb ')
@@ -436,6 +476,7 @@ const listCashTransactions = async (req, res, next) => {
       id: record.id,
       type: record.type,
       customerName: record.customerName,
+      petName: record.petName || null,
       contact: record.contact || null,
       description: record.description,
       amount: Number(record.amount || 0),
@@ -451,6 +492,7 @@ const listCashTransactions = async (req, res, next) => {
       receipt: record.receipt || {
         receiptNumber: record.id,
         customerName: record.customerName,
+        petName: record.petName || null,
         contact: record.contact || null,
         paymentMethod: record.paymentMethod,
         amount: Number(record.amount || 0),
@@ -470,6 +512,7 @@ const createCashTransaction = async (req, res, next) => {
     const body = req.body || {};
     if (body.type === 'walk-in') {
       const customerName = String(body.customerName || 'Walk-in customer').trim();
+      const petName = String(body.petName || '').trim().slice(0, 120);
       const paymentMethod = String(body.paymentMethod || 'cash').trim().toLowerCase();
       const hasItems = Array.isArray(body.items);
       if (!isOptionalPhoneNumber(body.contact)) {
@@ -495,6 +538,9 @@ const createCashTransaction = async (req, res, next) => {
         || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 999
         || !Number.isFinite(item.unitPrice) || item.unitPrice <= 0 || item.unitPrice > 10000000))) {
         return res.status(400).json({ error: 'Add valid items with a name, quantity, and positive unit price.' });
+      }
+      if (items.some((item) => item.category.toLowerCase().startsWith('hotel -')) && !petName) {
+        return res.status(400).json({ error: 'Enter the pet name for a hotel service sale.' });
       }
       const description = hasItems
         ? items.map((item) => `${item.quantity}x ${item.name}`).join(', ').slice(0, 160)
@@ -572,6 +618,7 @@ const createCashTransaction = async (req, res, next) => {
           const receipt = {
             receiptNumber: transactionRef.id,
             customerName,
+            petName: petName || null,
             contact: String(body.contact || '').trim() || null,
             paymentMethod,
             amount: saleAmount,
@@ -591,6 +638,7 @@ const createCashTransaction = async (req, res, next) => {
           firestoreTransaction.set(transactionRef, {
             type: 'walk-in',
             customerName,
+            petName: petName || null,
             contact: receipt.contact,
             description: saleDescription,
             amount: saleAmount,
@@ -630,6 +678,7 @@ const createCashTransaction = async (req, res, next) => {
       const transaction = await CashTransaction.create({
         type: 'walk-in',
         customerName,
+        petName: petName || null,
         contact: String(body.contact || '').trim() || null,
         description,
         amount,
@@ -643,6 +692,7 @@ const createCashTransaction = async (req, res, next) => {
         receipt: {
           receiptNumber: '',
           customerName,
+          petName: petName || null,
           contact: String(body.contact || '').trim() || null,
           paymentMethod,
           amount,
@@ -744,6 +794,7 @@ module.exports = {
   getOccupancy,
   getRevenueBreakdown,
   getRevenueAnalytics,
+  getWalkInSalesAnalytics,
   listCashTransactions,
   createCashTransaction,
 };

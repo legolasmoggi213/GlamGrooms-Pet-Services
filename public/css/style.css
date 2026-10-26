@@ -1976,6 +1976,22 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
 .pos-custom-form .field { margin: 0; }
 .pos-custom-form .btn { min-height: 44px; padding: 0.65rem 1rem; border-radius: 6px; }
 .pos-cart { position: sticky; top: 1rem; }
+.pos-sales-panel { margin-top: 1.4rem; }
+.pos-sales-heading { align-items: end; gap: 1rem; margin-bottom: 1rem; }
+.pos-sales-heading h3 { margin-bottom: 0.25rem; }
+.pos-sales-heading p { margin: 0; }
+.pos-sales-heading .field { min-width: 155px; margin: 0; }
+.pos-sales-summary { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-bottom: 1.25rem; }
+.pos-sales-summary div { display: grid; gap: 0.2rem; }
+.pos-sales-summary span { color: var(--muted); font-size: 0.82rem; }
+.pos-sales-summary strong { color: var(--admin-text); font-size: 1.2rem; }
+.pos-sales-chart { display: grid; grid-auto-columns: minmax(82px, 1fr); grid-auto-flow: column; align-items: end; gap: 0.55rem; min-height: 220px; overflow-x: auto; padding: 0.5rem 0.25rem 0; border-bottom: 1px solid var(--admin-border); }
+.pos-sales-column { display: grid; grid-template-rows: auto 1fr auto auto; align-items: end; gap: 0.4rem; min-width: 0; height: 205px; text-align: center; }
+.pos-sales-column > strong { overflow: hidden; color: var(--admin-text); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
+.pos-sales-track { display: flex; align-items: end; height: 145px; overflow: hidden; background: #f3f1e9; border-radius: 4px 4px 0 0; }
+.pos-sales-track span { display: block; width: 100%; min-height: 0; background: #d8ae16; border-radius: 4px 4px 0 0; }
+.pos-sales-label { overflow: hidden; color: var(--admin-text); font-size: 0.78rem; text-overflow: ellipsis; white-space: nowrap; }
+.pos-sales-column small { color: var(--muted); font-size: 0.7rem; }
 .pos-cart table { font-size: 0.85rem; }
 .pos-cart th, .pos-cart td { padding: 0.65rem 0.45rem; }
 .pos-cart th { white-space: normal; }
@@ -2056,6 +2072,8 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
 @media (max-width: 1000px) {
   .pos-layout { grid-template-columns: minmax(0, 1fr); }
   .pos-cart { position: static; }
+  .pos-sales-heading { align-items: stretch; flex-direction: column; }
+  .pos-sales-summary { gap: 1rem; }
 }
 @media (max-width: 600px) {
   .pos-toolbar { align-items: stretch; flex-direction: column; }

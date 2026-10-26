@@ -342,6 +342,7 @@
         document.getElementById('hotel-service-chart').innerHTML = renderCategoryChart(data.hotelServices || [], 'stay');
       }
 
+      const formatReceiptAmount = (amount) => `PHP ${Number(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       let currentBookingReport = [];
       async function generateBookingReport() {
         const start = document.getElementById('report-start').value;
@@ -375,7 +376,7 @@
         ].sort((left, right) => String(left.date).localeCompare(String(right.date)));
         rows.innerHTML = currentBookingReport.length ? currentBookingReport.map((booking) => `<tr>
           <td>${fmtDate(booking.date)}</td><td>${escapeHtml(booking.type)}</td><td>${escapeHtml(booking.customer)}</td>
-          <td>${escapeHtml(booking.service)}</td><td>${statusBadge(booking.status)}</td><td>${fmtMoney(booking.amount)}</td>
+          <td>${escapeHtml(booking.service)}</td><td>${statusBadge(booking.status)}</td><td>${formatReceiptAmount(booking.amount)}</td>
         </tr>`).join('') : '<tr><td colspan="6" class="empty">No bookings match this date range.</td></tr>';
         document.getElementById('export-booking-report').disabled = !currentBookingReport.length;
       }
@@ -403,7 +404,7 @@
           pdf.text(String(booking.customer), 69, y, { maxWidth: 40 });
           pdf.text(String(booking.service), 112, y, { maxWidth: 104 });
           pdf.text(String(booking.status), 220, y, { maxWidth: 30 });
-          pdf.text(fmtMoney(booking.amount), 252, y, { maxWidth: 30 });
+          pdf.text(formatReceiptAmount(booking.amount), 252, y, { maxWidth: 30 });
           y += 8;
         }
         pdf.save(`booking-report-${start}-${end}.pdf`);
@@ -428,7 +429,7 @@
           const hotel = Array.isArray(data?.hotel) ? data.hotel : [];
           const groomingServices = grooming.filter((s) => s && s.name && s.name.startsWith('grooming-'));
           const ayurvedaServices = grooming.filter((s) => s && s.name && s.name.startsWith('ayurveda-'));
-          const hotelServices = hotel;
+          const hotelServices = hotel.filter((service) => service && service.name && service.name.startsWith('staycation-'));
 
           container.innerHTML = `
             <details class="admin-service-group">
@@ -452,13 +453,14 @@
               <summary>Hotel Services <span>${hotelServices.length}</span></summary>
               <div class="card-grid">
                 ${hotelServices.length ? hotelServices.map(service => {
-                  const roomType = service.name.replace(/^(day-care|staycation)-/, '').replace('-', ' ');
-                  const stayType = service.name.startsWith('day-care-') ? 'Day Care' : 'Staycation';
+                  const roomType = service.name.replace(/^staycation-/, '').replace('-', ' ');
+                  const weekdayRate = Number(service.rates?.weekday ?? service.price);
+                  const weekendRate = Number(service.rates?.weekend ?? service.price);
                   return `
                     <div class="card">
-                      <h5 style="font-size: 1rem; margin-bottom: 0.5rem;">${stayType} - ${roomType}</h5>
-                      <p style="color: var(--muted); margin-bottom: 0.5rem; font-size: 0.9rem;">Weekday: ₱${service.price} / Weekend: ₱${service.price} ${stayType === 'Day Care' ? 'per hour' : 'per night'}</p>
-                      <div class="price">From ₱${service.price}</div>
+                      <h5 style="font-size: 1rem; margin-bottom: 0.5rem;">Staycation - ${roomType}</h5>
+                      <p style="color: var(--muted); margin-bottom: 0.5rem; font-size: 0.9rem;">Weekday: ₱${weekdayRate} / Weekend: ₱${weekendRate} per night</p>
+                      <div class="price">From ₱${weekdayRate}</div>
                     </div>
                   `;
                 }).join('') : '<div class="empty">No hotel services available.</div>'}

@@ -12,12 +12,22 @@ const attachCustomerPets = async (customer) => {
   return customer;
 };
 
+const customerCreatedAt = (customer) => {
+  const value = customer.createdAt;
+  if (value && typeof value.toDate === 'function') return value.toDate().getTime();
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value);
+  const parsed = Date.parse(value || '');
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 const listCustomers = async (req, res, next) => {
   try {
     const customers = await Customer.findAll({
       include: [{ model: Pet }],
-      order: [['createdAt', 'DESC']],
     });
+    customers.sort((left, right) => customerCreatedAt(right) - customerCreatedAt(left));
     res.json(await Promise.all(customers.map(attachCustomerPets)));
   } catch (error) {
     next(error);

@@ -3,7 +3,7 @@
 //   1. Grooming & Spa (Basic / Full / Premium + A La Carte)
 //   2. Animal Ayurveda (herbs)
 //   3. Animal Ayurveda (packages)
-//   4. Hotel Services (Day Care + Staycation)
+//   4. Hotel Services (Staycation)
 //
 // Prices are in Philippine Pesos (₱). Size keys: S, M, L, XL and Cat.
 
@@ -40,10 +40,6 @@ const AYURVEDA_PACKAGES = {
 };
 
 const HOTEL = {
-  'Day Care': {
-    Standard: { weekday: 55, weekend: 76 },
-    Deluxe: { weekday: 80, weekend: 100 },
-  },
   'Staycation': {
     Standard: { weekday: 500, weekend: 700 },
     Deluxe: { weekday: 800, weekend: 1000 },

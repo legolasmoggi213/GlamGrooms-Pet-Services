@@ -1,0 +1,635 @@
+(() => {
+  const PRICES = {
+    'grooming-basic-s': 450,
+    'grooming-basic-m': 550,
+    'grooming-basic-l': 700,
+    'grooming-basic-xl': 900,
+    'grooming-basic-cat': 550,
+    'grooming-full-s': 550,
+    'grooming-full-m': 650,
+    'grooming-full-l': 900,
+    'grooming-full-xl': 1100,
+    'grooming-full-cat': 750,
+    'grooming-premium-s': 700,
+    'grooming-premium-m': 800,
+    'grooming-premium-l': 1050,
+    'grooming-premium-xl': 1250,
+    'grooming-a-la-carte-face-trim': 250,
+    'grooming-a-la-carte-paw-trim': 200,
+    'grooming-a-la-carte-nail-clipping': 1,
+    'grooming-a-la-carte-ear-cleaning': 1,
+    'grooming-a-la-carte-anal-sac-expressing': 120,
+    'grooming-a-la-carte-de-matting': 500,
+    'ayurveda-herb-beauty-s': 600,
+    'ayurveda-herb-beauty-m': 650,
+    'ayurveda-herb-beauty-l': 750,
+    'ayurveda-herb-beauty-xl': 800,
+    'ayurveda-herb-doctors-s': 700,
+    'ayurveda-herb-doctors-m': 750,
+    'ayurveda-herb-doctors-l': 850,
+    'ayurveda-herb-doctors-xl': 900,
+    'ayurveda-herb-moisture-s': 600,
+    'ayurveda-herb-moisture-m': 650,
+    'ayurveda-herb-moisture-l': 750,
+    'ayurveda-herb-moisture-xl': 800,
+    'ayurveda-pkg-basic-beauty-moisture-s': 900,
+    'ayurveda-pkg-basic-beauty-moisture-m': 1050,
+    'ayurveda-pkg-basic-beauty-moisture-l': 1250,
+    'ayurveda-pkg-basic-beauty-moisture-xl': 1500,
+    'ayurveda-pkg-basic-doctors-s': 1000,
+    'ayurveda-pkg-basic-doctors-m': 1150,
+    'ayurveda-pkg-basic-doctors-l': 1350,
+    'ayurveda-pkg-basic-doctors-xl': 1600,
+    'ayurveda-pkg-full-beauty-moisture-s': 1000,
+    'ayurveda-pkg-full-beauty-moisture-m': 1050,
+    'ayurveda-pkg-full-beauty-moisture-l': 1400,
+    'ayurveda-pkg-full-beauty-moisture-xl': 1650,
+    'ayurveda-pkg-full-doctors-s': 1100,
+    'ayurveda-pkg-full-doctors-m': 1250,
+    'ayurveda-pkg-full-doctors-l': 1450,
+    'ayurveda-pkg-full-doctors-xl': 1700,
+    'ayurveda-pkg-premium-beauty-moisture-s': 1150,
+    'ayurveda-pkg-premium-beauty-moisture-m': 1300,
+    'ayurveda-pkg-premium-beauty-moisture-l': 1550,
+    'ayurveda-pkg-premium-beauty-moisture-xl': 1800,
+    'ayurveda-pkg-premium-doctors-s': 1250,
+    'ayurveda-pkg-premium-doctors-m': 1400,
+    'ayurveda-pkg-premium-doctors-l': 1650,
+    'ayurveda-pkg-premium-doctors-xl': 1900,
+  };
+
+  const serviceDetails = {
+    'grooming-basic-s': { category: 'Basic', duration: 60, includes: ['Bath', 'Breed-specific haircut', 'Nail trim', 'Ear cleaning'], suitable: ['All sizes'] },
+    'grooming-basic-m': { category: 'Basic', duration: 60, includes: ['Bath', 'Breed-specific haircut', 'Nail trim', 'Ear cleaning'], suitable: ['All sizes'] },
+    'grooming-basic-l': { category: 'Basic', duration: 60, includes: ['Bath', 'Breed-specific haircut', 'Nail trim', 'Ear cleaning'], suitable: ['All sizes'] },
+    'grooming-basic-xl': { category: 'Basic', duration: 60, includes: ['Bath', 'Breed-specific haircut', 'Nail trim', 'Ear cleaning'], suitable: ['All sizes'] },
+    'grooming-basic-cat': { category: 'Basic', duration: 60, includes: ['Bath', 'Breed-specific haircut', 'Nail trim', 'Ear cleaning'], suitable: ['Cats'] },
+    'grooming-full-s': { category: 'Full', duration: 90, includes: ['Full bath', 'Haircut', 'Nail trim', 'Ear cleaning', 'Massage', 'Bandana'], suitable: ['All sizes'] },
+    'grooming-full-m': { category: 'Full', duration: 90, includes: ['Full bath', 'Haircut', 'Nail trim', 'Ear cleaning', 'Massage', 'Bandana'], suitable: ['All sizes'] },
+    'grooming-full-l': { category: 'Full', duration: 90, includes: ['Full bath', 'Haircut', 'Nail trim', 'Ear cleaning', 'Massage', 'Bandana'], suitable: ['All sizes'] },
+    'grooming-full-xl': { category: 'Full', duration: 90, includes: ['Full bath', 'Haircut', 'Nail trim', 'Ear cleaning', 'Massage', 'Bandana'], suitable: ['All sizes'] },
+    'grooming-full-cat': { category: 'Full', duration: 90, includes: ['Full bath', 'Haircut', 'Nail trim', 'Ear cleaning', 'Massage', 'Bandana'], suitable: ['Cats'] },
+    'grooming-premium-s': { category: 'Premium', duration: 120, includes: ['Complete spa day', 'Multiple treatments', 'Premium products', 'Photo session'], suitable: ['All sizes'] },
+    'grooming-premium-m': { category: 'Premium', duration: 120, includes: ['Complete spa day', 'Multiple treatments', 'Premium products', 'Photo session'], suitable: ['All sizes'] },
+    'grooming-premium-l': { category: 'Premium', duration: 120, includes: ['Complete spa day', 'Multiple treatments', 'Premium products', 'Photo session'], suitable: ['All sizes'] },
+    'grooming-premium-xl': { category: 'Premium', duration: 120, includes: ['Complete spa day', 'Multiple treatments', 'Premium products', 'Photo session'], suitable: ['All sizes'] },
+    'grooming-a-la-carte-face-trim': { category: 'A La Carte', duration: 15, includes: ['Facial treatment', 'Gentle trimming'], suitable: ['All sizes'] },
+    'grooming-a-la-carte-paw-trim': { category: 'A La Carte', duration: 15, includes: ['Paw trimming', 'Padding care'], suitable: ['All sizes'] },
+    'grooming-a-la-carte-nail-clipping': { category: 'A La Carte', duration: 10, includes: ['Professional nail clipping'], suitable: ['All sizes'] },
+    'grooming-a-la-carte-ear-cleaning': { category: 'A La Carte', duration: 15, includes: ['Ear cleaning and inspection'], suitable: ['All sizes'] },
+    'grooming-a-la-carte-anal-sac-expressing': { category: 'A La Carte', duration: 20, includes: ['Anal sac expressing'], suitable: ['All sizes'] },
+    'grooming-a-la-carte-de-matting': { category: 'A La Carte', duration: 45, includes: ['De-matting treatment', 'Brush-out'], suitable: ['All sizes'] },
+    'ayurveda-herb-beauty-s': { category: 'Ayurveda Herbs', duration: 60, includes: ['Herbal bath', 'Aromatherapy', 'Massage therapy'], suitable: ['All sizes'] },
+    'ayurveda-herb-beauty-m': { category: 'Ayurveda Herbs', duration: 60, includes: ['Herbal bath', 'Aromatherapy', 'Massage therapy'], suitable: ['All sizes'] },
+    'ayurveda-herb-beauty-l': { category: 'Ayurveda Herbs', duration: 60, includes: ['Herbal bath', 'Aromatherapy', 'Massage therapy'], suitable: ['All sizes'] },
+    'ayurveda-herb-beauty-xl': { category: 'Ayurveda Herbs', duration: 60, includes: ['Herbal bath', 'Aromatherapy', 'Massage therapy'], suitable: ['All sizes'] },
+    'ayurveda-herb-doctors-s': { category: 'Ayurveda Herbs', duration: 90, includes: ['Complete Ayurvedic treatment', 'Herbal products', 'Therapeutic massage'], suitable: ['All sizes'] },
+    'ayurveda-herb-doctors-m': { category: 'Ayurveda Herbs', duration: 90, includes: ['Complete Ayurvedic treatment', 'Herbal products', 'Therapeutic massage'], suitable: ['All sizes'] },
+    'ayurveda-herb-doctors-l': { category: 'Ayurveda Herbs', duration: 90, includes: ['Complete Ayurvedic treatment', 'Herbal products', 'Therapeutic massage'], suitable: ['All sizes'] },
+    'ayurveda-herb-doctors-xl': { category: 'Ayurveda Herbs', duration: 90, includes: ['Complete Ayurvedic treatment', 'Herbal products', 'Therapeutic massage'], suitable: ['All sizes'] },
+    'ayurveda-herb-moisture-s': { category: 'Ayurveda Herbs', duration: 60, includes: ['Natural oil treatment', 'Deep conditioning'], suitable: ['All sizes'] },
+    'ayurveda-herb-moisture-m': { category: 'Ayurveda Herbs', duration: 60, includes: ['Natural oil treatment', 'Deep conditioning'], suitable: ['All sizes'] },
+    'ayurveda-herb-moisture-l': { category: 'Ayurveda Herbs', duration: 60, includes: ['Natural oil treatment', 'Deep conditioning'], suitable: ['All sizes'] },
+    'ayurveda-herb-moisture-xl': { category: 'Ayurveda Herbs', duration: 60, includes: ['Natural oil treatment', 'Deep conditioning'], suitable: ['All sizes'] },
+    'ayurveda-pkg-basic-beauty-moisture-s': { category: 'Ayurveda Packages', duration: 120, includes: ['Combined herbal treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-basic-beauty-moisture-m': { category: 'Ayurveda Packages', duration: 120, includes: ['Combined herbal treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-basic-beauty-moisture-l': { category: 'Ayurveda Packages', duration: 120, includes: ['Combined herbal treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-basic-beauty-moisture-xl': { category: 'Ayurveda Packages', duration: 120, includes: ['Combined herbal treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-basic-doctors-s': { category: 'Ayurveda Packages', duration: 150, includes: ['Complete Ayurvedic therapy'], suitable: ['All sizes'] },
+    'ayurveda-pkg-basic-doctors-m': { category: 'Ayurveda Packages', duration: 150, includes: ['Complete Ayurvedic therapy'], suitable: ['All sizes'] },
+    'ayurveda-pkg-basic-doctors-l': { category: 'Ayurveda Packages', duration: 150, includes: ['Complete Ayurvedic therapy'], suitable: ['All sizes'] },
+    'ayurveda-pkg-basic-doctors-xl': { category: 'Ayurveda Packages', duration: 150, includes: ['Complete Ayurvedic therapy'], suitable: ['All sizes'] },
+    'ayurveda-pkg-full-beauty-moisture-s': { category: 'Ayurveda Packages', duration: 180, includes: ['Advanced combined treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-full-beauty-moisture-m': { category: 'Ayurveda Packages', duration: 180, includes: ['Advanced combined treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-full-beauty-moisture-l': { category: 'Ayurveda Packages', duration: 180, includes: ['Advanced combined treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-full-beauty-moisture-xl': { category: 'Ayurveda Packages', duration: 180, includes: ['Advanced combined treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-full-doctors-s': { category: 'Ayurveda Packages', duration: 210, includes: ['Premium Ayurvedic therapy'], suitable: ['All sizes'] },
+    'ayurveda-pkg-full-doctors-m': { category: 'Ayurveda Packages', duration: 210, includes: ['Premium Ayurvedic therapy'], suitable: ['All sizes'] },
+    'ayurveda-pkg-full-doctors-l': { category: 'Ayurveda Packages', duration: 210, includes: ['Premium Ayurvedic therapy'], suitable: ['All sizes'] },
+    'ayurveda-pkg-full-doctors-xl': { category: 'Ayurveda Packages', duration: 210, includes: ['Premium Ayurvedic therapy'], suitable: ['All sizes'] },
+    'ayurveda-pkg-premium-beauty-moisture-s': { category: 'Ayurveda Packages', duration: 240, includes: ['Ultimate combined treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-premium-beauty-moisture-m': { category: 'Ayurveda Packages', duration: 240, includes: ['Ultimate combined treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-premium-beauty-moisture-l': { category: 'Ayurveda Packages', duration: 240, includes: ['Ultimate combined treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-premium-beauty-moisture-xl': { category: 'Ayurveda Packages', duration: 240, includes: ['Ultimate combined treatments'], suitable: ['All sizes'] },
+    'ayurveda-pkg-premium-doctors-s': { category: 'Ayurveda Packages', duration: 270, includes: ['Ultimate Ayurvedic therapy'], suitable: ['All sizes'] },
+    'ayurveda-pkg-premium-doctors-m': { category: 'Ayurveda Packages', duration: 270, includes: ['Ultimate Ayurvedic therapy'], suitable: ['All sizes'] },
+    'ayurveda-pkg-premium-doctors-l': { category: 'Ayurveda Packages', duration: 270, includes: ['Ultimate Ayurvedic therapy'], suitable: ['All sizes'] },
+    'ayurveda-pkg-premium-doctors-xl': { category: 'Ayurveda Packages', duration: 270, includes: ['Ultimate Ayurvedic therapy'], suitable: ['All sizes'] },
+  };
+
+  const form = document.getElementById('grooming-form');
+  if (!form) return;
+
+  const alertBox = document.getElementById('alert');
+  const submitBtn = document.getElementById('submit-btn');
+  const pricePreview = document.getElementById('price-preview');
+  const serviceSelect = document.getElementById('service');
+  const dateInput = document.getElementById('date');
+  dateInput.min = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const timeSelect = document.getElementById('time');
+  const pickupTimeInput = document.getElementById('pickupTime');
+  const petCountSelect = document.getElementById('pet-count');
+  const petFields = document.getElementById('pet-fields');
+  const summaryBox = document.getElementById('order-summary');
+
+  let submitting = false;
+  let customerProfileLoaded = false;
+  let slotRequest = 0;
+  let availableSlotsCache = [];
+  let lastSuccessfulBookingKey = null;
+  let savedPets = [];
+
+  const field = (name) => form.querySelector(`[name="${name}"]`);
+
+  const renderPetFields = () => {
+    petFields.innerHTML = Array.from({ length: Math.max(1, Math.min(5, Number(petCountSelect.value) || 1)) }, (_, index) => `
+      <div class="field full"><strong>Pet ${index + 1}</strong></div>
+      <div class="field full"><label for="pet-profile-${index}">Use a saved pet profile</label><select id="pet-profile-${index}" name="petProfile-${index}" data-saved-pet><option value="">Enter a new pet</option>${savedPets.map((pet) => `<option value="${escapeHtml(pet.id)}">${escapeHtml(pet.name)} — ${escapeHtml(pet.species)}, ${escapeHtml(pet.breed)}</option>`).join('')}</select></div>
+      <div class="field"><label for="pet-name-${index}">Pet Name *</label><input id="pet-name-${index}" name="petName-${index}" required /></div>
+      <div class="field"><label for="pet-species-${index}">Species *</label><select id="pet-species-${index}" name="species-${index}"><option value="dog">Dog</option><option value="cat">Cat</option></select></div>
+      <div class="field"><label for="pet-breed-${index}">Breed *</label><input id="pet-breed-${index}" name="breed-${index}" required /></div>
+      <div class="field"><label for="pet-age-${index}">Age (years) *</label><input id="pet-age-${index}" name="age-${index}" type="number" min="0" max="50" required /></div>
+      <div class="field full"><label for="pet-medical-history-${index}">Medical History (Optional)</label><textarea id="pet-medical-history-${index}" name="medicalHistory-${index}" rows="3" maxlength="1000" placeholder="Share any allergies, ongoing conditions, or care needs."></textarea></div>
+      <div class="field full grooming-service-field"><label for="pet-service-${index}">Service for Pet ${index + 1} *</label><select id="pet-service-${index}" name="service-${index}" required>${serviceSelect.innerHTML}</select><div data-service-detail="${index}">${renderServiceDetail(serviceSelect.value)}</div></div>
+    `).join('');
+    updatePrice();
+  };
+
+  const collectPets = () => Array.from({ length: Math.max(1, Math.min(5, Number(petCountSelect.value) || 1)) }, (_, index) => {
+    const profileId = field(`petProfile-${index}`)?.value;
+    return {
+      ...(profileId ? { id: profileId } : {}),
+      name: String(field(`petName-${index}`)?.value || '').trim(),
+      species: String(field(`species-${index}`)?.value || 'dog').trim().toLowerCase(),
+      breed: String(field(`breed-${index}`)?.value || '').trim() || null,
+      age: field(`age-${index}`)?.value ? Number(field(`age-${index}`).value) : null,
+      medicalHistory: String(field(`medicalHistory-${index}`)?.value || '').trim() || null,
+      service: String(field(`service-${index}`)?.value || ''),
+    };
+  });
+
+  const formatDate = (value) => {
+    if (!value) return 'Not selected';
+    const date = new Date(`${value}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const formatMoney = (value) => `₱${Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+  const escapeHtml = (value) => String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+  const serviceDescriptions = {
+    'grooming-basic': {
+      title: 'Basic Grooming',
+      description: 'A tidy-up with the essential bath and grooming care.',
+      includes: ['Bath and blow-dry', 'Sanitary and paw trim', 'Simple facial trim', 'Nail clipping', 'Ear cleaning'],
+    },
+    'grooming-full': {
+      title: 'Full Grooming',
+      description: 'Everything in Basic Grooming, with a simple body haircut and teeth brushing.',
+      includes: ['Basic Grooming inclusions', 'Simple body haircut', 'Teeth brushing'],
+    },
+    'grooming-premium': {
+      title: 'Premium Grooming',
+      description: 'A styled haircut with extra bathing and hygiene care.',
+      includes: ['Special cut: puppy, teddy bear, Asian fusion, or brown bear style', 'Bubble bath (not included for L and XL pets)', 'Anal-sac expressing'],
+    },
+    'grooming-a-la-carte-face-trim': {
+      title: 'Face Trim',
+      description: 'A neat facial trim to tidy the hair around your pet’s face.',
+      includes: ['Facial hair shaping'],
+    },
+    'grooming-a-la-carte-paw-trim': {
+      title: 'Paw Trim',
+      description: 'Trims excess hair around the paws for a cleaner finish.',
+      includes: ['Paw hair trimming'],
+    },
+    'grooming-a-la-carte-nail-clipping': {
+      title: 'Nail Clipping',
+      description: 'A standalone nail-trimming service.',
+      includes: ['Nail clipping'],
+    },
+    'grooming-a-la-carte-ear-cleaning': {
+      title: 'Ear Cleaning',
+      description: 'A standalone ear-cleaning service.',
+      includes: ['Ear cleaning'],
+    },
+    'grooming-a-la-carte-anal-sac-expressing': {
+      title: 'Anal Sac Expressing',
+      description: 'A standalone hygiene service.',
+      includes: ['Anal-sac expressing'],
+    },
+    'grooming-a-la-carte-de-matting': {
+      title: 'De-matting',
+      description: 'A coat-care service to help remove mats and tangles.',
+      includes: ['De-matting and coat brush-out'],
+      priceLabel: '₱300–₱500 (final price depends on coat condition)',
+    },
+    'ayurveda-herb-beauty': {
+      title: 'Beauty & Health Herb Treatment',
+      description: 'A herbal treatment intended to help reduce tangles, hold the coat style, and remove excess hair.',
+      includes: ['Herbal treatment', 'Coat and style care'],
+    },
+    'ayurveda-herb-doctors': {
+      title: "Doctor’s Health Herb Treatment",
+      description: 'Recommended for pets with strong odor or very oily skin; the flyer highlights Shih Tzus and Bulldogs.',
+      includes: ['Herbal treatment', 'For strong odor or excessively oily skin'],
+    },
+    'ayurveda-herb-moisture': {
+      title: 'Moisture Herb Treatment',
+      description: 'Adds extra moisture and helps reduce dirt sticking to the coat from static.',
+      includes: ['Moisture-focused herbal treatment', 'Coat care'],
+    },
+  };
+
+  const describeService = (serviceKey) => {
+    const base = serviceDescriptions[serviceKey]
+      || serviceDescriptions[serviceKey.replace(/-(s|m|l|xl|cat)$/, '')];
+    if (base) return base;
+
+    const packageMatch = serviceKey.match(/^ayurveda-pkg-(basic|full|premium)-(beauty-moisture|doctors)-(s|m|l|xl)$/);
+    if (packageMatch) {
+      const [, tier, treatment, size] = packageMatch;
+      const treatmentLabel = treatment === 'doctors' ? "Doctor’s Health" : 'Beauty/Moisture';
+      const tierLabel = `${tier[0].toUpperCase()}${tier.slice(1)}`;
+      return {
+        title: `${tierLabel} Grooming + ${treatmentLabel}`,
+        description: `Combines ${tierLabel.toLowerCase()} grooming with the selected Ayurveda treatment.`,
+        includes: [`${tierLabel} Grooming`, `${treatmentLabel} Ayurveda treatment`, `${size.toUpperCase()} size`],
+      };
+    }
+
+    return {
+      title: 'Selected service',
+      description: 'Service details are available from our grooming team.',
+      includes: [],
+    };
+  };
+
+  const renderServiceDetail = (serviceKey) => {
+    const detail = describeService(serviceKey);
+    const price = PRICES[serviceKey];
+    if (!serviceKey || price == null) return '<div class="grooming-service-detail" hidden></div>';
+    return `
+      <div class="grooming-service-detail" aria-live="polite">
+        <div class="grooming-service-detail-heading">
+          <strong>${escapeHtml(detail.title)}</strong>
+          <span>${escapeHtml(detail.priceLabel || formatMoney(price))}</span>
+        </div>
+        <p>${escapeHtml(detail.description)}</p>
+        ${detail.includes.length ? `<ul>${detail.includes.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+      </div>
+    `;
+  };
+
+  const showAlert = (type, message) => {
+    alertBox.hidden = false;
+    alertBox.className = `alert alert-${type} show`;
+    alertBox.textContent = message;
+    alertBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    submitBtn.classList.toggle('btn-success', type === 'success');
+    submitBtn.classList.toggle('btn-error', type === 'error');
+  };
+
+  const loadCustomerProfile = async () => {
+    try {
+      const response = await fetch('/customer/profile', { credentials: 'include', cache: 'no-store' });
+      if (response.status === 401) {
+        window.location.href = `/customer/login.html?return=${encodeURIComponent('/grooming.html')}`;
+        return;
+      }
+      if (!response.ok) throw new Error('Unable to load your customer profile.');
+      const data = await response.json();
+      const customer = data.customer || {};
+      for (const [name, value] of Object.entries({
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+        address: customer.address,
+      })) {
+        if (form.elements[name] && value) form.elements[name].value = value;
+      }
+      savedPets = Array.isArray(data.pets) ? data.pets : [];
+      customerProfileLoaded = true;
+      renderPetFields();
+      renderSummary();
+    } catch (error) {
+      showAlert('error', error.message);
+    }
+  };
+  loadCustomerProfile();
+
+  const clearAlert = () => {
+    alertBox.hidden = true;
+    alertBox.className = 'alert';
+    alertBox.textContent = '';
+    submitBtn.classList.remove('btn-success', 'btn-error');
+  };
+
+  const setBusy = (busy, label) => {
+    submitting = busy;
+    submitBtn.disabled = busy;
+    submitBtn.textContent = label;
+  };
+
+  const updatePrice = () => {
+    if (!pricePreview) return;
+    const total = collectPets().reduce((sum, pet) => sum + (PRICES[pet.service] || 0), 0);
+    pricePreview.textContent = `Total: ${formatMoney(total)}`;
+  };
+
+  const formatTimeLabel = (time) => {
+    const [hour, minute] = time.split(':').map(Number);
+    return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
+  };
+
+  const formatSlotLabel = (time, endTime) => `${formatTimeLabel(time)} – ${formatTimeLabel(endTime || time)}`;
+
+  const updatePickupTimeBounds = (slots) => {
+    const selectedSlot = slots.find((slot) => slot.time === timeSelect.value && slot.available);
+    pickupTimeInput.value = '';
+    pickupTimeInput.disabled = !selectedSlot;
+    if (!selectedSlot) {
+      pickupTimeInput.removeAttribute('min');
+      pickupTimeInput.removeAttribute('max');
+      return;
+    }
+    pickupTimeInput.min = selectedSlot.pickupEarliest;
+    pickupTimeInput.max = '17:00';
+    pickupTimeInput.step = '3600';
+  };
+
+  const loadAvailability = async () => {
+    const requestId = ++slotRequest;
+    if (!dateInput.value) {
+      availableSlotsCache = [];
+      timeSelect.replaceChildren(new Option('Select a date first', ''));
+      timeSelect.disabled = true;
+      pickupTimeInput.value = '';
+      pickupTimeInput.disabled = true;
+      pickupTimeInput.removeAttribute('min');
+      pickupTimeInput.removeAttribute('max');
+      return;
+    }
+
+    timeSelect.disabled = true;
+    pickupTimeInput.disabled = true;
+    try {
+      const query = new URLSearchParams({ date: dateInput.value });
+      collectPets().forEach((pet) => {
+        if (pet.service) query.append('service', pet.service);
+      });
+      const response = await fetch(`/api/v1/bookings/grooming/availability?${query}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error(`Availability request failed (${response.status})`);
+      const data = await response.json();
+      if (requestId !== slotRequest) return;
+
+      const slots = Array.isArray(data.slots) ? data.slots : [];
+      availableSlotsCache = slots;
+      const availableSlots = slots.filter((slot) => slot.available);
+      const previousTime = timeSelect.value;
+      const slotOptions = slots.map((slot) => {
+        const option = new Option(
+          `${formatSlotLabel(slot.time, slot.endTime)}${slot.available ? '' : ' — Unavailable'}`,
+          slot.time,
+          false,
+          false,
+        );
+        option.disabled = !slot.available;
+        return option;
+      });
+      timeSelect.replaceChildren(new Option('Select an available time', ''), ...slotOptions);
+      timeSelect.value = availableSlots.some((slot) => slot.time === previousTime)
+        ? previousTime
+        : (availableSlots[0]?.time || '');
+      timeSelect.disabled = availableSlots.length === 0;
+      updatePickupTimeBounds(slots);
+      renderSummary();
+    } catch (error) {
+      console.warn('Unable to load grooming availability:', error);
+      if (requestId === slotRequest) {
+        timeSelect.replaceChildren(new Option('Unable to load times; change the date to retry', ''));
+        timeSelect.disabled = true;
+        pickupTimeInput.value = '';
+        pickupTimeInput.disabled = true;
+      }
+    }
+  };
+
+  const renderSummary = () => {
+    if (!summaryBox) return;
+    const pets = collectPets();
+    const total = pets.reduce((sum, pet) => sum + (PRICES[pet.service] || 0), 0);
+    const petCards = pets.map((pet, index) => {
+      const selectedService = field(`service-${index}`);
+      const serviceText = selectedService?.options[selectedService.selectedIndex]?.textContent
+        .replace(/\s*[—-]\s*₱[\d,]+(?:\.\d{2})?.*$/, '')
+        .trim() || describeService(pet.service).title;
+      const detail = describeService(pet.service);
+      const duration = serviceDetails[pet.service]?.duration || 0;
+      return `
+        <article class="booking-summary-pet">
+          <div class="booking-summary-pet-heading">
+            <div><span class="booking-summary-eyebrow">PET ${index + 1}</span><h4>${escapeHtml(pet.name || 'Pet name not entered')}</h4></div>
+            <strong>${formatMoney(PRICES[pet.service] || 0)}</strong>
+          </div>
+          <dl class="booking-summary-details">
+            <div><dt>Pet</dt><dd>${escapeHtml([pet.species, pet.breed, pet.age == null ? '' : `${pet.age} yrs`].filter(Boolean).join(' · ') || 'Details not entered')}</dd></div>
+            <div><dt>Medical history</dt><dd>${escapeHtml(pet.medicalHistory || 'Not provided')}</dd></div>
+            <div><dt>Selected service</dt><dd>${escapeHtml(serviceText)}</dd></div>
+            <div><dt>Service includes</dt><dd>${escapeHtml(detail.includes.join(' · ') || detail.description)}</dd></div>
+            <div><dt>Estimated duration</dt><dd>${duration ? `${duration} minutes` : 'To be confirmed'}</dd></div>
+          </dl>
+        </article>`;
+    });
+    const paymentMethod = form.querySelector('input[name="paymentMethod"]:checked')?.value || 'cash';
+    const appointmentTime = timeSelect.value
+      ? formatSlotLabel(timeSelect.value, availableSlotsCache.find((slot) => slot.time === timeSelect.value)?.endTime)
+      : 'Choose an available appointment time';
+
+    summaryBox.innerHTML = `
+      <section class="booking-summary-card" aria-label="Grooming order summary">
+        <header class="booking-summary-header">
+          <div><span class="booking-summary-eyebrow">REVIEW YOUR BOOKING</span><h3>Grooming order summary</h3><p>Check each pet’s selected service and appointment details before booking.</p></div>
+          <span class="booking-summary-badge">${pets.length} pet${pets.length === 1 ? '' : 's'}</span>
+        </header>
+        <div class="booking-summary-pets">${petCards.join('')}</div>
+        <div class="booking-summary-section">
+          <h4>Appointment</h4>
+          <dl class="booking-summary-details">
+            <div><dt>Date</dt><dd>${escapeHtml(formatDate(dateInput.value))}</dd></div>
+            <div><dt>Appointment time</dt><dd>${escapeHtml(appointmentTime)}</dd></div>
+            <div><dt>Pickup time</dt><dd>${escapeHtml(pickupTimeInput.value ? formatTimeLabel(pickupTimeInput.value) : 'Not requested')}</dd></div>
+            <div><dt>Number of pets</dt><dd>${pets.length}</dd></div>
+            <div><dt>Special care instructions</dt><dd>${escapeHtml(String(field('notes')?.value || '').trim() || 'None provided')}</dd></div>
+          </dl>
+        </div>
+        <div class="booking-summary-total"><span>Estimated total</span><strong>${formatMoney(total)}</strong></div>
+        <p class="booking-summary-payment">${paymentMethod === 'qrph' ? 'GCash QR payment selected. Your appointment will be confirmed after payment and team review.' : 'Cash payment selected. Please pay at the counter.'}</p>
+      </div>
+    `;
+  };
+
+  const submitBooking = async (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (submitting || !form.reportValidity()) return;
+    if (!customerProfileLoaded) {
+      showAlert('error', 'Sign in and load your customer profile before booking.');
+      return;
+    }
+
+    try {
+      const payload = {
+        customer: {
+          name: String(field('name')?.value || '').trim(),
+          email: String(field('email')?.value || '').trim(),
+          phone: String(field('phone')?.value || '').trim(),
+          address: String(field('address')?.value || '').trim() || null,
+        },
+        pets: collectPets(),
+        service: field('service-0')?.value,
+        date: dateInput.value,
+        time: timeSelect.value,
+        pickupTime: pickupTimeInput.value.trim() || null,
+        notes: String(field('notes')?.value || '').trim() || null,
+        paymentMethod: String(form.querySelector('input[name="paymentMethod"]:checked')?.value || 'cash'),
+      };
+      const bookingKey = JSON.stringify({
+        services: payload.pets.map((pet) => pet.service),
+        date: payload.date,
+        time: payload.time,
+        pets: payload.pets.map((pet) => `${pet.name.toLowerCase()}:${pet.service}`),
+      });
+      if (bookingKey === lastSuccessfulBookingKey) {
+        const confirmed = window.confirm(`You already booked these services for ${formatDate(payload.date)} at ${payload.time}. Are you sure you want to book them again?`);
+        if (!confirmed) return;
+      }
+
+      setBusy(true, 'Booking...');
+      clearAlert();
+      const response = await fetch('/api/v1/bookings/grooming', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const details = Array.isArray(result.details) ? result.details.join(', ') : '';
+        throw new Error(details || result.error || `Booking failed (${response.status})`);
+      }
+
+      if (payload.paymentMethod === 'qrph') {
+        const checkoutUrl = result.checkout?.checkoutUrl;
+        if (!checkoutUrl) {
+          throw new Error('Unable to start PayMongo checkout. Your appointment was not confirmed. Please try again or choose pay at counter.');
+        }
+        try {
+          sessionStorage.setItem('pending_paymongo_booking', JSON.stringify({
+            type: 'grooming',
+            id: result.appointment?.id,
+            sessionId: result.checkout?.id,
+            createdAt: Date.now(),
+          }));
+        } catch (error) {
+          console.warn('Unable to save pending payment details:', error);
+        }
+        window.location.assign(checkoutUrl);
+        return;
+      }
+
+      const appointment = result.appointment || {};
+      const pets = Array.isArray(result.pets) ? result.pets : payload.pets;
+      const petNames = pets.map((pet) => pet.name).filter(Boolean).join(', ') || 'your pet';
+      const pickup = appointment.pickupTime ? `, pickup ${appointment.pickupTime}` : '';
+      showAlert(
+        'success',
+        `You completed a booking! ${result.message || 'Grooming appointment booked'} for ${petNames}. Reference #${appointment.id || 'N/A'}. See you on ${formatDate(appointment.date || payload.date)} at ${appointment.time || payload.time}${pickup}.`,
+      );
+      lastSuccessfulBookingKey = bookingKey;
+      form.dataset.bookingId = appointment.id || '';
+    } catch (error) {
+      showAlert('error', error.message || 'Unable to book this appointment. Please try again.');
+    } finally {
+      setBusy(false, 'Book Appointment');
+    }
+  };
+
+  form.addEventListener('submit', submitBooking, { capture: true });
+  petFields.addEventListener('change', (event) => {
+    const profileSelect = event.target.closest('[data-saved-pet]');
+    if (profileSelect) {
+      const index = Number(profileSelect.name.split('-').pop());
+      const pet = savedPets.find((item) => String(item.id) === profileSelect.value);
+      const setField = (name, value) => {
+        const input = field(`${name}-${index}`);
+        if (!input) return;
+        input.value = value == null ? '' : value;
+        if (input.tagName === 'SELECT') input.disabled = Boolean(pet);
+        else input.readOnly = Boolean(pet);
+      };
+      setField('petName', pet?.name || '');
+      setField('species', pet?.species || 'dog');
+      setField('breed', pet?.breed || '');
+      setField('age', pet?.age ?? '');
+      const medicalHistoryField = field(`medicalHistory-${index}`);
+      if (medicalHistoryField) {
+        medicalHistoryField.value = pet?.medicalHistory || '';
+        medicalHistoryField.readOnly = false;
+      }
+    }
+    const serviceSelect = event.target.closest('select[name^="service-"]');
+    if (serviceSelect) {
+      const index = Number(serviceSelect.name.split('-').pop());
+      const detail = petFields.querySelector(`[data-service-detail="${index}"]`);
+      if (detail) detail.innerHTML = renderServiceDetail(serviceSelect.value);
+    }
+    updatePrice();
+    renderSummary();
+    loadAvailability();
+  });
+  petFields.addEventListener('input', renderSummary);
+  petCountSelect.addEventListener('change', () => {
+    renderPetFields();
+    renderSummary();
+    loadAvailability();
+  });
+  dateInput.addEventListener('change', () => {
+    renderSummary();
+    loadAvailability();
+  });
+  timeSelect.addEventListener('change', () => {
+    updatePickupTimeBounds(availableSlotsCache);
+    renderSummary();
+  });
+  pickupTimeInput.addEventListener('change', renderSummary);
+  form.addEventListener('input', renderSummary);
+  form.addEventListener('change', renderSummary);
+
+  renderPetFields();
+  updatePrice();
+  renderSummary();
+  loadAvailability();
+})();

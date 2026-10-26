@@ -1,0 +1,37 @@
+{
+  "name": "capstone_project",
+  "version": "1.0.0",
+  "description": "Glam Grooms Pet Spa & Hotel — a glamorous pet grooming, hotel boarding, and supplies platform",
+  "keywords": [
+    "JM"
+  ],
+  "homepage": "https://github.com/johnandrino11-spec/Capstone_Project#readme",
+  "bugs": {
+    "url": "https://github.com/johnandrino11-spec/Capstone_Project/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnandrino11-spec/Capstone_Project.git"
+  },
+  "license": "MIT",
+  "author": "John Michale Andrino",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^5.2.1",
+    "firebase-admin": "^13.6.0",
+    "nodemailer": "^9.1.1",
+    "twilio": "^6.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

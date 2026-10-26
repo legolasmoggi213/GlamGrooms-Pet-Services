@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>My Account — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css?v=customer-password-change-20261027" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+</head>
+<body>
+  <header class="navbar">
+    <a class="brand" href="/">Glam Grooms Pet Spa & Hotel</a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/grooming.html">Grooming</a>
+      <a href="/hotel.html">Pet Hotel</a>
+      <a href="/customer/account.html" class="active">My Account</a>
+      <a href="/customer/logout" data-confirm-logout>Logout</a>
+    </nav>
+  </header>
+
+  <div id="toast" class="toast" aria-live="polite">Account created successfully.</div>
+  <section id="payment-retry-panel" class="payment-retry-panel" hidden role="status" aria-live="polite">
+    <p id="payment-retry-message">We are still confirming your PayMongo payment. Your booking is being kept.</p>
+    <button id="retry-payment-verification" class="btn btn-primary btn-sm" type="button">Check payment again</button>
+  </section>
+  <dialog id="payment-summary-dialog" aria-labelledby="payment-summary-title">
+    <div class="panel">
+      <h2 id="payment-summary-title">Payment confirmed</h2>
+      <div id="payment-summary-content"></div>
+      <button id="close-payment-summary" class="btn btn-outline" type="button">Close</button>
+    </div>
+  </dialog>
+
+  <div id="confirm-delete" class="confirm-box hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="confirm-card">
+      <h3 id="confirm-title">Delete account?</h3>
+      <p>Are you sure you want to permanently delete your account? This action cannot be undone.</p>
+      <div class="confirm-actions">
+        <button id="cancel-delete" class="btn btn-outline" type="button">No</button>
+        <button id="confirm-delete-btn" class="btn btn-danger" type="button">Yes</button>
+      </div>
+    </div>
+  </div>
+
+  <dialog id="booking-dialog" aria-labelledby="booking-dialog-title">
+    <form id="booking-edit-form" class="form-grid">
+      <h3 id="booking-dialog-title" class="field full">Edit booking</h3>
+      <div id="booking-edit-fields" class="form-grid full"></div>
+      <p id="booking-edit-message" class="field full text-error" aria-live="polite"></p>
+      <div class="profile-actions field full">
+        <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+        <button class="btn btn-outline btn-sm" id="close-booking-dialog" type="button">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <main class="page-shell">
+    <div class="account-header">
+      <h1>My Account</h1>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; margin-bottom:1rem;">
+      <button id="delete-account-btn" class="btn btn-danger btn-sm" type="button">Delete Account</button>
+    </div>
+
+    <div class="account-grid" id="content">
+      <section class="card profile-card" id="profile">Loading profile…</section>
+      <section class="card">
+        <div class="section-title">Your Pets</div>
+        <div id="pets">Loading pets…</div>
+        <div id="pet-editor" class="profile-edit"></div>
+        <p id="pet-message" class="text-muted" aria-live="polite"></p>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="section-title">Your Bookings</div>
+      <div id="bookings">Loading bookings…</div>
+    </section>
+  </main>
+
+  <script src="/js/mobile-number.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const showSuccessToast = params.get('justRegistered') === '1';
+    const paymentSuccess = params.get('payment_success') === '1';
+    const paymentPending = params.get('payment_pending') === '1';
+    const paymentSessionId = params.get('session_id') || '';
+    const paymentBookingType = params.get('booking_type') || '';
+    const paymentBookingId = params.get('booking_id') || '';
+    const deleteBtn = document.getElementById('delete-account-btn');
+    const paymentRetryPanel = document.getElementById('payment-retry-panel');
+    const retryPaymentButton = document.getElementById('retry-payment-verification');
+    const paymentRetryMessage = document.getElementById('payment-retry-message');
+    const paymentSummaryDialog = document.getElementById('payment-summary-dialog');
+    let paymentRetryStarted = false;
+    document.addEventListener('click', (event) => {
+      const logoutLink = event.target.closest('[data-confirm-logout]');
+      if (logoutLink && !window.confirm('Are you sure you want to log out?')) {
+        event.preventDefault();
+      }
+    });
+
+    const deleteModal = document.getElementById('confirm-delete');
+    const cancelDelete = document.getElementById('cancel-delete');
+    const confirmDelete = document.getElementById('confirm-delete-btn');
+    const bookingDialog = document.getElementById('booking-dialog');
+    const bookingEditForm = document.getElementById('booking-edit-form');
+    let activeBooking = null;
+    let autoRefresh = null;
+    let profileRequestInFlight = false;
+
+    if (showSuccessToast) {
+      const toast = document.getElementById('toast');
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+        const nextUrl = new URL(location.href);
+        nextUrl.searchParams.delete('justRegistered');
+        history.replaceState(null, '', nextUrl);
+      }, 1000);
+    }
+
+    if (paymentSuccess) {
+      const toast = document.getElementById('toast');
+      toast.textContent = 'Payment confirmed. Your recent booking summary is ready.';
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2500);
+    }
+
+    deleteBtn.addEventListener('click', () => deleteModal.classList.remove('hidden'));
+    cancelDelete.addEventListener('click', () => deleteModal.classList.add('hidden'));
+    confirmDelete.addEventListener('click', async () => {
+      deleteModal.classList.add('hidden');
+      try {
+        const res = await fetch('/customer/delete-account', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' } });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Unable to delete account');
+        location.href = '/';
+      } catch (e) {
+        alert('Failed to delete account. Please try again.');
+      }
+    });
+    document.getElementById('close-booking-dialog').addEventListener('click', () => bookingDialog.close());
+
+    const bookingCanChange = (item, type) => {
+      if (String(item.status || '').toLowerCase() !== 'pending'
+        || item.paymentStatus === 'paid'
+        || item.paymentMethod === 'qrph') return false;
+      const date = type === 'hotel' ? item.checkIn : item.date;
+      const time = type === 'hotel' ? item.checkInTime : item.time || '00:00';
+      return Boolean(date && new Date(`${date}T${time || '00:00'}:00`) > new Date());
+    };
+
+    const bookingActions = (item, type) => {
+      if (String(item.status || '').toLowerCase() !== 'pending') return '';
+      if (item.paymentStatus === 'paid' || item.paymentMethod === 'qrph') {
+        return '<div class="transaction-meta">Editing is unavailable while online payment is processing.</div>';
+      }
+      if (!bookingCanChange(item, type)) return '';
+      return `
+        <div class="profile-actions">
+          <button class="btn btn-outline btn-sm" type="button" data-reschedule-type="${type}" data-reschedule-id="${escapeHtml(item.id)}">Edit booking</button>
+          <button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}">Cancel booking</button>
+        </div>
+      `;
+    };
+
+    document.getElementById('bookings').addEventListener('click', async (event) => {
+      const cancelButton = event.target.closest('[data-cancel-type]');
+      if (cancelButton) {
+        const { cancelType: type, cancelId: id } = cancelButton.dataset;
+        if (!window.confirm('Cancel this upcoming unpaid booking?')) return;
+        cancelButton.disabled = true;
+        try {
+          const response = await fetch(`/api/v1/bookings/customer/${type}/${encodeURIComponent(id)}/cancel`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || 'Unable to cancel booking.');
+          if (result.notificationSent === false) {
+            alert('Your booking was canceled, but staff could not be notified automatically. Please contact the team.');
+          }
+          await loadProfile();
+        } catch (error) {
+          alert(error.message);
+          cancelButton.disabled = false;
+        }
+        return;
+      }
+
+      const rescheduleButton = event.target.closest('[data-reschedule-type]');
+      if (!rescheduleButton) return;
+      const { rescheduleType: type, rescheduleId: id } = rescheduleButton.dataset;
+      const data = await fetch('/customer/profile', { credentials: 'include' }).then((response) => response.json());
+      const item = [...(data.grooming || []), ...(data.hotel || [])].find((booking) => String(booking.id) === String(id));
+      if (!item) return alert('Booking not found. Refresh the page and try again.');
+      activeBooking = { type, id, item };
+      document.getElementById('booking-dialog-title').textContent = `Edit ${type} booking`;
+      const minDate = new Date().toLocaleDateString('en-CA');
+      const fields = type === 'grooming'
+        ? `<label class="field">Appointment date<input name="date" type="date" min="${minDate}" required value="${escapeHtml(item.date)}"></label>
+           <label class="field">Appointment time<input name="time" type="time" step="3600" required value="${escapeHtml(item.time || '')}"></label>
+           <label class="field">Pickup time<input name="pickupTime" type="time" step="3600" required value="${escapeHtml(item.pickupTime || '')}"></label>`
+        : `<label class="field">Check-in<input name="checkIn" type="date" min="${minDate}" required value="${escapeHtml(item.checkIn)}"></label>
+           <label class="field">Check-in time<input name="checkInTime" type="time" step="3600" required value="${escapeHtml(item.checkInTime || '')}"></label>
+           <label class="field">Check-out<input name="checkOut" type="date" min="${minDate}" required value="${escapeHtml(item.checkOut)}"></label>
+           <label class="field">Check-out time<input name="checkOutTime" type="time" step="3600" required value="${escapeHtml(item.checkOutTime || '')}"></label>`;
+      document.getElementById('booking-edit-fields').innerHTML = `${fields}
+        <label class="field full">Special care notes<textarea name="notes" maxlength="1000" rows="3">${escapeHtml(item.notes || '')}</textarea></label>`;
+      document.getElementById('booking-edit-message').textContent = '';
+      bookingDialog.showModal();
+    });
+
+    bookingEditForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!activeBooking || !bookingEditForm.reportValidity()) return;
+      const body = Object.fromEntries(new FormData(bookingEditForm));
+      const saveButton = bookingEditForm.querySelector('[type="submit"]');
+      saveButton.disabled = true;
+      document.getElementById('booking-edit-message').textContent = '';
+      try {
+        const response = await fetch(`/api/v1/bookings/customer/${activeBooking.type}/${encodeURIComponent(activeBooking.id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(body),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Unable to reschedule booking.');
+        bookingDialog.close();
+        activeBooking = null;
+        await loadProfile();
+      } catch (error) {
+        document.getElementById('booking-edit-message').textContent = error.message;
+      } finally {
+        saveButton.disabled = false;
+      }
+    });
+
+    async function loadProfile() {
+      if (profileRequestInFlight) return;
+      profileRequestInFlight = true;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      try {
+        const r = await fetch('/customer/profile', { credentials: 'include', signal: controller.signal });
+        const contentType = r.headers.get('content-type') || '';
+        if (r.status === 401 || r.redirected) {
+          location.href = '/customer/login.html?return=' + encodeURIComponent(location.pathname);
+          return;
+        }
+        if (!r.ok) throw new Error(`Profile request failed (${r.status}).`);
+        if (!contentType.includes('application/json')) throw new Error('Profile response was not JSON.');
+        const data = await r.json();
+        const p = data.customer || {};
+        const groomingBookings = data.grooming || [];
+        const hotelBookings = data.hotel || [];
+
+        document.getElementById('profile').innerHTML = `
+          <div class="profile-title">Profile details</div>
+          <div class="profile-name">${escapeHtml(p.name || 'Customer')}</div>
+          <div class="info-list">
+            <div class="info-row"><strong>Email</strong><span>${escapeHtml(p.email || 'Not set')}</span></div>
+            <div class="info-row"><strong>Phone</strong><span>${escapeHtml(p.phone || 'Not set')}</span></div>
+            <div class="info-row"><strong>Address</strong><span>${escapeHtml(p.address || 'Not provided')}</span></div>
+            <div class="info-row"><strong>Member since</strong><span>${formatDate(p.createdAt)}</span></div>
+          </div>
+          <div class="profile-actions"><button id="edit-profile-btn" class="btn btn-primary btn-sm" type="button">Edit Profile</button></div>
+          <form id="profile-edit" class="profile-edit">
+            <label>Full name<input name="name" required value="${escapeHtml(p.name || '')}"></label>
+            <label>Phone<input name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number pattern="[0-9]{11}" title="Leave blank or enter exactly 11 digits." value="${escapeHtml(p.phone || '')}"></label>
+            <label>Address<input name="address" value="${escapeHtml(p.address || '')}"></label>
+            <div class="profile-actions"><button class="btn btn-primary btn-sm" type="submit">Save Changes</button><button id="cancel-profile-btn" class="btn btn-outline btn-sm" type="button">Cancel</button></div>
+            <button id="show-password-change" class="btn forgot-password-btn" type="button">Forgot or want to change your password?</button>
+          </form>
+          <section id="password-change-panel" class="profile-edit" aria-label="Change password">
+            <p class="transaction-meta">We’ll send a one-time verification code to your account email.</p>
+            <button id="send-password-change-code" class="btn btn-outline btn-sm" type="button">Send email verification code</button>
+            <p id="password-change-message" class="text-muted" aria-live="polite"></p>
+            <form id="password-change-form" hidden>
+              <label for="password-change-code">Email verification code</label>
+              <input id="password-change-code" name="verificationCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+              <label for="new-customer-password">New password</label>
+              <input id="new-customer-password" name="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="24" required>
+              <label for="confirm-customer-password">Confirm new password</label>
+              <input id="confirm-customer-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="24" required>
+              <p class="transaction-meta">Use 8–24 characters, including uppercase and lowercase letters, a number, and a special character.</p>
+              <div class="profile-actions">
+                <button id="submit-password-change" class="btn btn-primary btn-sm" type="submit">Verify and change password</button>
+              </div>
+            </form>
+          </section>
+        `;
+
+        const editButton = document.getElementById('edit-profile-btn');
+        const editForm = document.getElementById('profile-edit');
+        const phoneInput = editForm.elements.namedItem('phone');
+        phoneInput.type = 'tel';
+        phoneInput.inputMode = 'numeric';
+        phoneInput.pattern = '[0-9]*';
+        phoneInput.value = phoneInput.value.replace(/[^0-9]/g, '');
+        phoneInput.addEventListener('input', () => {
+          phoneInput.value = phoneInput.value.replace(/[^0-9]/g, '');
+        });
+        editButton.addEventListener('click', () => editForm.classList.add('open'));
+        document.getElementById('cancel-profile-btn').addEventListener('click', () => editForm.classList.remove('open'));
+        const passwordChangePanel = document.getElementById('password-change-panel');
+        const passwordChangeForm = document.getElementById('password-change-form');
+        const passwordChangeMessage = document.getElementById('password-change-message');
+        const sendPasswordCodeButton = document.getElementById('send-password-change-code');
+        let passwordChangeChallengeId = '';
+        document.getElementById('show-password-change').addEventListener('click', () => {
+          passwordChangePanel.classList.toggle('open');
+        });
+        sendPasswordCodeButton.addEventListener('click', async () => {
+          sendPasswordCodeButton.disabled = true;
+          passwordChangeMessage.className = 'text-muted';
+          passwordChangeMessage.textContent = 'Sending a verification code to your account email…';
+          try {
+            const response = await fetch('/customer/password/change/send-code', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({}),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.error || 'Unable to send the verification code.');
+            passwordChangeChallengeId = result.challengeId || '';
+            if (!passwordChangeChallengeId) throw new Error('The verification request was incomplete. Please try again.');
+            passwordChangeForm.hidden = false;
+            passwordChangeMessage.className = 'text-success';
+            passwordChangeMessage.textContent = `A six-digit code was sent to ${result.email || 'your account email'}. It expires in 10 minutes.`;
+            document.getElementById('password-change-code').focus();
+          } catch (error) {
+            passwordChangeMessage.className = 'text-error';
+            passwordChangeMessage.textContent = error.message || 'Unable to send the verification code.';
+          } finally {
+            sendPasswordCodeButton.disabled = false;
+          }
+        });
+        passwordChangeForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          if (!passwordChangeForm.reportValidity()) return;
+          const values = Object.fromEntries(new FormData(passwordChangeForm));
+          values.challengeId = passwordChangeChallengeId;
+          if (values.newPassword !== values.confirmPassword) {
+            passwordChangeMessage.className = 'text-error';
+            passwordChangeMessage.textContent = 'The new password and confirmation do not match.';
+            return;
+          }
+          const submitButton = document.getElementById('submit-password-change');
+          submitButton.disabled = true;
+          passwordChangeMessage.className = 'text-muted';
+          passwordChangeMessage.textContent = 'Verifying your code and updating your password…';
+          try {
+            const response = await fetch('/customer/password/change', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(values),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.error || 'Unable to change your password.');
+            passwordChangeForm.reset();
+            passwordChangeForm.hidden = true;
+            passwordChangeChallengeId = '';
+            passwordChangeMessage.className = 'text-success';
+            passwordChangeMessage.textContent = result.message || 'Your password has been changed successfully.';
+          } catch (error) {
+            passwordChangeMessage.className = 'text-error';
+            passwordChangeMessage.textContent = error.message || 'Unable to change your password.';
+          } finally {
+            submitButton.disabled = false;
+          }
+        });
+        editForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          if (/[^0-9]/.test(phoneInput.value)) {
+            phoneInput.focus();
+            alert('Phone number must contain digits only.');
+            return;
+          }
+          const formData = new FormData(editForm);
+          const response = await fetch('/customer/profile', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(Object.fromEntries(formData)),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'Failed to update profile');
+          await loadProfile();
+        });
+
+        const pets = (data.pets || []);
+        document.getElementById('pets').innerHTML = pets.length
+          ? `<ul class="pet-list">${pets.map(pt => `
+              <li>
+                <div>
+                  <strong>${escapeHtml(pt.name || 'Pet')}</strong><br>
+                  <span class="transaction-meta">${escapeHtml(pt.species || 'Unknown')} • ${escapeHtml(pt.breed || 'Mixed')} • ${escapeHtml(pt.age != null ? pt.age + ' yrs' : 'Age not set')}${pt.size ? ` • ${escapeHtml(pt.size)}` : ''}</span><br>
+                  <span class="transaction-meta">${escapeHtml(pt.notes || '')}</span>
+                </div>
+                <div class="profile-actions">
+                  <button class="btn btn-outline btn-sm" type="button" data-edit-pet="${escapeHtml(pt.id)}">Edit</button>
+                  <button class="btn btn-danger btn-sm" type="button" data-delete-pet="${escapeHtml(pt.id)}">Delete</button>
+                </div>
+              </li>
+            `).join('')}</ul>`
+          : '<div class="empty-state">No pets registered yet.</div>';
+
+        const petEditor = document.getElementById('pet-editor');
+        const petMessage = document.getElementById('pet-message');
+        const closePetEditor = () => {
+          petEditor.classList.remove('open');
+          petEditor.innerHTML = '';
+          petMessage.textContent = '';
+        };
+        const editPet = (pet) => {
+          if (!pet) return;
+          petMessage.textContent = '';
+          petEditor.innerHTML = `
+            <form id="pet-edit-form">
+              <label>Pet name<input name="name" required maxlength="80" value="${escapeHtml(pet?.name || '')}"></label>
+              <label>Species<select name="species" required>
+                <option value="dog"${pet?.species === 'dog' ? ' selected' : ''}>Dog</option>
+                <option value="cat"${pet?.species === 'cat' ? ' selected' : ''}>Cat</option>
+              </select></label>
+              <label>Breed<input name="breed" required maxlength="100" value="${escapeHtml(pet?.breed || '')}"></label>
+              <label>Age in years<input name="age" type="number" min="0" max="100" step="1" required value="${escapeHtml(pet?.age ?? '')}"></label>
+              <label>Size<input name="size" maxlength="40" value="${escapeHtml(pet?.size || '')}" placeholder="Optional"></label>
+              <label>Care notes<textarea name="notes" maxlength="1000" rows="2">${escapeHtml(pet?.notes || '')}</textarea></label>
+              <div class="profile-actions">
+                <button class="btn btn-primary btn-sm" type="submit">Save Pet</button>
+                <button class="btn btn-outline btn-sm" type="button" id="cancel-pet-edit">Cancel</button>
+              </div>
+            </form>`;
+          petEditor.classList.add('open');
+          petEditor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          petEditor.querySelector('input[name="name"]')?.focus({ preventScroll: true });
+          document.getElementById('cancel-pet-edit').addEventListener('click', closePetEditor);
+          document.getElementById('pet-edit-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!event.currentTarget.reportValidity()) return;
+            const body = Object.fromEntries(new FormData(event.currentTarget));
+            body.age = Number(body.age);
+            const endpoint = `/customer/pets/${encodeURIComponent(pet.id)}`;
+            try {
+              const response = await fetch(endpoint, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(body),
+              });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(result.error || 'Unable to save pet details.');
+              closePetEditor();
+              await loadProfile();
+            } catch (error) {
+              petMessage.className = 'text-error';
+              petMessage.textContent = error.message;
+            }
+          });
+        };
+        document.querySelectorAll('[data-edit-pet]').forEach((button) => {
+          button.addEventListener('click', () => editPet(pets.find((pet) => String(pet.id) === button.dataset.editPet)));
+        });
+        document.querySelectorAll('[data-delete-pet]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            if (!confirm('Delete this pet profile?')) return;
+            try {
+              const response = await fetch(`/customer/pets/${encodeURIComponent(button.dataset.deletePet)}`, {
+                method: 'DELETE',
+                credentials: 'include',
+              });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(result.error || 'Unable to delete pet profile.');
+              await loadProfile();
+            } catch (error) {
+              petMessage.className = 'text-error';
+              petMessage.textContent = error.message;
+            }
+          });
+        });
+
+        const grooming = groomingBookings.map(item => {
+          const statusClass = item.status === 'completed' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
+          const serviceSummary = Array.isArray(item.petServices) && item.petServices.length
+            ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ')
+            : (item.service || 'Grooming');
+          return `
+            <li>
+              <div>
+                <strong>${escapeHtml(serviceSummary)}</strong>
+                <div class="transaction-meta">${formatDate(item.date)} • ${escapeHtml(item.time || 'Time TBA')}${item.pickupTime ? ` • Pickup ${escapeHtml(item.pickupTime)}` : ''} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.price)}</div>
+                ${paymentReceiptMarkup(item, 'grooming', p)}
+                ${reservationTicketMarkup(item, 'grooming', pets, p)}
+                ${bookingActions(item, 'grooming')}
+              </div>
+              <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
+            </li>
+          `;
+        }).join('') || '<div class="empty-state">No grooming appointments yet.</div>';
+
+        const hotel = hotelBookings.map(item => {
+          const statusClass = item.status === 'checked-out' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
+          const roomSummary = Array.isArray(item.petRooms) && item.petRooms.length
+            ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ')
+            : `${item.roomType || 'Room'} stay`;
+          return `
+            <li>
+              <div>
+                <strong>${escapeHtml(roomSummary)}</strong>
+                <div class="transaction-meta">Check-in: ${formatDate(item.checkIn)} at ${escapeHtml(item.checkInTime || 'Time TBA')} • Check-out: ${formatDate(item.checkOut)} at ${escapeHtml(item.checkOutTime || 'Time TBA')} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.totalPrice)}</div>
+                ${paymentReceiptMarkup(item, 'hotel', p)}
+                ${reservationTicketMarkup(item, 'hotel', pets, p)}
+                ${bookingActions(item, 'hotel')}
+              </div>
+              <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
+            </li>
+          `;
+        }).join('') || '<div class="empty-state">No hotel reservations yet.</div>';
+
+        const recent = [
+          ...groomingBookings.map(item => ({ type: 'Grooming', bookingType: 'grooming', booking: item, date: item.date, createdAt: item.createdAt, label: Array.isArray(item.petServices) && item.petServices.length ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ') : (item.service || 'Grooming'), details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
+          ...hotelBookings.map(item => ({ type: 'Hotel', bookingType: 'hotel', booking: item, date: item.checkIn, createdAt: item.createdAt, label: Array.isArray(item.petRooms) && item.petRooms.length ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ') : `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
+        ].sort((a, b) => (bookingCreatedAt(b.booking) || 0) - (bookingCreatedAt(a.booking) || 0)).slice(0, 5);
+        const recentHtml = recent.length
+          ? `<ul class="transaction-list">${recent.map(item => {
+              const statusClass = ['completed', 'checked-out'].includes(item.status) ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
+              return recentBookingCardMarkup(item, pets, p, statusClass);
+            }).join('')}</ul>`
+          : '<div class="empty-state">No recent transactions yet.</div>';
+
+        document.getElementById('bookings').innerHTML = `
+          <div style="display:grid; gap:1rem;">
+            <div>
+              <div class="section-title" style="margin-bottom:0.7rem;">Recent Transactions</div>
+              ${recentHtml}
+            </div>
+            <div>
+              <div class="section-title" style="margin-bottom:0.7rem;">Grooming</div>
+              <ul class="transaction-list">${grooming}</ul>
+            </div>
+            <div>
+              <div class="section-title" style="margin-bottom:0.7rem;">Hotel</div>
+              <ul class="transaction-list">${hotel}</ul>
+            </div>
+          </div>
+        `;
+
+        if (paymentSuccess) openLatestPaymentSummary();
+        if (paymentPending && (paymentSessionId || paymentBookingId)) {
+          paymentRetryPanel.hidden = false;
+          if (!paymentRetryStarted) {
+            paymentRetryStarted = true;
+            retryPaymentVerification();
+          }
+        }
+      } catch (e) {
+        const message = e.name === 'AbortError'
+          ? 'Loading your account timed out. Check your connection and try again.'
+          : (e.message || 'Unable to load your account. Please try again.');
+        ['profile', 'pets', 'bookings'].forEach((id) => {
+          const container = document.getElementById(id);
+          container.replaceChildren();
+          const error = document.createElement('p');
+          error.className = 'text-error';
+          error.setAttribute('role', 'alert');
+          error.textContent = message;
+          const retry = document.createElement('button');
+          retry.className = 'btn btn-outline btn-sm';
+          retry.type = 'button';
+          retry.textContent = 'Try again';
+          retry.addEventListener('click', loadProfile);
+          container.append(error, retry);
+        });
+      } finally {
+        clearTimeout(timeout);
+        profileRequestInFlight = false;
+      }
+    }
+
+    function formatDate(value) {
+      if (!value) return 'Not set';
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return value;
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    function bookingCreatedAt(booking) {
+      const value = booking?.createdAt || booking?.created_at;
+      if (!value) return null;
+      const timestamp = new Date(value).getTime();
+      return Number.isNaN(timestamp) ? null : timestamp;
+    }
+
+    function formatMoney(value) {
+      return `PHP ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    function recentBookingCardMarkup(item, pets, profile, statusClass) {
+      const booking = item.booking;
+      const isHotel = item.bookingType === 'hotel';
+      const customer = booking.customerDetails || profile;
+      const linkedPets = (booking.petIds || (booking.petId ? [booking.petId] : []))
+        .map(id => pets.find(pet => String(pet.id) === String(id)))
+        .filter(Boolean);
+      const petDetails = linkedPets.length
+        ? linkedPets.map(pet => `${pet.name || 'Pet'}${pet.species ? ` (${pet.species})` : ''}${pet.breed ? `, ${pet.breed}` : ''}${pet.age != null ? `, ${pet.age} yrs` : ''}${pet.medicalHistory ? ` — Medical history: ${pet.medicalHistory}` : ''}`).join('\n')
+        : item.pets;
+      const schedule = isHotel
+        ? `Check-in: ${formatDate(booking.checkIn)}${booking.checkInTime ? ` at ${booking.checkInTime}` : ''}; Check-out: ${formatDate(booking.checkOut)}${booking.checkOutTime ? ` at ${booking.checkOutTime}` : ''}`
+        : `Appointment: ${formatDate(booking.date)} at ${booking.time || 'Time TBA'}${booking.pickupTime ? `; Pickup: ${booking.pickupTime}` : ''}`;
+      const payment = booking.paymentMethod === 'qrph'
+        ? (booking.paymentStatus === 'paid' ? 'Paid online via GCash' : 'GCash payment pending')
+        : (booking.paymentStatus === 'paid' ? 'Cash paid' : 'Cash due at counter');
+      const bookedAt = bookingCreatedAt(booking);
+      const detailRows = [
+        ['Booking reference', booking.id],
+        ['Booked on', bookedAt ? new Date(bookedAt).toLocaleString() : 'Not available'],
+        ['Customer', customer.name || 'Customer'],
+        ['Email', customer.email || profile.email],
+        ['Phone', customer.phone || profile.phone],
+        ['Address', customer.address || profile.address],
+        ['Pet(s) and medical records', petDetails],
+        [isHotel ? 'Room(s)' : 'Service(s)', item.label],
+        ['Schedule', schedule],
+        ['Payment', payment],
+        ['Payment reference', booking.paymentReference || 'Not available'],
+        ['Total', formatMoney(isHotel ? booking.totalPrice : booking.price)],
+      ];
+      if (booking.notes) detailRows.splice(detailRows.length - 2, 0, ['Special requests', booking.notes]);
+
+      return `<li class="recent-booking-card">
+        <details class="recent-booking-expand">
+          <summary class="recent-booking-summary">
+            <span class="recent-booking-heading"><strong>${escapeHtml(item.type)}: ${escapeHtml(item.label)}</strong><span class="transaction-meta">${escapeHtml(item.details)} • ${escapeHtml(item.pets)}</span></span>
+            <span class="recent-booking-summary-side"><span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span><span class="recent-booking-toggle" aria-hidden="true"></span></span>
+          </summary>
+          <div class="recent-booking-details">
+            <dl class="recent-booking-detail-list">
+              ${detailRows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || 'Not provided')}</dd></div>`).join('')}
+            </dl>
+            ${bookingActions(booking, item.bookingType)}
+            ${paymentReceiptMarkup(booking, item.bookingType, profile)}
+            ${reservationTicketMarkup(booking, item.bookingType, pets, profile)}
+          </div>
+        </details>
+      </li>`;
+    }
+
+    function paymentReceiptMarkup(item, type, profile) {
+      if (item.paymentMethod !== 'qrph' || item.paymentStatus !== 'paid' || !item.paymentReference) return '';
+      const isHotel = type === 'hotel';
+      const hotelSlots = isHotel
+        ? (item.hotelSlotAssignments?.[item.checkIn]
+          || Object.values(item.hotelSlotAssignments || {}).find(Array.isArray)
+          || item.hotelSlotNumbers
+          || [])
+        : [];
+      const hotelCheckIn = `${formatDate(item.checkIn)}${item.checkInTime ? ` at ${item.checkInTime}` : ''}`;
+      const hotelCheckOut = `${formatDate(item.checkOut)}${item.checkOutTime ? ` at ${item.checkOutTime}` : ''}`;
+      const services = isHotel
+        ? (item.petRooms || []).map((room, index) => `${room.petName || 'Pet'}: ${room.roomType || 'Room'}${hotelSlots[index] ? ` · Slot ${hotelSlots[index]}` : ''}${room.pricePerNight ? ` (${formatMoney(room.pricePerNight)} per night)` : ''}`).join('\n') || item.roomType || 'Pet hotel stay'
+        : (item.petServices || []).map(service => `${service.petName || 'Pet'}: ${service.service || 'Grooming'}${service.price != null ? ` (${formatMoney(service.price)})` : ''}`).join('\n') || item.service || 'Grooming service';
+      const schedule = isHotel
+        ? `Check-in: ${hotelCheckIn}; Check-out: ${hotelCheckOut}`
+        : `Appointment: ${formatDate(item.date)} at ${item.time || 'Time TBA'}${item.pickupTime ? `; Pickup: ${item.pickupTime}` : ''}`;
+      const amount = isHotel ? item.totalPrice : item.price;
+      const paidAt = item.paymentPaidAt || item.updatedAt;
+      const receiptItems = isHotel
+        ? (item.petRooms || []).map((room, index) => {
+            const petQuote = item.pricingBreakdown?.petQuotes?.[index];
+            const nights = Number(item.pricingBreakdown?.nights) || 0;
+            const nightlyRate = petQuote?.baseAmount != null && nights
+              ? `${formatMoney(petQuote.baseAmount / nights)} base per night`
+              : room.pricePerNight ? `${formatMoney(room.pricePerNight)} average per night after discounts` : '';
+            return {
+              label: `${room.petName || 'Pet'} — ${String(room.roomType || item.roomType || 'Hotel stay').replace(/^staycation-/, '').replace(/-/g, ' ')}`,
+              amount: Number(petQuote?.baseAmount ?? (Number(room.pricePerNight || 0) * (nights || 1))),
+              unitLabel: [`Slot ${hotelSlots[index] || 'not recorded'}`, `${nights || '—'} night(s)`, `${hotelCheckIn} → ${hotelCheckOut}`, nightlyRate].filter(Boolean).join(' · '),
+            };
+          })
+        : (item.petServices || []).map(service => ({
+            label: `${service.petName || 'Pet'} — ${String(service.service || 'Grooming').replace(/^grooming-/, '').replace(/^ayurveda-herb-/, '').replace(/^ayurveda-pkg-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`,
+            amount: Number(service.price || 0),
+            unitLabel: '',
+          }));
+      if (!receiptItems.length) receiptItems.push({
+        label: isHotel ? (item.roomType || 'Pet hotel stay') : (item.service || 'Grooming service'),
+        amount: Number(isHotel ? (item.pricingBreakdown?.baseAmount ?? amount) : amount || 0),
+        unitLabel: isHotel ? `Slot ${hotelSlots[0] || 'not recorded'} · ${hotelCheckIn} → ${hotelCheckOut}` : '',
+      });
+      if (isHotel && item.pricingBreakdown) {
+        if (Number(item.pricingBreakdown.multiPetDiscount)) receiptItems.push({
+          label: 'Multi-pet discount',
+          amount: -Number(item.pricingBreakdown.multiPetDiscount),
+          unitLabel: 'Discount applied to eligible pet room(s)',
+        });
+        if (Number(item.pricingBreakdown.longStayDiscount)) receiptItems.push({
+          label: 'Long-stay discount',
+          amount: -Number(item.pricingBreakdown.longStayDiscount),
+          unitLabel: 'Discount applied to eligible stay(s)',
+        });
+        if (item.pricingBreakdown.complimentaryBath) receiptItems.push({
+          label: 'Complimentary bath & dry',
+          amount: 0,
+          unitLabel: 'Included with this stay',
+        });
+      }
+      return `
+        <details class="reservation-ticket payment-receipt-summary" data-payment-receipt data-booking-id="${escapeHtml(String(item.id))}" data-booking-type="${escapeHtml(type)}">
+          <summary class="receipt-link">View payment receipt</summary>
+          <div class="receipt-document">
+            <header class="receipt-brand">
+              <div class="receipt-brand-mark" aria-hidden="true">GG</div>
+              <div><h2>Glam Grooms</h2><p>Pet Spa &amp; Hotel</p></div>
+              <span class="receipt-status">PAID</span>
+            </header>
+            <div class="receipt-title"><h3>Payment receipt</h3><p>Thank you for choosing Glam Grooms.</p></div>
+            <dl class="receipt-meta-grid">
+              <div><dt>Receipt no.</dt><dd>${escapeHtml(String(item.id))}</dd></div>
+              <div><dt>Date &amp; time</dt><dd>${escapeHtml(paidAt ? new Date(paidAt).toLocaleString() : 'Confirmed')}</dd></div>
+              <div><dt>Customer</dt><dd>${escapeHtml(profile.name || 'Customer')}</dd></div>
+              <div><dt>Email</dt><dd>${escapeHtml(profile.email || 'Not set')}</dd></div>
+              <div><dt>Phone</dt><dd>${escapeHtml(profile.phone || 'Not set')}</dd></div>
+              <div><dt>Pet(s)</dt><dd>${escapeHtml((item.petNames || []).join(', ') || (item.Pet && item.Pet.name) || 'Not provided')}</dd></div>
+              <div><dt>Payment method</dt><dd>GCash (PayMongo)</dd></div>
+              <div><dt>Transaction ID</dt><dd>${escapeHtml(item.paymentReference)}</dd></div>
+              <div><dt>Schedule</dt><dd>${escapeHtml(schedule)}</dd></div>
+              ${isHotel ? `<div><dt>Stay length</dt><dd>${Number(item.pricingBreakdown?.nights) || '—'} night(s)</dd></div>` : ''}
+            </dl>
+            <table class="receipt-items">
+              <thead><tr><th>${isHotel ? 'Room / pet' : 'Service / pet'}</th><th>Details</th><th>Amount</th></tr></thead>
+              <tbody>${receiptItems.map(line => `<tr><td>${escapeHtml(line.label)}</td><td>${escapeHtml(line.unitLabel || (isHotel ? schedule : 'Grooming service'))}</td><td>${formatMoney(line.amount)}</td></tr>`).join('')}</tbody>
+            </table>
+            <div class="receipt-total"><span>Total paid</span><strong>${formatMoney(amount)}</strong></div>
+            <footer class="receipt-footer"><strong>Thank you for trusting us with your pet’s care.</strong><span>Glam Grooms Pet Spa &amp; Hotel</span></footer>
+          </div>
+          <div class="receipt-actions"><button class="btn btn-outline btn-sm print-payment-receipt" type="button">Print receipt</button></div>
+        </details>
+      `;
+    }
+
+    function reservationTicketMarkup(item, type, pets, profile) {
+      if (item.status === 'cancelled') return '';
+      if (!item.confirmedAt) return '<div class="transaction-meta">Reservation ticket available after admin confirmation.</div>';
+
+      const customer = item.customerDetails || profile || {};
+      const linkedPets = (item.petIds || (item.petId ? [item.petId] : []))
+        .map(id => pets.find(pet => String(pet.id) === String(id)))
+        .filter(Boolean);
+      const hotelSlots = type === 'hotel'
+        ? (item.hotelSlotAssignments?.[item.checkIn]
+          || Object.values(item.hotelSlotAssignments || {}).find(Array.isArray)
+          || item.hotelSlotNumbers
+          || [])
+        : [];
+      const petDetails = linkedPets.length
+        ? linkedPets.map(pet => `${pet.name || 'Pet'} — ${pet.species || 'Species not set'}, ${pet.breed || 'Breed not set'}, ${pet.age == null ? 'Age not set' : `${pet.age} yrs`}`).join('\n')
+        : (item.petNames || []).join(', ');
+      const serviceDetails = type === 'grooming'
+        ? Array.isArray(item.petServices) && item.petServices.length
+          ? item.petServices.map(service => `${service.petName || 'Pet'}: ${String(service.service || '').replace(/^grooming-/, '').replace(/^ayurveda-herb-/, '').replace(/^ayurveda-pkg-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()).replace(/\bXl\b/g, 'XL')} (${formatMoney(service.price)})`).join('\n')
+          : (item.service || 'Grooming')
+        : Array.isArray(item.petRooms) && item.petRooms.length
+          ? item.petRooms.map((petRoom, index) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')} — Slot ${hotelSlots[index] || 'not recorded'} — ${formatMoney(petRoom.pricePerNight)} average per night after discounts`).join('\n')
+          : `${item.roomType || 'Pet hotel'}${item.pricePerNight ? ` — ${formatMoney(item.pricePerNight)} per night` : ''}`;
+      const schedule = type === 'grooming'
+        ? `Date: ${formatDate(item.date)}; Time: ${item.time || 'Not set'}${item.pickupTime ? `; Pickup: ${item.pickupTime}` : ''}`
+        : `Check-in: ${formatDate(item.checkIn)} ${item.checkInTime || ''}; Check-out: ${formatDate(item.checkOut)} ${item.checkOutTime || ''}`;
+      const payment = item.paymentMethod === 'qrph'
+        ? (item.paymentStatus === 'paid' ? 'Paid online via GCash' : 'GCash payment pending')
+        : (item.paymentStatus === 'paid' ? 'Cash paid' : 'Cash due at counter');
+      const rows = [
+        ['Booking reference', item.id],
+        ['Status', item.status],
+        ['Customer', customer.name],
+        ['Email', customer.email || profile.email],
+        ['Phone', customer.phone || profile.phone],
+        ['Address', customer.address || profile.address],
+        ['Pet(s)', petDetails],
+        [type === 'grooming' ? 'Service(s)' : 'Room', serviceDetails],
+        ['Schedule', schedule],
+        ['Payment', payment],
+        ['Total', formatMoney(type === 'grooming' ? item.price : item.totalPrice)],
+      ];
+      if (item.notes) rows.splice(rows.length - 2, 0, ['Special requests', item.notes]);
+
+      return `
+        <details class="reservation-ticket" data-booking-id="${escapeHtml(String(item.id))}" data-booking-type="${escapeHtml(type)}">
+          <summary class="receipt-link">View reservation ticket</summary>
+          <div class="info-list" style="margin-top:0.75rem">
+            ${rows.map(([label, value]) => `<div class="info-row"><strong>${escapeHtml(label)}</strong><span style="white-space:pre-line">${escapeHtml(value || 'Not provided')}</span></div>`).join('')}
+          </div>
+        </details>
+      `;
+    }
+
+    function openLatestPaymentSummary() {
+      const bookingType = params.get('bookingType');
+      const bookingId = params.get('bookingId');
+      if (!paymentSuccess || !['grooming', 'hotel'].includes(bookingType) || !bookingId) return;
+
+      const target = Array.from(document.querySelectorAll('details[data-payment-receipt]'))
+        .find(receipt => receipt.dataset.bookingType === bookingType && receipt.dataset.bookingId === bookingId);
+      if (!target) return;
+
+      target.open = true;
+      document.getElementById('payment-summary-content').innerHTML = target.outerHTML;
+      const receipt = document.querySelector('#payment-summary-content details[data-payment-receipt]');
+      if (!receipt) return;
+      receipt.open = true;
+      paymentSummaryDialog.showModal();
+      clearInterval(autoRefresh);
+
+      const nextUrl = new URL(location.href);
+      nextUrl.searchParams.delete('payment_success');
+      nextUrl.searchParams.delete('bookingType');
+      nextUrl.searchParams.delete('bookingId');
+      history.replaceState(null, '', nextUrl);
+    }
+
+    async function retryPaymentVerification() {
+      if (!paymentSessionId && (!['grooming', 'hotel'].includes(paymentBookingType) || !paymentBookingId)) return;
+      retryPaymentButton.disabled = true;
+      paymentRetryMessage.textContent = 'Checking PayMongo again. Please do not submit another payment.';
+      try {
+        const response = await fetch('/api/v1/payments/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ sessionId: paymentSessionId, bookingType: paymentBookingType, bookingId: paymentBookingId }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 401 || response.status === 403) {
+          const returnPath = `${location.pathname}${location.search}`;
+          location.replace(`/customer/login.html?return=${encodeURIComponent(returnPath)}`);
+          return;
+        }
+        if (!response.ok) throw new Error(result.error || `Verification failed (${response.status}).`);
+        if (!result.success || !result.bookingType || !result.bookingId) throw new Error('Payment verification returned no booking details.');
+        sessionStorage.removeItem('pending_paymongo_booking');
+        location.replace(`/customer/account.html?payment_success=1&bookingType=${encodeURIComponent(result.bookingType)}&bookingId=${encodeURIComponent(result.bookingId)}`);
+      } catch (error) {
+        const reference = paymentSessionId || paymentBookingId;
+        paymentRetryMessage.textContent = `Payment is not confirmed in your profile yet. Your booking is being kept. Do not pay again. Try again shortly or contact the business with reference ${reference}.`;
+      } finally {
+        retryPaymentButton.disabled = false;
+      }
+    }
+
+    retryPaymentButton.addEventListener('click', retryPaymentVerification);
+
+    document.getElementById('close-payment-summary').addEventListener('click', () => paymentSummaryDialog.close());
+    paymentSummaryDialog.addEventListener('click', (event) => {
+      if (event.target === paymentSummaryDialog) paymentSummaryDialog.close();
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.print-payment-receipt')) return;
+      const receipt = event.target.closest('details[data-payment-receipt]');
+      if (!receipt) return;
+      const receiptDocument = receipt.querySelector('.receipt-document');
+      if (!receiptDocument) return;
+      document.getElementById('payment-receipt-print-root')?.remove();
+      const printRoot = document.createElement('div');
+      printRoot.id = 'payment-receipt-print-root';
+      printRoot.append(receiptDocument.cloneNode(true));
+      document.body.append(printRoot);
+      document.body.classList.add('printing-payment-receipt');
+      window.addEventListener('afterprint', () => {
+        document.body.classList.remove('printing-payment-receipt');
+        printRoot.remove();
+      }, { once: true });
+      window.print();
+    });
+
+    function escapeHtml(s) {
+      if (!s) return '';
+      return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    loadProfile();
+    autoRefresh = setInterval(loadProfile, 30000);
+
+    // Stop auto-refresh while editing profile so the form stays intact
+    document.addEventListener('focusin', (e) => {
+      if (e.target.closest('#profile-edit') || e.target.closest('.profile-edit') || e.target.closest('#pet-editor')) {
+        clearInterval(autoRefresh);
+      }
+    });
+    document.addEventListener('focusout', (e) => {
+      if (e.target.closest('#profile-edit') || e.target.closest('.profile-edit') || e.target.closest('#pet-editor')) {
+        autoRefresh = setInterval(loadProfile, 30000);
+      }
+    });
+  </script>
+</body>
+</html>

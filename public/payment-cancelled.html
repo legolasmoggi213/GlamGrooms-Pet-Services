@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Payment Cancelled — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+</head>
+<body>
+  <main class="section">
+    <div class="form-card">
+      <h2>Payment cancelled</h2>
+      <p id="payment-message" class="text-muted">Voiding your pending booking...</p>
+      <a id="return-link" class="btn btn-primary" href="/">Book with Cash at counter</a>
+    </div>
+  </main>
+  <script src="/js/api.js"></script>
+  <script>
+    (async () => {
+      sessionStorage.removeItem('pending_paymongo_booking');
+      const params = new URLSearchParams(location.search);
+      const bookingType = params.get('booking_type') === 'hotel' ? 'hotel' : 'grooming';
+      const bookingId = params.get('booking_id');
+      const returnPath = bookingType === 'hotel' ? '/hotel.html?payment=cancelled' : '/grooming.html?payment=cancelled';
+      const message = document.getElementById('payment-message');
+      const returnLink = document.getElementById('return-link');
+      returnLink.href = returnPath;
+
+      if (!bookingId) {
+        message.textContent = 'Payment was cancelled. No booking was created.';
+        return;
+      }
+      try {
+        const result = await apiPost('/payments/cancel', { bookingType, bookingId });
+        if (result.paid) {
+          window.location.replace(`/customer/account.html?payment_success=1&bookingType=${encodeURIComponent(bookingType)}&bookingId=${encodeURIComponent(bookingId)}`);
+          return;
+        }
+        message.textContent = result.deleted
+          ? 'Payment was cancelled and the pending booking was discarded.'
+          : 'No payment was recorded. Your booking remains available in My Account.';
+      } catch (error) {
+        message.textContent = error.message || 'We could not confirm that payment was cancelled. Your booking was kept; check My Account before trying to pay again.';
+        returnLink.href = '/customer/account.html';
+        returnLink.textContent = 'Go to My Account';
+      }
+    })();
+  </script>
+</body>
+</html>

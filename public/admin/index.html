@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css?v=reports-pdf-20261027" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="admin-main">
+      <h1>Dashboard</h1>
+      <p class="page-sub">Live overview of your grooming &amp; hotel operations.</p>
+
+      <div class="stat-grid" id="stats">
+        <div class="loading">Loading stats…</div>
+      </div>
+
+      <div class="panel-grid">
+        <div class="panel">
+          <h3>Hotel Occupancy — This Month</h3>
+          <div id="occupancy"><div class="loading">Loading…</div></div>
+        </div>
+        <div class="panel">
+          <h3>Recent Activity</h3>
+          <div id="activity"><div class="loading">Loading…</div></div>
+        </div>
+      </div>
+
+      <section class="panel" id="revenue" aria-label="Revenue analytics">
+        <div class="analytics-heading">
+          <div>
+            <h3>Revenue Analytics</h3>
+            <p class="text-muted" id="revenue-period-label">Last 6 months</p>
+          </div>
+          <div class="analytics-actions">
+            <div class="revenue-periods" role="group" aria-label="Revenue period">
+              <button type="button" data-period="daily" aria-pressed="false">Daily</button>
+              <button type="button" data-period="weekly" aria-pressed="false">Weekly</button>
+              <button type="button" data-period="monthly" aria-pressed="true">Monthly</button>
+            </div>
+            <button type="button" class="btn btn-primary" id="export-revenue-pdf">Export PDF</button>
+          </div>
+        </div>
+        <div id="revenue-combined" class="revenue-combined" aria-live="polite">Loading revenue…</div>
+        <div class="revenue-chart-grid">
+          <section class="revenue-chart-panel grooming-chart">
+            <div class="flex-between"><h4>Grooming Revenue</h4><strong id="grooming-revenue-total">₱0.00</strong></div>
+            <div id="grooming-revenue-chart" class="revenue-bars"></div>
+          </section>
+          <section class="revenue-chart-panel hotel-chart">
+            <div class="flex-between"><h4>Hotel Revenue</h4><strong id="hotel-revenue-total">₱0.00</strong></div>
+            <div id="hotel-revenue-chart" class="revenue-bars"></div>
+          </section>
+        </div>
+        <h4 class="revenue-breakdown-title">Service Sales Breakdown</h4>
+        <div class="revenue-chart-grid">
+          <section class="revenue-chart-panel grooming-chart">
+            <div class="flex-between"><h4>Sales by Grooming Service</h4><strong id="grooming-service-total">₱0.00</strong></div>
+            <div id="grooming-service-chart" class="revenue-bars service-revenue-bars"></div>
+          </section>
+          <section class="revenue-chart-panel hotel-chart">
+            <div class="flex-between"><h4>Sales by Hotel Room</h4><strong id="hotel-service-total">₱0.00</strong></div>
+            <div id="hotel-service-chart" class="revenue-bars service-revenue-bars"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel" id="booking-report" aria-label="Booking report">
+        <div class="analytics-heading">
+          <div>
+            <h3>Booking Report</h3>
+            <p class="text-muted">Filter grooming appointments and hotel reservations by date.</p>
+          </div>
+          <div class="analytics-actions">
+            <label class="field"><span>From</span><input id="report-start" type="date" /></label>
+            <label class="field"><span>To</span><input id="report-end" type="date" /></label>
+            <button type="button" class="btn btn-primary" id="generate-booking-report">Generate Report</button>
+            <button type="button" class="btn btn-outline" id="export-booking-report" disabled>Export PDF</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Type</th><th>Customer</th><th>Service / Room</th><th>Status</th><th>Amount</th></tr></thead>
+            <tbody id="booking-report-rows"><tr><td colspan="6" class="empty">Choose a date range or generate a report for all bookings.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" aria-label="Revenue forecast">
+        <h3>Revenue Forecast</h3>
+        <p class="text-muted">A linear estimate based on the periods selected above; actual results may vary.</p>
+        <div id="revenue-forecast" aria-live="polite">Loading forecast…</div>
+      </section>
+
+      <section class="panel" aria-label="Operational reports">
+        <h3>Operational Reports</h3>
+        <p class="text-muted">Download current bookings, payment statuses, or customer records as CSV.</p>
+        <div class="button-row">
+          <a class="btn btn-outline" href="/api/v1/admin/reports?type=bookings">Bookings CSV</a>
+          <a class="btn btn-outline" href="/api/v1/admin/reports?type=payments">Payments CSV</a>
+          <a class="btn btn-outline" href="/api/v1/admin/reports?type=customers">Customers CSV</a>
+        </div>
+      </section>
+
+      <div class="panel">
+        <h3>Service Catalog</h3>
+        <p class="text-muted">All grooming and hotel services with current pricing</p>
+        <div class="panel-grid" id="services">
+          <div class="loading">Loading service catalog…</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/api.js?v=php-currency-20261027"></script>
+  <script src="/js/admin.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script>
+    const initDashboard = () => {
+      renderSidebar('Dashboard');
+      let bookingReportRows = [];
+      let revenueAnalyticsData = null;
+
+      const reportDateRange = (start, end) => start || end
+        ? `${start ? fmtDate(start) : 'All dates'} – ${end ? fmtDate(end) : 'Present'}`
+        : 'All recorded dates';
+
+      const addPdfPageHeading = (pdf, title, subtitle) => {
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        pdf.setFillColor(32, 45, 50);
+        pdf.rect(0, 0, pageWidth, 28, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(17);
+        pdf.text(title, 12, 12);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(238, 234, 220);
+        pdf.text(subtitle, 12, 20);
+        pdf.setTextColor(37, 50, 56);
+        return 34;
+      };
+
+      const drawPdfTable = (pdf, { headers, rows, widths, y, title, subtitle, fontSize = 7.5 }) => {
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const margin = 12;
+        const drawHeader = () => {
+          pdf.setFillColor(235, 232, 223);
+          pdf.setDrawColor(207, 211, 205);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(fontSize);
+          let x = margin;
+          const rowHeight = 9;
+          headers.forEach((header, index) => {
+            pdf.rect(x, y, widths[index], rowHeight, 'FD');
+            pdf.setTextColor(37, 50, 56);
+            pdf.text(String(header), x + 2, y + 5.8, { maxWidth: widths[index] - 4 });
+            x += widths[index];
+          });
+          y += rowHeight;
+        };
+
+        if (title) {
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(10);
+          pdf.setTextColor(37, 50, 56);
+          pdf.text(title, margin, y);
+          y += 5;
+        }
+        if (subtitle) {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7.5);
+          pdf.setTextColor(102, 115, 122);
+          pdf.text(subtitle, margin, y);
+          y += 5;
+        }
+        drawHeader();
+
+        rows.forEach((row, rowIndex) => {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(fontSize);
+          const cellLines = row.map((value, index) =>
+            pdf.splitTextToSize(String(value == null || value === '' ? '—' : value), widths[index] - 4));
+          const rowHeight = Math.max(8, ...cellLines.map((lines) => lines.length * (fontSize * 0.42) + 4));
+          if (y + rowHeight > pageHeight - 13) {
+            pdf.addPage();
+            y = addPdfPageHeading(pdf, title || 'Glam Grooms Report', subtitle || '');
+            drawHeader();
+          }
+
+          let x = margin;
+          pdf.setDrawColor(220, 223, 218);
+          row.forEach((_, index) => {
+            if (rowIndex % 2 === 0) {
+              pdf.setFillColor(250, 249, 245);
+              pdf.rect(x, y, widths[index], rowHeight, 'F');
+            }
+            pdf.rect(x, y, widths[index], rowHeight, 'S');
+            pdf.setTextColor(37, 50, 56);
+            pdf.text(cellLines[index], x + 2, y + 4.8, { lineHeightFactor: 1.15 });
+            x += widths[index];
+          });
+          y += rowHeight;
+        });
+
+        return y;
+      };
+
+      const addPdfPageNumbers = (pdf) => {
+        const totalPages = pdf.getNumberOfPages();
+        for (let page = 1; page <= totalPages; page += 1) {
+          pdf.setPage(page);
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+          pdf.setDrawColor(220, 223, 218);
+          pdf.line(12, pageHeight - 9, pageWidth - 12, pageHeight - 9);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7);
+          pdf.setTextColor(102, 115, 122);
+          pdf.text(`Glam Grooms Pet Spa & Hotel  •  Page ${page} of ${totalPages}`, 12, pageHeight - 5);
+        }
+      };
+
+      const readableServiceName = (value) => String(value || 'Service')
+        .replace(/^grooming-/, '')
+        .replace(/^ayurveda-herb-/, 'Ayurveda Herb ')
+        .replace(/^ayurveda-pkg-/, 'Ayurveda Package ')
+        .replace(/^staycation-/, 'Staycation ')
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, (letter) => letter.toUpperCase())
+        .replace(/\bXl\b/g, 'XL');
+
+      const statCard = (label, value, color, href) => `
+        <a class="stat-card stat-card-link" href="${href}" aria-label="View ${escapeHtml(label)}">
+          <div class="label">${label}</div>
+          <div class="value ${color || ''}">${value}</div>
+          <span class="stat-card-hint" aria-hidden="true">View details →</span>
+        </a>`;
+
+      async function loadStats() {
+        const s = await apiGet('/admin/stats');
+        document.getElementById('stats').innerHTML =
+          statCard('Customers', s.customers, 'purple', '/admin/customers.html') +
+          statCard('Pets', s.pets, 'purple', '/admin/pets.html') +
+          statCard("Today's Grooming", s.grooming.today, 'green', '/admin/grooming.html') +
+          statCard('Active Grooming', s.grooming.active, 'green', '/admin/grooming.html') +
+          statCard('Current Guests', s.hotel.currentGuests, 'orange', '/admin/hotel.html') +
+          statCard('Upcoming Arrivals', s.hotel.upcomingArrivals, 'orange', '/admin/hotel.html') +
+          statCard('Grooming Revenue', fmtMoney(s.grooming.revenue), 'green', '#revenue') +
+          statCard('Hotel Revenue', fmtMoney(s.hotel.revenue), 'green', '#revenue') +
+          statCard('Product Sales', fmtMoney(s.productSalesRevenue), 'green', '/admin/pos.html') +
+          statCard('Walk-in Cash Sales', fmtMoney(s.overTheCounterRevenue), 'green', '/admin/pos.html') +
+          statCard('Total Revenue', fmtMoney(s.totalRevenue), 'purple', '#revenue');
+      }
+
+      async function generateBookingReport() {
+        const startDate = document.getElementById('report-start').value;
+        const endDate = document.getElementById('report-end').value;
+        if (startDate && endDate && startDate > endDate) {
+          throw new Error('The start date must be on or before the end date.');
+        }
+
+        const [grooming, hotel] = await Promise.all([
+          apiGet('/grooming'),
+          apiGet('/hotel'),
+        ]);
+        bookingReportRows = [
+          ...grooming.map((booking) => ({
+            date: booking.date,
+            type: 'Grooming',
+            customer: booking.Customer?.name || booking.customerDetails?.name || 'Customer',
+            pets: (booking.petNames || []).join(', ') || booking.Pet?.name || 'Pet not listed',
+            service: (booking.petServices || []).map((service) =>
+              `${service.petName || 'Pet'}: ${readableServiceName(service.service)} (${fmtMoney(service.price)})`).join('; ')
+              || readableServiceName(booking.service || 'Grooming'),
+            schedule: `${booking.time || 'Time not set'}${booking.pickupTime ? ` · Pickup ${booking.pickupTime}` : ''}`,
+            status: booking.status || 'unknown',
+            payment: `${booking.paymentMethod === 'qrph' ? 'GCash' : 'Cash'} · ${booking.paymentStatus || 'unpaid'}`,
+            amount: Number(booking.price || 0),
+          })),
+          ...hotel.map((booking) => {
+            const assignedSlots = booking.hotelSlotAssignments?.[booking.checkIn]
+              || Object.values(booking.hotelSlotAssignments || {}).find(Array.isArray)
+              || booking.hotelSlotNumbers
+              || [];
+            return {
+            date: booking.checkIn,
+            type: 'Hotel',
+            customer: booking.Customer?.name || booking.customerDetails?.name || 'Customer',
+            pets: (booking.petNames || []).join(', ') || booking.Pet?.name || 'Pet not listed',
+            service: (booking.petRooms || []).map((room, index) =>
+              `${room.petName || 'Pet'}: ${readableServiceName(room.roomType || booking.roomType)}${assignedSlots[index] ? ` · Slot ${assignedSlots[index]}` : ''}${room.pricePerNight ? ` (${fmtMoney(room.pricePerNight)}/night)` : ''}`).join('; ')
+              || readableServiceName(booking.roomType || 'Hotel stay'),
+            schedule: `${booking.checkInTime || 'Time not set'} check-in · ${fmtDate(booking.checkOut)} ${booking.checkOutTime || ''}`.trim(),
+            status: booking.status || 'unknown',
+            payment: `${booking.paymentMethod === 'qrph' ? 'GCash' : 'Cash'} · ${booking.paymentStatus || 'unpaid'}`,
+            amount: Number(booking.totalPrice || 0),
+            };
+          }),
+        ]
+          .filter((booking) => (!startDate || booking.date >= startDate) && (!endDate || booking.date <= endDate))
+          .sort((left, right) => String(right.date).localeCompare(String(left.date)));
+
+        const rows = document.getElementById('booking-report-rows');
+        rows.innerHTML = bookingReportRows.length
+          ? bookingReportRows.map((booking) => `
+            <tr>
+              <td>${fmtDate(booking.date)}</td>
+              <td>${escapeHtml(booking.type)}</td>
+              <td>${escapeHtml(booking.customer)}</td>
+              <td>${escapeHtml(booking.service)}</td>
+              <td>${statusBadge(booking.status)}</td>
+              <td>${fmtMoney(booking.amount)}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="6" class="empty">No bookings found for this date range.</td></tr>';
+        document.getElementById('export-booking-report').disabled = bookingReportRows.length === 0;
+      }
+
+      function exportBookingReportPdf() {
+        if (!bookingReportRows.length) return;
+        if (!window.jspdf) {
+          alert('PDF export is unavailable right now. Please refresh and try again.');
+          return;
+        }
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('l', 'mm', 'a4');
+        const startDate = document.getElementById('report-start').value;
+        const endDate = document.getElementById('report-end').value;
+        const range = reportDateRange(startDate, endDate);
+        let y = addPdfPageHeading(pdf, 'Booking Report', `Booking schedule and service details  •  ${range}`);
+        const groomingCount = bookingReportRows.filter((booking) => booking.type === 'Grooming').length;
+        const hotelCount = bookingReportRows.length - groomingCount;
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(37, 50, 56);
+        pdf.text(`Bookings: ${bookingReportRows.length}     Grooming: ${groomingCount}     Hotel: ${hotelCount}     Booking value: ${fmtMoney(bookingReportRows.reduce((sum, booking) => sum + booking.amount, 0))}`, 12, y);
+        y += 8;
+        drawPdfTable(pdf, {
+          headers: ['Date', 'Type', 'Customer', 'Pet(s)', 'Service / room details', 'Schedule', 'Status / payment', 'Amount'],
+          rows: bookingReportRows.map((booking) => [
+            fmtDate(booking.date),
+            booking.type,
+            booking.customer,
+            booking.pets,
+            booking.service,
+            booking.schedule,
+            `${booking.status} · ${booking.payment}`,
+            fmtMoney(booking.amount),
+          ]),
+          widths: [22, 19, 33, 30, 69, 39, 39, 22],
+          y,
+          title: 'Booking details',
+          subtitle: 'Grooming service assignments include each pet, service, and price. Hotel entries include each pet’s room and stay schedule.',
+          fontSize: 7,
+        });
+        addPdfPageNumbers(pdf);
+        pdf.save('booking-report.pdf');
+      }
+
+      async function loadOccupancy() {
+        const days = await apiGet('/admin/occupancy');
+        const container = document.getElementById('occupancy');
+        if (!days.length) {
+          container.innerHTML = '<div class="empty">No occupancy data available.</div>';
+          return;
+        }
+        container.innerHTML = `<div class="occupancy-days">${days.map((day) => {
+          const statusText = day.bookings.length ? 'Active' : 'Available';
+          const statusClass = day.bookings.length ? 'active' : 'available';
+          return `
+          <section class="occ-day">
+            <div class="occ-day-header">
+              <strong>${fmtDate(day.date)}</strong>
+              <span>${day.customers} ${day.customers === 1 ? 'customer' : 'customers'} · ${day.reservationCount} ${day.reservationCount === 1 ? 'booking' : 'bookings'}</span>
+              <span class="occ-status-badge ${statusClass}">${statusText}</span>
+              <span class="occ-arrivals">${day.arrivals} arriving</span>
+            </div>
+            ${day.bookings.length ? `<div class="occ-booking-list">${day.bookings.map((booking) => `
+              <button type="button" class="occ-booking occ-booking-button" data-booking-id="${escapeHtml(booking.id)}" data-booking-type="hotel" aria-label="View full hotel booking details for ${escapeHtml(booking.customerName)}">
+                <div class="occ-booking-title"><strong>${escapeHtml(booking.customerName)}</strong>${statusBadge(booking.status)}</div>
+                <div class="occ-booking-meta">${escapeHtml((booking.petNames || []).join(', ') || 'No pet listed')}${booking.customerPhone ? ` · ${escapeHtml(booking.customerPhone)}` : ''}</div>
+                <div class="occ-booking-meta">${escapeHtml((booking.roomAssignments || []).join(' · '))}</div>
+                <div class="occ-booking-times">Check-in: ${fmtDate(booking.checkIn)} ${escapeHtml(booking.checkInTime || 'Time not set')} <span>→</span> Check-out: ${fmtDate(booking.checkOut)} ${escapeHtml(booking.checkOutTime || 'Time not set')}</div>
+              </button>`).join('')}</div>` : '<div class="occ-empty">No active hotel bookings. Room is available.</div>'}
+          </section>`;
+        }).join('')}</div>`;
+      }
+
+      async function loadActivity() {
+        const items = await apiGet('/admin/activity');
+        const el = document.getElementById('activity');
+        if (!items.length) {
+          el.innerHTML = '<div class="empty">No activity yet.</div>';
+          return;
+        }
+        el.innerHTML = items
+          .map(
+            (a) => `
+              <button type="button" class="activity-item activity-booking-button" data-booking-id="${escapeHtml(a.id)}" data-booking-type="${escapeHtml(a.type)}" aria-label="View full ${escapeHtml(a.type)} booking details">
+                <span class="dot">${a.paymentStatus === 'paid' ? 'Advance paid' : (a.type === 'grooming' ? 'Grooming' : 'Hotel')}</span>
+                <div>
+                  <div>${escapeHtml(a.summary)} ${statusBadge(a.status)}</div>
+                  <div class="meta">${fmtDateTime(a.createdAt)}</div>
+                </div>
+              </button>`
+          )
+          .join('');
+      }
+
+      async function showBookingDetails(type, id) {
+        if (!['grooming', 'hotel'].includes(type) || !id) return;
+        const title = type === 'grooming' ? 'Grooming booking details' : 'Hotel booking details';
+        openModal(title, '<div class="loading">Loading booking details…</div>');
+        try {
+          const [booking, pets] = await Promise.all([
+            apiGet(`/${type}/${encodeURIComponent(id)}`),
+            apiGet('/pets'),
+          ]);
+          const customer = booking.Customer || booking.customerDetails || {};
+          const petIds = booking.petIds || (booking.petId ? [booking.petId] : []);
+          const linkedPets = petIds
+            .map((petId) => pets.find((pet) => String(pet.id) === String(petId)))
+            .filter(Boolean);
+          if (!linkedPets.length && booking.Pet) linkedPets.push(booking.Pet);
+          const petDetails = linkedPets.length
+            ? linkedPets.map((pet) => `${pet.name || 'Pet'}${pet.species ? ` (${pet.species})` : ''}${pet.breed ? `, ${pet.breed}` : ''}${pet.age != null ? `, ${pet.age} yrs` : ''}${pet.medicalHistory ? ` — Medical history: ${pet.medicalHistory}` : ''}`).join('\n')
+            : (booking.petNames || []).join(', ');
+          const serviceDetails = type === 'grooming'
+            ? (booking.petServices || []).map((service) => `${service.petName || 'Pet'}: ${String(service.service || 'Grooming').replace(/^grooming-/, '').replace(/^ayurveda-herb-/, '').replace(/^ayurveda-pkg-/, '').replace(/-/g, ' ')} (${fmtMoney(service.price)})`).join('\n') || booking.service || 'Grooming'
+            : (booking.petRooms || []).map((room) => `${room.petName || 'Pet'}: ${String(room.roomType || 'Hotel room').replace(/^staycation-/, '').replace(/-/g, ' ')}${room.pricePerNight ? ` — ${fmtMoney(room.pricePerNight)} per night` : ''}`).join('\n') || booking.roomType || 'Hotel stay';
+          const schedule = type === 'grooming'
+            ? `${fmtDate(booking.date)} at ${booking.time || 'Time not set'}${booking.pickupTime ? `; pickup ${booking.pickupTime}` : ''}`
+            : `Check-in ${fmtDate(booking.checkIn)} at ${booking.checkInTime || 'Time not set'}; check-out ${fmtDate(booking.checkOut)} at ${booking.checkOutTime || 'Time not set'}`;
+          const paymentMethod = booking.paymentMethod === 'qrph' ? 'GCash (PayMongo)' : 'Cash';
+          const detailRows = [
+            ['Booking ID', booking.id],
+            ['Status', booking.status],
+            ['Created', fmtDateTime(booking.createdAt)],
+            ['Confirmed', booking.confirmedAt ? fmtDateTime(booking.confirmedAt) : 'Not confirmed'],
+            ['Customer', customer.name || 'Customer'],
+            ['Email', customer.email || 'Not available'],
+            ['Phone', customer.phone || 'Not available'],
+            ['Address', customer.address || 'Not available'],
+            ['Pet(s) and medical records', petDetails || 'No pet details available'],
+            [type === 'grooming' ? 'Service(s)' : 'Room(s)', serviceDetails],
+            ['Schedule', schedule],
+            ['Payment method', paymentMethod],
+            ['Payment status', booking.paymentStatus || 'unpaid'],
+            ['Payment reference', booking.paymentReference || 'Not available'],
+            ['Total', fmtMoney(type === 'grooming' ? booking.price : booking.totalPrice)],
+            ['Special requests', booking.notes || 'None'],
+          ];
+          document.getElementById('modal-body').innerHTML = `
+            <dl class="admin-booking-detail-list">
+              ${detailRows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || 'Not available')}</dd></div>`).join('')}
+            </dl>
+            <div class="form-actions"><button type="button" class="btn btn-outline" onclick="closeModal()">Close</button></div>`;
+        } catch (error) {
+          document.getElementById('modal-body').innerHTML = `
+            <p class="text-error">Unable to load full booking details: ${escapeHtml(error.message)}</p>
+            <div class="form-actions"><button type="button" class="btn btn-outline" onclick="closeModal()">Close</button></div>`;
+        }
+      }
+
+      ['occupancy', 'activity'].forEach((sectionId) => {
+        document.getElementById(sectionId).addEventListener('click', (event) => {
+          const button = event.target.closest('[data-booking-id][data-booking-type]');
+          if (button) showBookingDetails(button.dataset.bookingType, button.dataset.bookingId);
+        });
+      });
+
+      async function exportRevenuePdf() {
+        if (!revenueAnalyticsData || !window.jspdf) {
+          alert('PDF export is unavailable right now. Please refresh and try again.');
+          return;
+        }
+
+        try {
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF('l', 'mm', 'a4');
+          const data = revenueAnalyticsData;
+          const periodNames = { daily: 'Daily · last 7 days', weekly: 'Weekly · last 8 weeks', monthly: 'Monthly · last 6 months' };
+          const period = data.period || 'monthly';
+          const subtitle = `${periodNames[period] || period}  •  Generated ${new Date().toLocaleString()}`;
+          let y = addPdfPageHeading(pdf, 'Revenue & Sales Report', subtitle);
+          const summary = [
+            ['Grooming revenue', fmtMoney(data.totals.grooming)],
+            ['Hotel revenue', fmtMoney(data.totals.hotel)],
+            ['Combined revenue', fmtMoney(data.totals.combined)],
+          ];
+          const cardWidth = 82;
+          summary.forEach(([label, value], index) => {
+            const x = 12 + index * (cardWidth + 6);
+            pdf.setFillColor(index === 1 ? 237 : 250, index === 1 ? 246 : 247, index === 1 ? 244 : 238);
+            pdf.setDrawColor(220, 223, 218);
+            pdf.roundedRect(x, y, cardWidth, 18, 2, 2, 'FD');
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(7);
+            pdf.setTextColor(102, 115, 122);
+            pdf.text(label, x + 4, y + 6);
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(11);
+            pdf.setTextColor(37, 50, 56);
+            pdf.text(value, x + 4, y + 13.5);
+          });
+          y += 25;
+          y = drawPdfTable(pdf, {
+            headers: ['Period', 'Grooming bookings', 'Grooming revenue', 'Hotel bookings', 'Hotel revenue', 'Combined revenue'],
+            rows: (data.grooming || []).map((bucket, index) => {
+              const hotelBucket = data.hotel?.[index] || {};
+              return [
+                bucket.label,
+                String(bucket.count || 0),
+                fmtMoney(bucket.revenue),
+                String(hotelBucket.count || 0),
+                fmtMoney(hotelBucket.revenue),
+                fmtMoney(Number(bucket.revenue || 0) + Number(hotelBucket.revenue || 0)),
+              ];
+            }),
+            widths: [51, 38, 43, 35, 43, 44],
+            y,
+            title: 'Revenue by period',
+            fontSize: 8,
+          });
+
+          const serviceTables = [
+            {
+              title: 'Grooming service sales',
+              entries: data.groomingServices || [],
+              total: Number(data.totals.grooming || 0),
+            },
+            {
+              title: 'Hotel room sales',
+              entries: data.hotelServices || [],
+              total: Number(data.totals.hotel || 0),
+            },
+          ];
+          serviceTables.forEach((table) => {
+            if (y > pdf.internal.pageSize.getHeight() - 48) {
+              pdf.addPage();
+              y = addPdfPageHeading(pdf, 'Revenue & Sales Report', subtitle);
+            }
+            y += 5;
+            y = drawPdfTable(pdf, {
+              headers: ['Service', 'Bookings / pets served', 'Revenue', 'Share of category revenue'],
+              rows: table.entries
+                .filter((entry) => Number(entry.count || 0) || Number(entry.revenue || 0))
+                .map((entry) => [
+                  entry.label || 'Other',
+                  String(entry.count || 0),
+                  fmtMoney(entry.revenue),
+                  table.total > 0 ? `${((Number(entry.revenue || 0) / table.total) * 100).toFixed(1)}%` : '0.0%',
+                ]),
+              widths: [105, 55, 55, 55],
+              y,
+              title: table.title,
+              subtitle: 'Includes service-level totals and counts for the selected reporting period.',
+              fontSize: 8,
+            });
+          });
+          addPdfPageNumbers(pdf);
+          pdf.save(`revenue-sales-report-${period}.pdf`);
+        } catch (error) {
+          console.error('Unable to export revenue PDF:', error);
+          alert('Unable to export the PDF at the moment. Please try again.');
+        }
+      }
+
+      async function loadRevenue() {
+        const period = document.querySelector('.revenue-periods button[aria-pressed="true"]').dataset.period;
+        const data = await apiGet(`/admin/revenue-analytics?period=${period}`);
+        revenueAnalyticsData = data;
+        const periods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months' };
+        document.getElementById('revenue-period-label').textContent = periods[data.period];
+        document.getElementById('revenue-combined').textContent = `Combined revenue: ${fmtMoney(data.totals.combined)}`;
+
+        const formatBucketLabel = (label) => {
+          const daily = label.match(/^([A-Za-z]{3}),\s+([A-Za-z]{3})\s+(\d{1,2})$/);
+          if (daily) return [daily[1], `${daily[2]} ${daily[3]}`];
+          const weekly = label.match(/^([A-Za-z]{3})\s+(\d{1,2})–([A-Za-z]{3})\s+(\d{1,2})$/);
+          if (weekly) {
+            return weekly[1] === weekly[3]
+              ? [weekly[1], `${weekly[2]}–${weekly[4]}`]
+              : [`${weekly[1]} ${weekly[2]}–`, `${weekly[3]} ${weekly[4]}`];
+          }
+          const monthly = label.match(/^([A-Za-z]{3})\s+(\d{4})$/);
+          if (monthly) return [monthly[1], monthly[2]];
+          return [label];
+        };
+
+        const renderChart = (buckets) => {
+          const maximum = Math.max(0, ...buckets.map((bucket) => Number(bucket.revenue) || 0));
+          return buckets.map((bucket) => {
+            const value = Number(bucket.revenue) || 0;
+            const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
+            const dateLabel = formatBucketLabel(bucket.label)
+              .map((part) => `<span>${escapeHtml(part)}</span>`)
+              .join('');
+            return `
+              <div class="revenue-bar-column" title="${escapeHtml(`${bucket.label}: ${fmtMoney(value)}, ${bucket.count} bookings`)}">
+                <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
+                <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
+                <span class="revenue-bar-label">${dateLabel}</span>
+                <span class="revenue-bar-count">${bucket.count}</span>
+              </div>`;
+          }).join('');
+        };
+
+        const groomingTotal = data.grooming.reduce((total, bucket) => total + bucket.revenue, 0);
+        const hotelTotal = data.hotel.reduce((total, bucket) => total + bucket.revenue, 0);
+        document.getElementById('grooming-revenue-total').textContent = fmtMoney(groomingTotal);
+        document.getElementById('hotel-revenue-total').textContent = fmtMoney(hotelTotal);
+        document.getElementById('grooming-revenue-chart').innerHTML = renderChart(data.grooming);
+        document.getElementById('hotel-revenue-chart').innerHTML = renderChart(data.hotel);
+        const renderServiceChart = (entries) => {
+          const active = (entries || []).filter((entry) => Number(entry.revenue) || Number(entry.count));
+          const maximum = Math.max(0, ...active.map((entry) => Number(entry.revenue) || 0));
+          return active.length ? active.map((entry) => {
+            const value = Number(entry.revenue) || 0;
+            const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
+            return `<div class="revenue-bar-column" title="${escapeHtml(`${entry.label}: ${fmtMoney(value)}, ${entry.count} bookings`)}">
+              <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
+              <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
+              <span class="revenue-bar-label"><span>${escapeHtml(entry.label)}</span></span>
+              <span class="revenue-bar-count">${Number(entry.count) || 0}</span>
+            </div>`;
+          }).join('') : '<div class="empty">No service sales in this period.</div>';
+        };
+        const groomingServiceTotal = (data.groomingServices || []).reduce((sum, entry) => sum + Number(entry.revenue || 0), 0);
+        const hotelServiceTotal = (data.hotelServices || []).reduce((sum, entry) => sum + Number(entry.revenue || 0), 0);
+        document.getElementById('grooming-service-total').textContent = fmtMoney(groomingServiceTotal);
+        document.getElementById('hotel-service-total').textContent = fmtMoney(hotelServiceTotal);
+        document.getElementById('grooming-service-chart').innerHTML = renderServiceChart(data.groomingServices);
+        document.getElementById('hotel-service-chart').innerHTML = renderServiceChart(data.hotelServices);
+        const forecast = data.forecast;
+        const forecastValue = (metric, format) => metric.available
+          ? format(metric.predicted)
+          : 'Insufficient historical data';
+        const bookingForecast = (metric) => metric.available
+          ? `${metric.predicted} bookings`
+          : 'Insufficient historical data';
+        document.getElementById('revenue-forecast').innerHTML = `
+          <p><strong>${escapeHtml(forecast.periodLabel)}:</strong>
+            Grooming ${escapeHtml(forecastValue(forecast.groomingRevenue, fmtMoney))} revenue
+            (${escapeHtml(bookingForecast(forecast.groomingBookings))}),
+            Hotel ${escapeHtml(forecastValue(forecast.hotelRevenue, fmtMoney))} revenue
+            (${escapeHtml(bookingForecast(forecast.hotelBookings))}).</p>
+          <p class="text-muted">${escapeHtml(forecast.method)}</p>`;
+      }
+
+      async function loadServiceCatalog() {
+        try {
+          const response = await fetch('/api/v1/admin/services', { credentials: 'include' });
+          if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+              window.location.href = '/admin/login.html';
+              return;
+            }
+            throw new Error(`Service catalog request failed (${response.status})`);
+          }
+
+          const data = await response.json();
+          const container = document.getElementById('services');
+          if (!container) return;
+
+          const grooming = Array.isArray(data?.grooming) ? data.grooming : [];
+          const hotel = Array.isArray(data?.hotel) ? data.hotel : [];
+          const groomingServices = grooming.filter((s) => s && s.name && s.name.startsWith('grooming-'));
+          const ayurvedaServices = grooming.filter((s) => s && s.name && s.name.startsWith('ayurveda-'));
+          const hotelServices = hotel.filter((service) => service && service.name && service.name.startsWith('staycation-'));
+
+          container.innerHTML = `
+            <details class="admin-service-group">
+              <summary>Grooming &amp; Spa Services <span>${groomingServices.length}</span></summary>
+              <div class="card-grid">
+                ${groomingServices.length ? groomingServices.map(service => {
+                  const serviceName = service.name.replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                  const size = service.name.includes('-') ? service.name.split('-').pop() : '';
+                  return `
+                    <div class="card">
+                      <h5 style="font-size: 1rem; margin-bottom: 0.5rem;">${serviceName}</h5>
+                      ${size ? `<p style="color: var(--muted); margin-bottom: 0.5rem; font-size: 0.9rem;">Size: ${size}</p>` : ''}
+                      <div class="price">₱${service.price}</div>
+                    </div>
+                  `;
+                }).join('') : '<div class="empty">No grooming services available.</div>'}
+              </div>
+            </details>
+
+            <details class="admin-service-group">
+              <summary>Hotel Services <span>${hotelServices.length}</span></summary>
+              <div class="card-grid">
+                ${hotelServices.length ? hotelServices.map(service => {
+                  const roomType = service.name.replace(/^staycation-/, '').replace('-', ' ');
+                  const weekdayRate = Number(service.rates?.weekday ?? service.price);
+                  const weekendRate = Number(service.rates?.weekend ?? service.price);
+                  return `
+                    <div class="card">
+                      <h5 style="font-size: 1rem; margin-bottom: 0.5rem;">Staycation - ${roomType}</h5>
+                      <p style="color: var(--muted); margin-bottom: 0.5rem; font-size: 0.9rem;">Weekday: ₱${weekdayRate} / Weekend: ₱${weekendRate} per night</p>
+                      <div class="price">From ₱${weekdayRate}</div>
+                    </div>
+                  `;
+                }).join('') : '<div class="empty">No hotel services available.</div>'}
+              </div>
+            </details>
+
+            <details class="admin-service-group">
+              <summary>Ayurveda Services <span>${ayurvedaServices.length}</span></summary>
+              <div class="card-grid">
+                ${ayurvedaServices.length ? ayurvedaServices.map(service => {
+                  const serviceName = service.name.replace(/^ayurveda-/, '').replace(/-/g, ' ');
+                  return `
+                    <div class="card">
+                      <h5 style="font-size: 1rem; margin-bottom: 0.5rem;">${serviceName}</h5>
+                      <div class="price">₱${service.price}</div>
+                    </div>
+                  `;
+                }).join('') : '<div class="empty">No Ayurveda services available.</div>'}
+              </div>
+            </details>
+          `;
+          container.querySelectorAll('.admin-service-group').forEach((group) => {
+            group.addEventListener('toggle', () => {
+              if (!group.open) return;
+              container.querySelectorAll('.admin-service-group').forEach((otherGroup) => {
+                if (otherGroup !== group) otherGroup.open = false;
+              });
+            });
+          });
+        } catch (error) {
+          console.error('Error loading service catalog:', error);
+          const container = document.getElementById('services');
+          if (container) container.innerHTML = '<div class="alert alert-error">Unable to load service catalog.</div>';
+        }
+      }
+
+      const runDashboardLoader = (loader, targetId) => loader().catch((error) => {
+        console.error(`Unable to load ${targetId}:`, error);
+        const target = document.getElementById(targetId);
+        if (target) target.innerHTML = '<div class="alert alert-error">Unable to load this dashboard section. Please sign in again.</div>';
+      });
+
+      loadServiceCatalog();
+      document.querySelector('.revenue-periods').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-period]');
+        if (!button) return;
+        document.querySelectorAll('.revenue-periods button').forEach((option) => {
+          option.setAttribute('aria-pressed', String(option === button));
+        });
+        runDashboardLoader(loadRevenue, 'revenue');
+      });
+      document.getElementById('export-revenue-pdf')?.addEventListener('click', exportRevenuePdf);
+      document.getElementById('generate-booking-report')?.addEventListener('click', () => {
+        generateBookingReport().catch((error) => alert(error.message));
+      });
+      document.getElementById('export-booking-report')?.addEventListener('click', exportBookingReportPdf);
+      runDashboardLoader(loadStats, 'stats');
+      runDashboardLoader(loadOccupancy, 'occupancy');
+      runDashboardLoader(loadActivity, 'activity');
+      runDashboardLoader(loadRevenue, 'revenue');
+
+      const refreshLiveDashboard = () => {
+        runDashboardLoader(loadStats, 'stats');
+        runDashboardLoader(loadOccupancy, 'occupancy');
+        runDashboardLoader(loadActivity, 'activity');
+        runDashboardLoader(loadRevenue, 'revenue');
+      };
+      window.setInterval(refreshLiveDashboard, 30000);
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initDashboard, { once: true });
+    } else {
+      initDashboard();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="admin-main">
+      <h1>Reports</h1>
+      <p class="page-sub">Download current operational records for review.</p>
+      <section class="panel">
+        <h3>Booking and transaction reports</h3>
+        <p class="text-muted">CSV exports include current booking and payment status.</p>
+        <div class="button-row">
+          <a class="btn btn-primary" href="/api/v1/admin/reports?type=bookings">Download bookings</a>
+          <a class="btn btn-outline" href="/api/v1/admin/reports?type=payments">Download payments</a>
+          <a class="btn btn-outline" href="/api/v1/admin/reports?type=customers">Download customers</a>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>renderSidebar('Reports');</script>
+</body>
+</html>

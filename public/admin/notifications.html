@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Booking Notifications — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="admin-main">
+      <h1>Booking Notifications</h1>
+      <p class="page-sub">New bookings, cancellations, and completed online hotel payments.</p>
+      <section class="panel">
+        <div class="flex-between"><h3>Recent activity</h3><button class="btn btn-outline btn-sm" id="refresh-notifications">Refresh</button></div>
+        <div id="notification-list" aria-live="polite">Loading notifications…</div>
+      </section>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>
+    renderSidebar('Notifications');
+    const list = document.getElementById('notification-list');
+    const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[character]));
+
+    async function loadNotifications() {
+      const notifications = await apiGet('/notifications');
+      list.innerHTML = notifications.length ? `<ul class="transaction-list">${notifications.map((notice) => `
+        <li>
+          <div>
+            <strong>${notice.read ? '' : 'New · '}${notice.type === 'booking_cancelled' ? 'Booking canceled' : 'New booking'} · ${escape(notice.bookingType)} #${escape(notice.bookingId)}</strong>
+            <div class="transaction-meta">${escape(notice.customerName)} · ${escape(notice.petNames.join(', ') || 'No pet listed')} · ${escape(notice.schedule)}</div>
+            <div class="transaction-meta">${notice.type === 'booking_cancelled' ? 'Customer canceled this booking' : `Status: ${escape(notice.status)}`} · ${escape(fmtDateTime(notice.createdAt))}</div>
+          </div>
+          ${notice.read ? '' : `<button class="btn btn-outline btn-sm" data-mark-read="${escape(notice.id)}">Mark read</button>`}
+        </li>`).join('')}</ul>` : '<div class="empty">No booking notifications yet.</div>';
+    }
+
+    document.getElementById('refresh-notifications').addEventListener('click', () => {
+      loadNotifications().catch((error) => { list.textContent = error.message; });
+    });
+    list.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-mark-read]');
+      if (!button) return;
+      button.disabled = true;
+      try {
+        await apiPut(`/notifications/${encodeURIComponent(button.dataset.markRead)}/read`, {});
+        await loadNotifications();
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = error.message;
+      }
+    });
+    loadNotifications().catch((error) => { list.textContent = error.message; });
+    window.setInterval(() => {
+      if (!document.hidden) loadNotifications().catch((error) => console.error('Unable to refresh notifications:', error));
+    }, 10000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) loadNotifications().catch((error) => console.error('Unable to refresh notifications:', error));
+    });
+  </script>
+</body>
+</html>

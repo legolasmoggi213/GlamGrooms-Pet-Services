@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grooming Appointments — Glam Grooms Admin</title>
+  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="admin-main">
+      <div class="flex-between">
+        <div>
+          <h1>Grooming Appointments</h1>
+          <p class="page-sub">Track and manage grooming bookings.</p>
+        </div>
+        <button class="btn btn-primary" id="add-btn">+ New Appointment</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="grooming-table">
+          <thead>
+            <tr><th>ID</th><th>Date</th><th>Time</th><th>Pickup</th><th>Service</th><th>Pet</th><th>Customer</th><th>Price</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="10" class="loading">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>
+    renderSidebar('Grooming');
+
+    const rowsEl = document.getElementById('rows');
+    let customersCache = [];
+    let petsCache = [];
+    const bookingActionsInProgress = new Set();
+
+    const SERVICES = ['bath', 'nail-trim', 'haircut', 'deshedding', 'full-groom'];
+    const STATUSES = ['pending', 'scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled'];
+    const serviceLabel = (value) => String(value || 'Grooming').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+    const bookingServices = (appointment) => Array.isArray(appointment.petServices) && appointment.petServices.length
+      ? appointment.petServices.map((item) => `${escapeHtml(item.petName || 'Pet')}: ${escapeHtml(serviceLabel(item.service))}`).join('<br>')
+      : escapeHtml(serviceLabel(appointment.service));
+
+    async function loadAppointments() {
+      const items = await apiGet('/grooming');
+      const session = await fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json());
+      if (!items.length) {
+        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">No appointments yet.</td></tr>';
+        return;
+      }
+      rowsEl.innerHTML = items
+        .map(
+          (a) => `
+        <tr>
+          <td><button class="record-id" type="button" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})' aria-label="View appointment ${escapeHtml(a.id)}">${escapeHtml(a.id)}</button></td>
+          <td>${fmtDate(a.date)}</td>
+          <td>${escapeHtml(a.time)}</td>
+          <td>${escapeHtml(a.pickupTime || '—')}</td>
+          <td>${bookingServices(a)}</td>
+          <td>${escapeHtml(Array.isArray(a.petNames) && a.petNames.length ? a.petNames.join(', ') : (a.Pet ? a.Pet.name : '—'))}</td>
+          <td>${a.Customer ? escapeHtml(a.Customer.name) : '—'}</td>
+          <td>${fmtMoney(a.price)}</td>
+          <td>${statusBadge(a.status)}</td>
+          <td class="grooming-actions-cell">
+            <div class="grooming-actions">
+            ${a.status !== 'cancelled' && ((!a.confirmedAt && a.status !== 'completed') || (a.confirmedAt && !a.reservationTicketEmailSentAt)) ? `<button class="btn btn-success btn-sm" onclick="confirmAppt('${a.id}', this)">${a.confirmedAt ? 'Send Ticket' : 'Confirm'}</button>` : ''}
+            <button class="btn btn-outline btn-sm" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})'>View</button>
+            ${a.status !== 'cancelled' && a.status !== 'completed' ? `<button class="btn btn-danger btn-sm" onclick='rejectAppt(${escapeHtml(JSON.stringify(a.id))}, ${escapeHtml(JSON.stringify(a.status))})'>${a.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
+            ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeAppt(${escapeHtml(JSON.stringify(a.id))})'>Delete</button>` : ''}
+            </div>
+          </td>
+        </tr>`
+        )
+        .join('');
+    }
+
+    function apptForm(a = {}) {
+      const serviceOptions = SERVICES.map((s) => `<option value="${s}" ${a.service === s ? 'selected' : ''}>${capitalize(s)}</option>`).join('');
+      const statusOptions = STATUSES.map((s) => `<option value="${s}" ${a.status === s ? 'selected' : ''}>${capitalize(s)}</option>`).join('');
+      const customerOptions = customersCache.map((c) => `<option value="${escapeHtml(c.id)}" ${String(a.customerId) === String(c.id) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+      const petOptions = petsCache.map((p) => `<option value="${escapeHtml(p.id)}" data-customer="${escapeHtml(p.customerId)}" ${String(a.petId) === String(p.id) ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+      return `
+        <form id="appt-form" class="form-grid">
+          <div class="field"><label>Customer *</label><select name="customerId" required>${customerOptions}</select></div>
+          <div class="field"><label>Pet *</label><select name="petId" required>${petOptions}</select></div>
+          <div class="field"><label>Service *</label><select name="service">${serviceOptions}</select></div>
+          <div class="field"><label>Status</label><select name="status">${statusOptions}</select></div>
+          <div class="field"><label>Date *</label><input name="date" type="date" required value="${a.date || ''}" /></div>
+          <div class="field"><label>Time *</label><input name="time" required value="${escapeHtml(a.time || '10:00')}" /></div>
+          <div class="field"><label>Pickup Time</label><input name="pickupTime" type="time" value="${escapeHtml(a.pickupTime || '')}" placeholder="When will customer pick up?" /></div>
+          <div class="field full"><label>Notes</label><textarea name="notes" rows="2">${escapeHtml(a.notes || '')}</textarea></div>
+          <div class="form-actions full">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
+          </div>
+        </form>`;
+    }
+
+    function bindForm(id) {
+      const form = document.getElementById('appt-form');
+      const customerSelect = form.customerId;
+      const petSelect = form.petId;
+      const filterPets = () => {
+        const cid = customerSelect.value;
+        let firstValid = null;
+        [...petSelect.options].forEach((opt) => {
+          const match = opt.dataset.customer === cid;
+          opt.hidden = !match;
+          if (match && !firstValid) firstValid = opt;
+        });
+        if (petSelect.selectedOptions[0] && petSelect.selectedOptions[0].hidden && firstValid) {
+          petSelect.value = firstValid.value;
+        }
+      };
+      customerSelect.addEventListener('change', filterPets);
+      filterPets();
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const body = {
+          customerId: form.customerId.value,
+          petId: form.petId.value,
+          service: form.service.value,
+          status: form.status.value,
+          date: form.date.value,
+          time: form.time.value.trim(),
+          pickupTime: form.pickupTime ? form.pickupTime.value.trim() : null,
+          notes: form.notes.value.trim() || null,
+        };
+        try {
+          if (id) await apiPut(`/grooming/${id}`, body);
+          else await apiPost('/grooming', body);
+          closeModal();
+          loadAppointments();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+    }
+
+    document.getElementById('add-btn').addEventListener('click', () => {
+      if (!customersCache.length || !petsCache.length) {
+        alert('Add at least one customer and pet first.');
+        return;
+      }
+      openModal('New Appointment', apptForm({ customerId: customersCache[0].id, petId: petsCache[0].id, status: 'pending' }));
+      bindForm(null);
+    });
+
+    window.viewAppt = async (id) => {
+      const a = await apiGet(`/grooming/${id}`);
+      const pet = a.Pet ? escapeHtml(a.Pet.name) : '—';
+      const customer = a.Customer ? escapeHtml(a.Customer.name) : '—';
+      const petInfo = (a.Pets || (a.Pet ? [a.Pet] : [])).map((item) =>
+        `ID: ${item.id}\nName: ${item.name || '—'}\nSpecies: ${item.species || '—'}\nBreed: ${item.breed || '—'}\nAge: ${item.age != null ? item.age : '—'}\nSize: ${item.size || '—'}\nMedical history: ${item.medicalHistory || 'Not provided'}\nCare notes: ${item.notes || '—'}`
+      ).join('\n\n');
+      const customerInfo = a.Customer ? `ID: ${a.Customer.id}\nEmail: ${a.Customer.email || '—'}\nPhone: ${a.Customer.phone || '—'}\nAddress: ${a.Customer.address || '—'}` : '';
+      const serviceInfo = Array.isArray(a.petServices) && a.petServices.length
+        ? a.petServices.map((item) => `${item.petName || 'Pet'}: ${serviceLabel(item.service)}`).join('\n')
+        : serviceLabel(a.service);
+      openModal('Appointment Details', `
+        <div class="form-grid">
+          <div class="field"><label>Appointment ID</label><input type="text" readonly value="${escapeHtml(a.id)}" /></div>
+          <div class="field"><label>Customer</label><input type="text" readonly value="${customer}" /></div>
+          <div class="field"><label>Pet</label><input type="text" readonly value="${pet}" /></div>
+          <div class="field full"><label>Services</label><textarea rows="${Math.max(2, a.petServices?.length || 1)}" readonly>${escapeHtml(serviceInfo)}</textarea></div>
+          <div class="field"><label>Date</label><input type="text" readonly value="${escapeHtml(a.date)}" /></div>
+          <div class="field"><label>Time</label><input type="text" readonly value="${escapeHtml(a.time)}" /></div>
+          <div class="field"><label>Pickup Time</label><input type="text" readonly value="${escapeHtml(a.pickupTime || '—')}" /></div>
+          <div class="field"><label>Price</label><input type="text" readonly value="${fmtMoney(a.price)}" /></div>
+          <div class="field"><label>Status</label><input type="text" readonly value="${escapeHtml(a.status)}" /></div>
+          <div class="field"><label>Customer ID</label><input type="text" readonly value="${escapeHtml(a.customerId || '—')}" /></div>
+          <div class="field"><label>Pet ID(s)</label><input type="text" readonly value="${escapeHtml((a.petIds || (a.petId ? [a.petId] : [])).join(', ') || '—')}" /></div>
+          <div class="field"><label>Payment Status</label><input type="text" readonly value="${escapeHtml(a.paymentStatus || '—')}" /></div>
+          <div class="field"><label>Payment Method</label><input type="text" readonly value="${escapeHtml(a.paymentMethod || '—')}" /></div>
+          <div class="field"><label>Payment Reference</label><input type="text" readonly value="${escapeHtml(a.paymentReference || '—')}" /></div>
+          <div class="field"><label>Confirmed At</label><input type="text" readonly value="${escapeHtml(a.confirmedAt ? fmtDateTime(a.confirmedAt) : '—')}" /></div>
+          <div class="field"><label>Created At</label><input type="text" readonly value="${escapeHtml(a.createdAt ? fmtDateTime(a.createdAt) : '—')}" /></div>
+          <div class="field"><label>Updated At</label><input type="text" readonly value="${escapeHtml(a.updatedAt ? fmtDateTime(a.updatedAt) : '—')}" /></div>
+          <div class="field full"><label>Pet Details</label><textarea rows="5" readonly>${escapeHtml(petInfo || '—')}</textarea></div>
+          <div class="field full"><label>Customer Details</label><textarea rows="4" readonly>${escapeHtml(customerInfo || '—')}</textarea></div>
+          <div class="field full"><label>Customer Notes</label><textarea rows="3" readonly>${escapeHtml(a.notes || 'No notes.')}</textarea></div>
+        </div>
+      `);
+    };
+
+    window.confirmAppt = async (id, button) => {
+      const actionLabel = button ? button.textContent : 'Confirm';
+      if (button) {
+        button.disabled = true;
+        button.textContent = actionLabel === 'Send Ticket' ? 'Sending ticket...' : 'Confirming...';
+      }
+      try {
+        const result = actionLabel === 'Send Ticket'
+          ? await apiPost(`/grooming/${id}/ticket`, {})
+          : await apiPut(`/grooming/${id}`, { status: 'confirmed' });
+        if (actionLabel === 'Send Ticket' && !result.emailSent) {
+          alert('The ticket email was not sent. Check the email configuration.');
+        } else if (actionLabel !== 'Send Ticket') {
+          alert('Booking confirmed. Use Send Ticket to email the customer.');
+        }
+        await loadAppointments();
+      } catch (error) {
+        if (button) {
+          button.disabled = false;
+          button.textContent = actionLabel;
+        }
+        alert(error.message);
+      }
+    };
+
+    window.removeAppt = (id) =>
+      confirmDelete('Delete this appointment?', async () => {
+        try {
+          await apiDelete(`/grooming/${id}`);
+          loadAppointments();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+
+    window.rejectAppt = async (id, status) => {
+      const action = status === 'pending' ? 'Reject this appointment?' : 'Cancel this appointment?';
+      if (!window.confirm(action)) return;
+      try {
+        await apiPut(`/grooming/${id}`, { status: 'cancelled' });
+        await loadAppointments();
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+
+    (async () => {
+      try {
+        [customersCache, petsCache] = await Promise.all([apiGet('/customers'), apiGet('/pets')]);
+        await loadAppointments();
+      } catch (e) {
+        rowsEl.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      }
+    })();
+  </script>
+</body>
+</html>

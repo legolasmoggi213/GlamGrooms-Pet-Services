@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inventory — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="admin-main">
+      <h1>Inventory &amp; Stock</h1>
+      <p class="page-sub">Manage product details, monitor low stock, and submit replenishment requests.</p>
+      <p id="inventory-message" aria-live="polite"></p>
+      <section class="panel" id="product-editor-panel">
+        <h3 id="product-editor-title">Add a product</h3>
+        <form id="product-form" class="form-grid">
+          <input type="hidden" name="id" />
+          <div class="field"><label for="product-name">Product name *</label><input id="product-name" name="name" maxlength="120" required /></div>
+          <div class="field"><label for="product-sku">SKU</label><input id="product-sku" name="sku" maxlength="40" pattern="[A-Za-z0-9_-]*" /></div>
+          <div class="field"><label for="product-category">Category</label><input id="product-category" name="category" maxlength="80" /></div>
+          <div class="field"><label for="product-unit">Unit *</label><input id="product-unit" name="unit" maxlength="30" value="each" required /></div>
+          <div class="field"><label for="product-price">Sale price (PHP)</label><input id="product-price" name="price" type="number" min="0.01" max="10000000" step="0.01" /><small>Optional. Set a price to make this product available at the Point of Sale.</small></div>
+          <div class="field"><label for="product-quantity">On-hand quantity</label><input id="product-quantity" name="quantity" type="number" min="0" max="1000000" step="1" value="0" /></div>
+          <div class="field"><label for="product-threshold">Low-stock threshold</label><input id="product-threshold" name="lowStockThreshold" type="number" min="0" max="1000000" step="1" value="0" /></div>
+          <div class="field full"><label for="product-description">Description</label><textarea id="product-description" name="description" maxlength="1000" rows="2"></textarea></div>
+          <label class="field" id="product-active-field"><span>Active</span><input name="active" type="checkbox" checked /></label>
+          <div class="form-actions full">
+            <button class="btn btn-primary" type="submit">Save product</button>
+            <button class="btn btn-outline" id="cancel-product-edit" type="button" hidden>Cancel edit</button>
+          </div>
+        </form>
+      </section>
+      <section class="panel">
+        <div class="flex-between"><h3>Stock on hand</h3><button class="btn btn-outline btn-sm" id="refresh-inventory" type="button">Refresh list</button></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Product</th><th>SKU</th><th>Category</th><th>Sale price</th><th>On hand</th><th>Low-stock level</th><th>State</th><th>Actions</th></tr></thead>
+          <tbody id="inventory-rows"><tr><td colspan="8">Loading inventory…</td></tr></tbody>
+        </table></div>
+      </section>
+      <section class="panel" id="stock-request-panel">
+        <h3>Request stock</h3>
+        <form id="stock-request-form" class="form-grid">
+          <div class="field"><label for="request-item">Product *</label><select id="request-item" name="itemId" required></select></div>
+          <div class="field"><label for="request-quantity">Quantity requested *</label><input id="request-quantity" name="quantity" type="number" min="1" max="1000000" step="1" required /></div>
+          <div class="field full"><label for="request-reason">Reason *</label><textarea id="request-reason" name="reason" maxlength="500" required rows="2"></textarea></div>
+          <div class="form-actions full"><button class="btn btn-primary" type="submit">Submit request</button></div>
+        </form>
+      </section>
+      <section class="panel">
+        <h3>Stock requests</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Product</th><th>Quantity</th><th>Reason</th><th>Requested</th><th>Status</th><th>Review</th></tr></thead>
+          <tbody id="request-rows"><tr><td colspan="6">Loading requests…</td></tr></tbody>
+        </table></div>
+      </section>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>
+    renderSidebar('Inventory');
+    const message = document.getElementById('inventory-message');
+    const inventoryRows = document.getElementById('inventory-rows');
+    const requestRows = document.getElementById('request-rows');
+    const productForm = document.getElementById('product-form');
+    let items = [];
+    let requests = [];
+    let isAdmin = false;
+    const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[character]));
+    const showMessage = (text, kind = 'text-muted') => {
+      message.className = kind;
+      message.textContent = text;
+    };
+    const lowStock = (item) => Number(item.quantity || 0) <= Number(item.lowStockThreshold || 0);
+
+    async function loadInventory() {
+      const [status, itemResult, requestResult] = await Promise.all([
+        fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json()),
+        apiGet('/inventory/items'),
+        apiGet('/inventory/requests'),
+      ]);
+      isAdmin = status.role === 'ADMIN';
+      items = itemResult;
+      requests = requestResult;
+      document.getElementById('product-quantity').readOnly = !isAdmin;
+      document.getElementById('product-active-field').hidden = !isAdmin;
+      inventoryRows.innerHTML = items.length ? items.map((item) => `
+        <tr>
+          <td>${escape(item.name)}</td><td>${escape(item.sku || '—')}</td><td>${escape(item.category || '—')}</td>
+          <td>${item.price == null ? 'Not for sale' : `PHP ${Number(item.price).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+          <td>${Number(item.quantity || 0)} ${escape(item.unit || 'each')}</td>
+          <td>${Number(item.lowStockThreshold || 0)}</td>
+          <td>${item.active === false ? 'Inactive' : lowStock(item) ? '<strong class="text-error">Low stock</strong>' : 'In stock'}</td>
+          <td>
+            <button class="btn btn-outline btn-sm" data-edit-item="${escape(item.id)}">Edit</button>
+            ${isAdmin ? `<button class="btn btn-danger btn-sm" data-delete-item="${escape(item.id)}">Delete</button>` : ''}
+          </td>
+        </tr>`).join('') : '<tr><td colspan="8">No products yet.</td></tr>';
+      const activeItems = items.filter((item) => item.active !== false);
+      document.getElementById('request-item').innerHTML = activeItems.map((item) =>
+        `<option value="${escape(item.id)}">${escape(item.name)} — ${Number(item.quantity || 0)} ${escape(item.unit || 'each')} on hand</option>`
+      ).join('');
+      if (!activeItems.length) {
+        document.getElementById('request-item').innerHTML = '<option value="">Add an active product first</option>';
+      }
+      requestRows.innerHTML = requests.length ? requests.map((request) => `
+        <tr>
+          <td>${escape(request.itemName)}${request.itemSku ? ` (${escape(request.itemSku)})` : ''}</td>
+          <td>${Number(request.quantity)}</td><td>${escape(request.reason)}</td>
+          <td>${escape(fmtDateTime(request.createdAt))}</td><td>${escape(request.status)}</td>
+          <td>${isAdmin && request.status === 'requested' ? `
+            <button class="btn btn-success btn-sm" data-review-id="${escape(request.id)}" data-review-status="approved">Approve</button>
+            <button class="btn btn-danger btn-sm" data-review-id="${escape(request.id)}" data-review-status="rejected">Reject</button>` : '—'}</td>
+        </tr>`).join('') : '<tr><td colspan="6">No stock requests yet.</td></tr>';
+    }
+
+    function resetProductForm() {
+      productForm.reset();
+      productForm.elements.id.value = '';
+      productForm.elements.quantity.value = '0';
+      productForm.elements.lowStockThreshold.value = '0';
+      productForm.elements.unit.value = 'each';
+      productForm.elements.active.checked = true;
+      document.getElementById('product-editor-title').textContent = 'Add a product';
+      document.getElementById('cancel-product-edit').hidden = true;
+    }
+
+    productForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = Object.fromEntries(new FormData(productForm));
+      const id = data.id;
+      delete data.id;
+      data.quantity = Number(data.quantity || 0);
+      data.lowStockThreshold = Number(data.lowStockThreshold || 0);
+      data.price = data.price === '' ? null : Number(data.price);
+      const currentItem = items.find((item) => String(item.id) === String(id));
+      data.active = isAdmin ? productForm.elements.active.checked : (currentItem ? currentItem.active !== false : true);
+      const submit = productForm.querySelector('[type="submit"]');
+      submit.disabled = true;
+      try {
+        if (id) await apiPut(`/inventory/items/${encodeURIComponent(id)}`, data);
+        else await apiPost('/inventory/items', data);
+        resetProductForm();
+        showMessage('Product saved.', 'text-success');
+        await loadInventory();
+      } catch (error) {
+        showMessage(error.message, 'text-error');
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    document.getElementById('cancel-product-edit').addEventListener('click', resetProductForm);
+    document.getElementById('refresh-inventory').addEventListener('click', () => {
+      loadInventory().catch((error) => showMessage(error.message || 'Unable to load inventory.', 'text-error'));
+    });
+    inventoryRows.addEventListener('click', async (event) => {
+      const edit = event.target.closest('[data-edit-item]');
+      const remove = event.target.closest('[data-delete-item]');
+      if (edit) {
+        const item = items.find((record) => String(record.id) === edit.dataset.editItem);
+        if (!item) return;
+        productForm.elements.id.value = item.id;
+        productForm.elements.name.value = item.name || '';
+        productForm.elements.sku.value = item.sku || '';
+        productForm.elements.category.value = item.category || '';
+        productForm.elements.unit.value = item.unit || 'each';
+        productForm.elements.price.value = item.price == null ? '' : Number(item.price);
+        productForm.elements.quantity.value = Number(item.quantity || 0);
+        productForm.elements.lowStockThreshold.value = Number(item.lowStockThreshold || 0);
+        productForm.elements.description.value = item.description || '';
+        productForm.elements.active.checked = item.active !== false;
+        document.getElementById('product-editor-title').textContent = 'Edit product';
+        document.getElementById('cancel-product-edit').hidden = false;
+        document.getElementById('product-editor-panel').scrollIntoView({ behavior: 'smooth' });
+      } else if (remove && window.confirm('Delete this inventory product?')) {
+        try {
+          await apiDelete(`/inventory/items/${encodeURIComponent(remove.dataset.deleteItem)}`);
+          await loadInventory();
+          showMessage('Product deleted.', 'text-success');
+        } catch (error) {
+          showMessage(error.message, 'text-error');
+        }
+      }
+    });
+
+    document.getElementById('stock-request-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const body = Object.fromEntries(new FormData(form));
+      body.quantity = Number(body.quantity);
+      try {
+        await apiPost('/inventory/requests', body);
+        form.reset();
+        await loadInventory();
+        showMessage('Stock request submitted for admin review.', 'text-success');
+      } catch (error) {
+        showMessage(error.message, 'text-error');
+      }
+    });
+
+    requestRows.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-review-id]');
+      if (!button) return;
+      button.disabled = true;
+      try {
+        await apiPut(`/inventory/requests/${encodeURIComponent(button.dataset.reviewId)}/review`, {
+          status: button.dataset.reviewStatus,
+        });
+        await loadInventory();
+        showMessage(`Stock request ${button.dataset.reviewStatus}.`, 'text-success');
+      } catch (error) {
+        button.disabled = false;
+        showMessage(error.message, 'text-error');
+      }
+    });
+
+    loadInventory().catch((error) => showMessage(error.message || 'Unable to load inventory.', 'text-error'));
+  </script>
+</body>
+</html>

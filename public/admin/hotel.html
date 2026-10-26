@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hotel Reservations — Glam Grooms Admin</title>
+  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="admin-main">
+      <div class="flex-between">
+        <div>
+          <h1>Hotel Reservations</h1>
+          <p class="page-sub">Manage pet hotel stays and check-ins.</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="hotel-table">
+          <thead>
+            <tr><th>ID</th><th>Check-in</th><th>Check-out</th><th>Room</th><th>Pet</th><th>Customer</th><th>Total</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="9" class="loading">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>
+    renderSidebar('Hotel');
+
+    const rowsEl = document.getElementById('rows');
+    const bookingActionsInProgress = new Set();
+    const roomSummary = (reservation) => Array.isArray(reservation.petRooms) && reservation.petRooms.length
+      ? reservation.petRooms.map((petRoom) => `${escapeHtml(petRoom.petName || 'Pet')}: ${escapeHtml(String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' '))}`).join('<br>')
+      : escapeHtml(capitalize(reservation.roomType));
+
+    async function loadReservations() {
+      const items = await apiGet('/hotel');
+      const session = await fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json());
+      if (!items.length) {
+        rowsEl.innerHTML = '<tr><td colspan="9" class="empty">No reservations yet.</td></tr>';
+        return;
+      }
+      rowsEl.innerHTML = items
+        .map(
+          (r) => `
+        <tr>
+          <td><button class="record-id" type="button" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})' aria-label="View reservation ${escapeHtml(r.id)}">${escapeHtml(r.id)}</button></td>
+          <td>${fmtDate(r.checkIn)}</td>
+          <td>${fmtDate(r.checkOut)}</td>
+          <td>${roomSummary(r)}</td>
+          <td>${escapeHtml(Array.isArray(r.petNames) && r.petNames.length ? r.petNames.join(', ') : (r.Pet ? r.Pet.name : '—'))}</td>
+          <td>${r.Customer ? escapeHtml(r.Customer.name) : '—'}</td>
+          <td>${fmtMoney(r.totalPrice)}</td>
+          <td>${statusBadge(r.status)}</td>
+          <td class="hotel-actions-cell">
+            <div class="hotel-actions">
+            ${r.status !== 'cancelled' && ((!r.confirmedAt && r.status !== 'checked-in' && r.status !== 'checked-out') || (r.confirmedAt && !r.reservationTicketEmailSentAt)) ? `<button class="btn btn-success btn-sm" onclick="confirmRes('${r.id}', this)">${r.confirmedAt ? 'Send Ticket' : 'Confirm'}</button>` : ''}
+            ${['reserved', 'confirmed'].includes(r.status) ? `<button class="btn btn-outline btn-sm" onclick='setResStatus(${escapeHtml(JSON.stringify(r.id))}, "checked-in", this)'>Check In</button>` : ''}
+            ${r.status === 'checked-in' ? `<button class="btn btn-success btn-sm" onclick='setResStatus(${escapeHtml(JSON.stringify(r.id))}, "checked-out", this)'>Check Out</button>` : ''}
+            <button class="btn btn-outline btn-sm" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})'>View</button>
+            ${r.status !== 'cancelled' && r.status !== 'checked-in' && r.status !== 'checked-out' ? `<button class="btn btn-danger btn-sm" onclick='rejectRes(${escapeHtml(JSON.stringify(r.id))}, ${escapeHtml(JSON.stringify(r.status))})'>${r.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
+            ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeRes(${escapeHtml(JSON.stringify(r.id))})'>Delete</button>` : ''}
+            </div>
+          </td>
+        </tr>`
+        )
+        .join('');
+    }
+
+    window.viewRes = async (id) => {
+      const [r, pets] = await Promise.all([apiGet(`/hotel/${id}`), apiGet('/pets')]);
+      const pet = r.Pet ? escapeHtml(r.Pet.name) : '—';
+      const customer = r.Customer ? escapeHtml(r.Customer.name) : '—';
+      const petInfo = (r.Pets || (r.Pet ? [r.Pet] : [])).map((item) =>
+        `ID: ${item.id}\nName: ${item.name || '—'}\nSpecies: ${item.species || '—'}\nBreed: ${item.breed || '—'}\nAge: ${item.age != null ? item.age : '—'}\nSize: ${item.size || '—'}\nMedical history: ${item.medicalHistory || 'Not provided'}\nCare notes: ${item.notes || '—'}`
+      ).join('\n\n');
+      const customerInfo = r.Customer ? `ID: ${r.Customer.id}\nEmail: ${r.Customer.email || '—'}\nPhone: ${r.Customer.phone || '—'}\nAddress: ${r.Customer.address || '—'}` : '';
+      const roomInfo = Array.isArray(r.petRooms) && r.petRooms.length
+        ? r.petRooms.map((petRoom) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}, ${fmtMoney(petRoom.pricePerNight)} per night`).join('\n')
+        : capitalize(r.roomType);
+      openModal('Reservation Details', `
+        <div class="form-grid">
+          <div class="field"><label>Reservation ID</label><input type="text" readonly value="${escapeHtml(r.id)}" /></div>
+          <div class="field"><label>Customer</label><input type="text" readonly value="${customer}" /></div>
+          <div class="field"><label>Pet</label><input type="text" readonly value="${pet}" /></div>
+          <div class="field full"><label>Room Assignment(s)</label><textarea rows="${Math.max(2, r.petRooms?.length || 1)}" readonly>${escapeHtml(roomInfo)}</textarea></div>
+          <div class="field"><label>Check-in</label><input type="text" readonly value="${escapeHtml(r.checkIn)}" /></div>
+          <div class="field"><label>Check-in Time</label><input type="text" readonly value="${escapeHtml(r.checkInTime || '—')}" /></div>
+          <div class="field"><label>Check-out</label><input type="text" readonly value="${escapeHtml(r.checkOut)}" /></div>
+          <div class="field"><label>Check-out Time</label><input type="text" readonly value="${escapeHtml(r.checkOutTime || '—')}" /></div>
+          <div class="field"><label>Total</label><input type="text" readonly value="${fmtMoney(r.totalPrice)}" /></div>
+          <div class="field"><label>Status</label><input type="text" readonly value="${escapeHtml(r.status)}" /></div>
+          <div class="field"><label>Customer ID</label><input type="text" readonly value="${escapeHtml(r.customerId || '—')}" /></div>
+          <div class="field"><label>Pet ID(s)</label><input type="text" readonly value="${escapeHtml((r.petIds || (r.petId ? [r.petId] : [])).join(', ') || '—')}" /></div>
+          <div class="field"><label>Payment Status</label><input type="text" readonly value="${escapeHtml(r.paymentStatus || '—')}" /></div>
+          <div class="field"><label>Payment Method</label><input type="text" readonly value="${escapeHtml(r.paymentMethod || '—')}" /></div>
+          <div class="field"><label>Payment Reference</label><input type="text" readonly value="${escapeHtml(r.paymentReference || '—')}" /></div>
+          <div class="field"><label>Confirmed At</label><input type="text" readonly value="${escapeHtml(r.confirmedAt ? fmtDateTime(r.confirmedAt) : '—')}" /></div>
+          <div class="field"><label>Created At</label><input type="text" readonly value="${escapeHtml(r.createdAt ? fmtDateTime(r.createdAt) : '—')}" /></div>
+          <div class="field"><label>Updated At</label><input type="text" readonly value="${escapeHtml(r.updatedAt ? fmtDateTime(r.updatedAt) : '—')}" /></div>
+          <div class="field full"><label>Pet Details</label><textarea rows="5" readonly>${escapeHtml(petInfo || '—')}</textarea></div>
+          <div class="field full"><label>Customer Details</label><textarea rows="4" readonly>${escapeHtml(customerInfo || '—')}</textarea></div>
+          <div class="field full"><label>Customer Notes</label><textarea rows="3" readonly>${escapeHtml(r.notes || 'No notes.')}</textarea></div>
+        </div>
+      `);
+    };
+
+    window.confirmRes = async (id, button) => {
+      const actionLabel = button ? button.textContent : 'Confirm';
+      if (button) {
+        button.disabled = true;
+        button.textContent = actionLabel === 'Send Ticket' ? 'Sending ticket...' : 'Confirming...';
+      }
+      try {
+        const result = actionLabel === 'Send Ticket'
+          ? await apiPost(`/hotel/${id}/ticket`, {})
+          : await apiPut(`/hotel/${id}`, { status: 'confirmed' });
+        if (actionLabel === 'Send Ticket' && !result.emailSent) {
+          alert('The ticket email was not sent. Check the email configuration.');
+        } else if (actionLabel !== 'Send Ticket') {
+          alert('Reservation confirmed. Use Send Ticket to email the customer.');
+        }
+        await loadReservations();
+      } catch (error) {
+        if (button) {
+          button.disabled = false;
+          button.textContent = actionLabel;
+        }
+        alert(error.message);
+      }
+    };
+
+    window.setResStatus = async (id, status, button) => {
+      const previousLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = status === 'checked-out' ? 'Checking out...' : 'Checking in...';
+      try {
+        await apiPut(`/hotel/${id}`, { status });
+        await loadReservations();
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = previousLabel;
+        alert(error.message);
+      }
+    };
+
+    window.removeRes = (id) =>
+      confirmDelete('Delete this reservation?', async () => {
+        try {
+          await apiDelete(`/hotel/${id}`);
+          loadReservations();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+
+    window.rejectRes = async (id, status) => {
+      const action = status === 'pending' ? 'Reject this reservation?' : 'Cancel this reservation?';
+      if (!window.confirm(action)) return;
+      try {
+        await apiPut(`/hotel/${id}`, { status: 'cancelled' });
+        await loadReservations();
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+
+    (async () => {
+      try {
+        await loadReservations();
+      } catch (e) {
+        rowsEl.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      }
+    })();
+  </script>
+</body>
+</html>

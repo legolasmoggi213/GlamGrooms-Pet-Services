@@ -86,11 +86,14 @@ const reservationPetCount = (reservation) => Math.max(
     || (reservation.petId ? 1 : 0),
 );
 
-const reservationLockIds = (reservation) => reservation.hotelSlotAssignments
-  ? hotelLockIdsForAssignments(reservation.hotelSlotAssignments)
-  : Array.isArray(reservation.hotelSlotNumbers)
-    ? hotelLockIdsForSlots(reservation.hotelSlotNumbers, reservation.checkIn, reservation.checkOut)
-    : hotelLockIdsForTypes(reservationRoomTypes(reservation), reservation.checkIn, reservation.checkOut);
+const reservationLockIds = (reservation) => {
+  if (reservation.hotelSlotAssignments) return hotelLockIdsForAssignments(reservation.hotelSlotAssignments);
+  if (Array.isArray(reservation.hotelSlotNumbers)) {
+    return hotelLockIdsForSlots(reservation.hotelSlotNumbers, reservation.checkIn, reservation.checkOut);
+  }
+  if (reservation.capacityManaged && Array.isArray(reservation.capacityLockIds)) return reservation.capacityLockIds;
+  return hotelLockIdsForTypes(reservationRoomTypes(reservation), reservation.checkIn, reservation.checkOut);
+};
 
 const legacyOccupancyByDate = async (checkIn, checkOut, excludeReservationId = null) => {
   const reservations = await HotelReservation.findAll();
@@ -218,7 +221,7 @@ const createReservation = async (req, res, next) => {
         customerId,
         petId,
         capacityManaged: true,
-        capacityLockIds: capacityClaim.lockIds,
+        capacityLockIds: claimedLockIds,
         status: status || 'pending',
         hotelSlotAssignments,
         hotelSlotOwnerId,
@@ -278,10 +281,6 @@ const updateReservation = async (req, res, next) => {
       return res.status(400).json({ error: 'A valid roomType is required' });
     }
 
-    const nights = nightsBetween(nextCheckIn, nextCheckOut);
-    if (nights < 1) {
-      return res.status(400).json({ error: 'Check-out must be after check-in' });
-    }
     const sourcePetRooms = Array.isArray(reservation.petRooms) && reservation.petRooms.length
       ? reservation.petRooms
       : (reservation.petIds || [reservation.petId]).filter(Boolean).map((id, index) => ({
@@ -301,26 +300,10 @@ const updateReservation = async (req, res, next) => {
     const nextStatus = status || reservation.status;
     const inactiveStatus = ['cancelled', 'checked-out'].includes(nextStatus);
     const wasInactive = ['cancelled', 'checked-out'].includes(reservation.status);
-    const shouldClaimCapacity = !inactiveStatus && (stayChanged || wasInactive
-      || !reservation.capacityManaged
-      || !Array.isArray(reservation.capacityLockIds)
-      || !reservation.capacityLockIds.length);
     if (stayChanged && !inactiveStatus) {
       const futureCheck = validateFutureBookingTime(nextCheckIn, checkInTime || reservation.checkInTime, 'Check-in');
       if (!futureCheck.ok) return res.status(400).json({ error: futureCheck.error });
     }
-    const oldLockIds = hotelReservationLockIds(reservation);
-    let capacityClaim = { lockIds: reservation.capacityLockIds || [], createdLockIds: [] };
-    if (shouldClaimCapacity) {
-      capacityClaim = await claimHotelStayCapacity({
-        petCount: sourcePetRooms.length,
-        checkIn: nextCheckIn,
-        checkOut: nextCheckOut,
-        excludeReservationId: reservation.id,
-        oldLockIds,
-      });
-    }
-    if (inactiveStatus) capacityClaim = { lockIds: [], createdLockIds: [] };
     const nextPetRooms = sourcePetRooms.map((petRoom, index) => {
       const petRoomType = nextPetRoomTypes[index];
       return { ...petRoom, roomType: petRoomType, pricePerNight: quote.petQuotes[index]?.effectiveNightlyRate || 0 };
@@ -330,12 +313,13 @@ const updateReservation = async (req, res, next) => {
     const oldLockIds = reservationLockIds(reservation);
     const oldSlotAssignments = reservation.hotelSlotAssignments || {};
     const ownerId = reservation.hotelSlotOwnerId || String(reservation.id);
-    const isNextStatusOccupying = !['cancelled', 'checked-out'].includes(status || reservation.status);
-    const wasOccupying = !['cancelled', 'checked-out'].includes(reservation.status);
-    const shouldClaimCapacity = isNextStatusOccupying && (stayChanged || !wasOccupying);
+    const isNextStatusOccupying = !inactiveStatus;
+    const wasOccupying = !wasInactive;
+    const shouldClaimHotelSlots = isNextStatusOccupying && (stayChanged || wasInactive
+      || !Object.keys(oldSlotAssignments).length);
     let claimedNewLockIds = [];
     let nextSlotAssignments = oldSlotAssignments;
-    if (shouldClaimCapacity) {
+    if (shouldClaimHotelSlots) {
       nextSlotAssignments = await claimHotelSlots({
         checkIn: nextCheckIn,
         checkOut: nextCheckOut,
@@ -367,21 +351,19 @@ const updateReservation = async (req, res, next) => {
       roomDetails: nextRoomTypes.length === 1 ? ROOM_DETAILS[nextRoomTypes[0]] : null,
       roomDetailsByType: Object.fromEntries(nextRoomTypes.map((type) => [type, ROOM_DETAILS[type]])),
       capacityManaged: true,
-      capacityLockIds: capacityClaim.lockIds,
+      capacityLockIds: isNextStatusOccupying ? hotelLockIdsForAssignments(nextSlotAssignments) : [],
       };
-      if (shouldClaimCapacity || reservation.hotelSlotAssignments || Array.isArray(reservation.hotelSlotNumbers) || !isNextStatusOccupying) {
-        updates.hotelSlotAssignments = isNextStatusOccupying ? nextSlotAssignments : {};
-        updates.hotelSlotOwnerId = ownerId;
-      }
+      updates.hotelSlotAssignments = isNextStatusOccupying ? nextSlotAssignments : {};
+      updates.hotelSlotOwnerId = ownerId;
       if (needsAdminConfirmation) updates.confirmedAt = new Date();
       await reservation.update(updates);
     } catch (error) {
-      if (capacityClaim.createdLockIds.length) await releaseBookingSlotsByIds(capacityClaim.createdLockIds);
+      if (claimedNewLockIds.length) await releaseBookingSlotsByIds(claimedNewLockIds);
       throw error;
     }
     if (!isNextStatusOccupying && wasOccupying) {
       await releaseBookingSlotsByIds(oldLockIds);
-    } else if (shouldClaimCapacity) {
+    } else if (shouldClaimHotelSlots) {
       const newLockIds = hotelLockIdsForAssignments(nextSlotAssignments);
       await releaseBookingSlotsByIds(oldLockIds.filter((id) => !newLockIds.includes(id)));
     }
@@ -504,5 +486,6 @@ module.exports = {
   createReservation,
   updateReservation,
   sendReservationTicketEmail,
+  resendReservationTicket,
   deleteReservation,
 };

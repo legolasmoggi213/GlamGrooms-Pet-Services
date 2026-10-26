@@ -374,5 +374,6 @@ module.exports = {
   createAppointment,
   updateAppointment,
   sendAppointmentTicket,
+  resendAppointmentTicket,
   deleteAppointment,
 };

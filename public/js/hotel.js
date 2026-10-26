@@ -194,7 +194,7 @@ const ROOM_PRICES = {
     preview.classList.add('hotel-room-preview-enter');
   };
 
-  const updatePrice = () => {
+  const updatePrice = async () => {
     if (!pricePreview) return;
     const nights = Math.round((new Date(checkOutInput.value) - new Date(checkInInput.value)) / 864e5);
     if (nights > 0) {

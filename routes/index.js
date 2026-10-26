@@ -8,6 +8,7 @@ const adminController = require('../controllers/adminController');
 const { parseToken, isStaffRole, isActiveStaffRole } = require('../util/adminAuth');
 const staffController = require('../controllers/staffController');
 const inventoryController = require('../controllers/inventoryController');
+const operationsController = require('../controllers/operationsController');
 const notificationController = require('../controllers/notificationController');
 
 const router = express.Router();
@@ -59,6 +60,11 @@ const getRequestUser = (req) => {
   return parseToken(token);
 };
 
+const adminOnly = (req, res, next) => {
+	if (getRequestUser(req) === 'ADMIN') return next();
+	return res.status(401).json({ error: 'Admin authentication required' });
+};
+
 const staffOrAdmin = async (req, res, next) => {
 	const cookie = (req.headers.cookie || '').split(';')
 		.map((part) => part.trim())
@@ -69,6 +75,8 @@ const staffOrAdmin = async (req, res, next) => {
 	if (!isStaffRole(role) || !(await isActiveStaffRole(role))) return res.status(401).json({ error: 'Staff authentication required' });
 	return next();
 };
+
+const adminOrStaff = staffOrAdmin;
 
 const staffReadOnlyOrAdmin = async (req, res, next) => {
 	const cookie = (req.headers.cookie || '').split(';')
@@ -147,8 +155,6 @@ router.get('/inventory/products', operationsController.listProducts);
 router.post('/inventory/products', operationsController.createProduct);
 router.put('/inventory/products/:id', operationsController.updateProduct);
 router.delete('/inventory/products/:id', operationsController.deleteProduct);
-router.get('/inventory/requests', operationsController.listStockRequests);
-router.post('/inventory/requests', operationsController.createStockRequest);
 router.patch('/inventory/requests/:id', adminOrStaff, operationsController.updateStockRequest);
 
 // Public one-shot bookings (customer + pet + booking in a single request)

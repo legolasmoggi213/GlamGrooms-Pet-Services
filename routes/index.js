@@ -10,16 +10,29 @@ const staffController = require('../controllers/staffController');
 const inventoryController = require('../controllers/inventoryController');
 const operationsController = require('../controllers/operationsController');
 const notificationController = require('../controllers/notificationController');
+const { groomingServiceDuration } = require('../util/bookingCalculations');
+const { HOTEL, HOTEL_POLICIES } = require('../util/serviceCatalog');
 
 const router = express.Router();
 
 const getServices = async (req, res, next) => {
   try {
     const { SERVICE_PRICES: groomingPrices, SERVICE_DETAILS: groomingDetails } = require('../controllers/groomingController');
-    const { ROOM_PRICES: hotelPrices, ROOM_DETAILS: hotelDetails, HOTEL_POLICIES: hotelPolicies } = require('../controllers/hotelController');
+    const { ROOM_PRICES: hotelPrices, ROOM_DETAILS: hotelDetails } = require('../controllers/hotelController');
+
+    const getGroomingDetails = (name) => {
+      if (name.startsWith('grooming-a-la-carte-')) return groomingDetails['a-la-carte'];
+      if (name.startsWith('grooming-')) return groomingDetails.grooming?.[name.split('-')[1]];
+      if (name.startsWith('ayurveda-herb-')) return groomingDetails.ayurveda?.[name.split('-')[2]];
+      if (name.startsWith('ayurveda-pkg-')) {
+        const packageName = name.split('-').slice(2, -1).join('-');
+        return groomingDetails.packages?.[packageName];
+      }
+      return null;
+    };
 
     const groomingServices = Object.entries(groomingPrices).map(([name, price]) => {
-      const details = (groomingDetails && (groomingDetails[name] || groomingDetails[name.replace(/^grooming-/, '').replace(/-/g, '')])) || { category: 'Standard', includes: [], suitable: [] };
+      const details = getGroomingDetails(name) || { category: 'Standard', includes: [], suitable: [] };
       return {
         name,
         type: 'grooming',
@@ -44,7 +57,7 @@ const getServices = async (req, res, next) => {
     res.json({
       grooming: groomingServices,
       hotel: roomServices,
-      policies: hotelPolicies,
+      policies: HOTEL_POLICIES,
       lastUpdated: new Date().toISOString()
     });
   } catch (error) {
@@ -176,6 +189,7 @@ router.get('/admin/occupancy', adminController.getOccupancy);
 router.get('/admin/revenue-by-service', adminController.getRevenueBreakdown);
 router.get('/admin/revenue-analytics', adminController.getRevenueAnalytics);
 router.get('/admin/reports', adminController.getOperationalReport);
+router.get('/admin/pos-sales', adminController.getWalkInSalesAnalytics);
 router.get('/admin/cash-transactions', adminController.listCashTransactions);
 router.post('/admin/cash-transactions', adminController.createCashTransaction);
 

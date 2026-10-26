@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Inventory — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
 </head>
 <body>
   <div class="admin-layout">
@@ -21,6 +21,7 @@
           <div class="field"><label for="product-sku">SKU</label><input id="product-sku" name="sku" maxlength="40" pattern="[A-Za-z0-9_-]*" /></div>
           <div class="field"><label for="product-category">Category</label><input id="product-category" name="category" maxlength="80" /></div>
           <div class="field"><label for="product-unit">Unit *</label><input id="product-unit" name="unit" maxlength="30" value="each" required /></div>
+          <div class="field"><label for="product-price">Sale price (PHP)</label><input id="product-price" name="price" type="number" min="0.01" max="10000000" step="0.01" /><small>Optional. Set a price to make this product available at the Point of Sale.</small></div>
           <div class="field"><label for="product-quantity">On-hand quantity</label><input id="product-quantity" name="quantity" type="number" min="0" max="1000000" step="1" value="0" /></div>
           <div class="field"><label for="product-threshold">Low-stock threshold</label><input id="product-threshold" name="lowStockThreshold" type="number" min="0" max="1000000" step="1" value="0" /></div>
           <div class="field full"><label for="product-description">Description</label><textarea id="product-description" name="description" maxlength="1000" rows="2"></textarea></div>
@@ -34,8 +35,8 @@
       <section class="panel">
         <div class="flex-between"><h3>Stock on hand</h3><button class="btn btn-outline btn-sm" id="refresh-inventory" type="button">Refresh list</button></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Product</th><th>SKU</th><th>Category</th><th>On hand</th><th>Low-stock level</th><th>State</th><th>Actions</th></tr></thead>
-          <tbody id="inventory-rows"><tr><td colspan="7">Loading inventory…</td></tr></tbody>
+          <thead><tr><th>Product</th><th>SKU</th><th>Category</th><th>Sale price</th><th>On hand</th><th>Low-stock level</th><th>State</th><th>Actions</th></tr></thead>
+          <tbody id="inventory-rows"><tr><td colspan="8">Loading inventory…</td></tr></tbody>
         </table></div>
       </section>
       <section class="panel" id="stock-request-panel">
@@ -90,6 +91,7 @@
       inventoryRows.innerHTML = items.length ? items.map((item) => `
         <tr>
           <td>${escape(item.name)}</td><td>${escape(item.sku || '—')}</td><td>${escape(item.category || '—')}</td>
+          <td>${item.price == null ? 'Not for sale' : `PHP ${Number(item.price).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
           <td>${Number(item.quantity || 0)} ${escape(item.unit || 'each')}</td>
           <td>${Number(item.lowStockThreshold || 0)}</td>
           <td>${item.active === false ? 'Inactive' : lowStock(item) ? '<strong class="text-error">Low stock</strong>' : 'In stock'}</td>
@@ -97,7 +99,7 @@
             <button class="btn btn-outline btn-sm" data-edit-item="${escape(item.id)}">Edit</button>
             ${isAdmin ? `<button class="btn btn-danger btn-sm" data-delete-item="${escape(item.id)}">Delete</button>` : ''}
           </td>
-        </tr>`).join('') : '<tr><td colspan="7">No products yet.</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="8">No products yet.</td></tr>';
       const activeItems = items.filter((item) => item.active !== false);
       document.getElementById('request-item').innerHTML = activeItems.map((item) =>
         `<option value="${escape(item.id)}">${escape(item.name)} — ${Number(item.quantity || 0)} ${escape(item.unit || 'each')} on hand</option>`
@@ -134,6 +136,7 @@
       delete data.id;
       data.quantity = Number(data.quantity || 0);
       data.lowStockThreshold = Number(data.lowStockThreshold || 0);
+      data.price = data.price === '' ? null : Number(data.price);
       const currentItem = items.find((item) => String(item.id) === String(id));
       data.active = isAdmin ? productForm.elements.active.checked : (currentItem ? currentItem.active !== false : true);
       const submit = productForm.querySelector('[type="submit"]');
@@ -166,6 +169,7 @@
         productForm.elements.sku.value = item.sku || '';
         productForm.elements.category.value = item.category || '';
         productForm.elements.unit.value = item.unit || 'each';
+        productForm.elements.price.value = item.price == null ? '' : Number(item.price);
         productForm.elements.quantity.value = Number(item.quantity || 0);
         productForm.elements.lowStockThreshold.value = Number(item.lowStockThreshold || 0);
         productForm.elements.description.value = item.description || '';

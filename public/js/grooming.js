@@ -437,24 +437,52 @@
   const renderSummary = () => {
     if (!summaryBox) return;
     const pets = collectPets();
-    const rows = pets.map((pet, index) => {
+    const total = pets.reduce((sum, pet) => sum + (PRICES[pet.service] || 0), 0);
+    const petCards = pets.map((pet, index) => {
       const selectedService = field(`service-${index}`);
-      const serviceText = selectedService?.options[selectedService.selectedIndex]?.textContent || pet.service;
-      return [`Pet ${index + 1}: ${pet.name || 'Pet'}`, `${serviceText} · ${formatMoney(PRICES[pet.service] || 0)}`];
+      const serviceText = selectedService?.options[selectedService.selectedIndex]?.textContent
+        .replace(/\s*[—-]\s*₱[\d,]+(?:\.\d{2})?.*$/, '')
+        .trim() || describeService(pet.service).title;
+      const detail = describeService(pet.service);
+      const duration = serviceDetails[pet.service]?.duration || 0;
+      return `
+        <article class="booking-summary-pet">
+          <div class="booking-summary-pet-heading">
+            <div><span class="booking-summary-eyebrow">PET ${index + 1}</span><h4>${escapeHtml(pet.name || 'Pet name not entered')}</h4></div>
+            <strong>${formatMoney(PRICES[pet.service] || 0)}</strong>
+          </div>
+          <dl class="booking-summary-details">
+            <div><dt>Pet</dt><dd>${escapeHtml([pet.species, pet.breed, pet.age == null ? '' : `${pet.age} yrs`].filter(Boolean).join(' · ') || 'Details not entered')}</dd></div>
+            <div><dt>Selected service</dt><dd>${escapeHtml(serviceText)}</dd></div>
+            <div><dt>Service includes</dt><dd>${escapeHtml(detail.includes.join(' · ') || detail.description)}</dd></div>
+            <div><dt>Estimated duration</dt><dd>${duration ? `${duration} minutes` : 'To be confirmed'}</dd></div>
+          </dl>
+        </article>`;
     });
-    rows.push(['Date', formatDate(dateInput.value)]);
-    if (pickupTimeInput.value) rows.push(['Pickup time', pickupTimeInput.value]);
-    rows.push(['Total', formatMoney(pets.reduce((sum, pet) => sum + (PRICES[pet.service] || 0), 0))]);
+    const paymentMethod = form.querySelector('input[name="paymentMethod"]:checked')?.value || 'cash';
+    const appointmentTime = timeSelect.value
+      ? formatSlotLabel(timeSelect.value, availableSlotsCache.find((slot) => slot.time === timeSelect.value)?.endTime)
+      : 'Choose an available appointment time';
 
     summaryBox.innerHTML = `
-      <div class="form-section-label">Order Summary</div>
-      <div class="summary-card">
-        ${rows.map(([label, value]) => `
-          <div class="summary-row">
-            <span>${escapeHtml(label)}</span>
-            <strong>${escapeHtml(value)}</strong>
-          </div>
-        `).join('')}
+      <section class="booking-summary-card" aria-label="Grooming order summary">
+        <header class="booking-summary-header">
+          <div><span class="booking-summary-eyebrow">REVIEW YOUR BOOKING</span><h3>Grooming order summary</h3><p>Check each pet’s selected service and appointment details before booking.</p></div>
+          <span class="booking-summary-badge">${pets.length} pet${pets.length === 1 ? '' : 's'}</span>
+        </header>
+        <div class="booking-summary-pets">${petCards.join('')}</div>
+        <div class="booking-summary-section">
+          <h4>Appointment</h4>
+          <dl class="booking-summary-details">
+            <div><dt>Date</dt><dd>${escapeHtml(formatDate(dateInput.value))}</dd></div>
+            <div><dt>Appointment time</dt><dd>${escapeHtml(appointmentTime)}</dd></div>
+            <div><dt>Pickup time</dt><dd>${escapeHtml(pickupTimeInput.value ? formatTimeLabel(pickupTimeInput.value) : 'Not requested')}</dd></div>
+            <div><dt>Number of pets</dt><dd>${pets.length}</dd></div>
+            <div><dt>Special care instructions</dt><dd>${escapeHtml(String(field('notes')?.value || '').trim() || 'None provided')}</dd></div>
+          </dl>
+        </div>
+        <div class="booking-summary-total"><span>Estimated total</span><strong>${formatMoney(total)}</strong></div>
+        <p class="booking-summary-payment">${paymentMethod === 'qrph' ? 'GCash QR payment selected. Your appointment will be confirmed after payment and team review.' : 'Cash payment selected. Please pay at the counter.'}</p>
       </div>
     `;
   };
@@ -589,6 +617,8 @@
     renderSummary();
   });
   pickupTimeInput.addEventListener('change', renderSummary);
+  form.addEventListener('input', renderSummary);
+  form.addEventListener('change', renderSummary);
 
   renderPetFields();
   updatePrice();

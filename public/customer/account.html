@@ -27,6 +27,13 @@
     <p id="payment-retry-message">We are still confirming your PayMongo payment. Your booking is being kept.</p>
     <button id="retry-payment-verification" class="btn btn-primary btn-sm" type="button">Check payment again</button>
   </section>
+  <dialog id="payment-summary-dialog" aria-labelledby="payment-summary-title">
+    <div class="panel">
+      <h2 id="payment-summary-title">Payment confirmed</h2>
+      <div id="payment-summary-content"></div>
+      <button id="close-payment-summary" class="btn btn-outline" type="button">Close</button>
+    </div>
+  </dialog>
 
   <div id="confirm-delete" class="confirm-box hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
     <div class="confirm-card">
@@ -86,6 +93,11 @@
     const paymentBookingType = params.get('booking_type') || '';
     const paymentBookingId = params.get('booking_id') || '';
     const deleteBtn = document.getElementById('delete-account-btn');
+    const paymentRetryPanel = document.getElementById('payment-retry-panel');
+    const retryPaymentButton = document.getElementById('retry-payment-verification');
+    const paymentRetryMessage = document.getElementById('payment-retry-message');
+    const paymentSummaryDialog = document.getElementById('payment-summary-dialog');
+    let paymentRetryStarted = false;
     document.addEventListener('click', (event) => {
       const logoutLink = event.target.closest('[data-confirm-logout]');
       if (logoutLink && !window.confirm('Are you sure you want to log out?')) {
@@ -99,6 +111,8 @@
     const bookingDialog = document.getElementById('booking-dialog');
     const bookingEditForm = document.getElementById('booking-edit-form');
     let activeBooking = null;
+    let autoRefresh = null;
+    let profileRequestInFlight = false;
 
     if (showSuccessToast) {
       const toast = document.getElementById('toast');
@@ -231,14 +245,13 @@
       }
     });
 
-    document.getElementById('close-booking-action').addEventListener('click', () => bookingActionDialog.close());
-    bookingActionDialog.addEventListener('close', () => {
-      if (!autoRefresh) autoRefresh = setInterval(loadProfile, 5000);
-    });
-
     async function loadProfile() {
+      if (profileRequestInFlight) return;
+      profileRequestInFlight = true;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
       try {
-        const r = await fetch('/customer/profile', { credentials: 'include' });
+        const r = await fetch('/customer/profile', { credentials: 'include', signal: controller.signal });
         const contentType = r.headers.get('content-type') || '';
         if (r.status === 401 || r.redirected) {
           location.href = '/customer/login.html?return=' + encodeURIComponent(location.pathname);
@@ -248,6 +261,8 @@
         if (!contentType.includes('application/json')) throw new Error('Profile response was not JSON.');
         const data = await r.json();
         const p = data.customer || {};
+        const groomingBookings = data.grooming || [];
+        const hotelBookings = data.hotel || [];
 
         document.getElementById('profile').innerHTML = `
           <div class="profile-title">Profile details</div>
@@ -389,7 +404,7 @@
           });
         });
 
-        const grooming = (data.grooming || []).map(item => {
+        const grooming = groomingBookings.map(item => {
           const statusClass = item.status === 'completed' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
           const serviceSummary = Array.isArray(item.petServices) && item.petServices.length
             ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ')
@@ -464,7 +479,26 @@
           }
         }
       } catch (e) {
-        document.getElementById('content').innerHTML = '<div class="card">Failed to load profile.</div>';
+        const message = e.name === 'AbortError'
+          ? 'Loading your account timed out. Check your connection and try again.'
+          : (e.message || 'Unable to load your account. Please try again.');
+        ['profile', 'pets', 'bookings'].forEach((id) => {
+          const container = document.getElementById(id);
+          container.replaceChildren();
+          const error = document.createElement('p');
+          error.className = 'text-error';
+          error.setAttribute('role', 'alert');
+          error.textContent = message;
+          const retry = document.createElement('button');
+          retry.className = 'btn btn-outline btn-sm';
+          retry.type = 'button';
+          retry.textContent = 'Try again';
+          retry.addEventListener('click', loadProfile);
+          container.append(error, retry);
+        });
+      } finally {
+        clearTimeout(timeout);
+        profileRequestInFlight = false;
       }
     }
 
@@ -474,87 +508,6 @@
       if (Number.isNaN(d.getTime())) return value;
       return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     }
-
-    function bookingActionsMarkup(item, type) {
-      if (item.status !== 'pending' || item.confirmedAt) return '';
-      const id = escapeHtml(item.id);
-      return `<div class="booking-actions">
-        <button class="btn btn-outline btn-sm" type="button" data-reschedule-booking="${id}" data-booking-type="${type}">Edit booking</button>
-      </div>`;
-    }
-
-    function openRescheduleDialog(type, booking) {
-      const isHotel = type === 'hotel';
-      document.getElementById('booking-action-title').textContent = `Edit ${isHotel ? 'hotel stay' : 'grooming appointment'}`;
-      bookingActionForm.dataset.type = type;
-      bookingActionForm.dataset.id = booking.id;
-      const cancellationButton = booking.status === 'pending' && !booking.confirmedAt
-        ? `<button class="btn btn-danger" type="button" data-cancel-edit-booking="${escapeHtml(String(booking.id))}" data-booking-type="${type}">Cancel booking</button>`
-        : '';
-      bookingActionForm.innerHTML = isHotel ? `
-        <div class="field"><label for="reschedule-check-in">Check-in date</label><input id="reschedule-check-in" name="checkIn" type="date" required value="${escapeHtml(booking.checkIn || '')}"></div>
-        <div class="field"><label for="reschedule-check-in-time">Check-in time</label><input id="reschedule-check-in-time" name="checkInTime" type="time" required value="${escapeHtml(booking.checkInTime || '')}"></div>
-        <div class="field"><label for="reschedule-check-out">Check-out date</label><input id="reschedule-check-out" name="checkOut" type="date" required value="${escapeHtml(booking.checkOut || '')}"></div>
-        <div class="field"><label for="reschedule-check-out-time">Check-out time</label><input id="reschedule-check-out-time" name="checkOutTime" type="time" required value="${escapeHtml(booking.checkOutTime || '')}"></div>
-        <div class="form-actions full"><button class="btn btn-primary" type="submit">Save changes</button>${cancellationButton}</div>` : `
-        <div class="field"><label for="reschedule-date">Appointment date</label><input id="reschedule-date" name="date" type="date" required value="${escapeHtml(booking.date || '')}"></div>
-        <div class="field"><label for="reschedule-time">Appointment time</label><input id="reschedule-time" name="time" type="time" required value="${escapeHtml(booking.time || '')}"></div>
-        <div class="field"><label for="reschedule-pickup">Pickup time</label><input id="reschedule-pickup" name="pickupTime" type="time" value="${escapeHtml(booking.pickupTime || '')}"></div>
-        <div class="form-actions full"><button class="btn btn-primary" type="submit">Save changes</button>${cancellationButton}</div>`;
-      clearInterval(autoRefresh);
-      autoRefresh = null;
-      bookingActionDialog.showModal();
-    }
-
-    document.getElementById('bookings').addEventListener('click', async (event) => {
-      const rescheduleButton = event.target.closest('[data-reschedule-booking]');
-      if (rescheduleButton) {
-        const type = rescheduleButton.dataset.bookingType;
-        try {
-          const profile = await fetch('/customer/profile', { credentials: 'include' }).then((response) => response.json());
-          const bookings = type === 'grooming' ? profile.grooming : profile.hotel;
-          const booking = (bookings || []).find((item) => String(item.id) === rescheduleButton.dataset.rescheduleBooking);
-          if (!booking) throw new Error('Booking not found. Refresh the page and try again.');
-          openRescheduleDialog(type, booking);
-        } catch (error) { alert(error.message); }
-      }
-    });
-
-    bookingActionForm.addEventListener('click', async (event) => {
-      const cancelButton = event.target.closest('[data-cancel-edit-booking]');
-      if (!cancelButton) return;
-      if (!window.confirm('Cancel this booking? This cannot be undone online.')) return;
-      cancelButton.disabled = true;
-      try {
-        const response = await fetch(`/customer/bookings/${cancelButton.dataset.bookingType}/${encodeURIComponent(cancelButton.dataset.cancelEditBooking)}/cancel`, {
-          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}',
-        });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.error || 'Unable to cancel this booking.');
-        bookingActionDialog.close();
-        await loadProfile();
-      } catch (error) {
-        alert(error.message);
-        cancelButton.disabled = false;
-      }
-    });
-
-    bookingActionForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const type = bookingActionForm.dataset.type;
-      const id = bookingActionForm.dataset.id;
-      const formData = new FormData(bookingActionForm);
-      const body = Object.fromEntries(formData.entries());
-      try {
-        const response = await fetch(`/customer/bookings/${type}/${encodeURIComponent(id)}/reschedule`, {
-          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-        });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.error || 'Unable to reschedule this booking.');
-        bookingActionDialog.close();
-        await loadProfile();
-      } catch (error) { alert(error.message); }
-    });
 
     function formatMoney(value) {
       return `PHP ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -602,7 +555,7 @@
             <dl class="recent-booking-detail-list">
               ${detailRows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || 'Not provided')}</dd></div>`).join('')}
             </dl>
-            ${bookingActionsMarkup(booking, item.bookingType)}
+            ${bookingActions(booking, item.bookingType)}
             ${paymentReceiptMarkup(booking, item.bookingType, profile)}
             ${reservationTicketMarkup(booking, item.bookingType, pets, profile)}
           </div>
@@ -613,20 +566,35 @@
     function paymentReceiptMarkup(item, type, profile) {
       if (item.paymentMethod !== 'qrph' || item.paymentStatus !== 'paid' || !item.paymentReference) return '';
       const isHotel = type === 'hotel';
+      const hotelSlots = isHotel
+        ? (item.hotelSlotAssignments?.[item.checkIn]
+          || Object.values(item.hotelSlotAssignments || {}).find(Array.isArray)
+          || item.hotelSlotNumbers
+          || [])
+        : [];
+      const hotelCheckIn = `${formatDate(item.checkIn)}${item.checkInTime ? ` at ${item.checkInTime}` : ''}`;
+      const hotelCheckOut = `${formatDate(item.checkOut)}${item.checkOutTime ? ` at ${item.checkOutTime}` : ''}`;
       const services = isHotel
-        ? (item.petRooms || []).map(room => `${room.petName || 'Pet'}: ${room.roomType || 'Room'}${room.pricePerNight ? ` (${formatMoney(room.pricePerNight)} per night)` : ''}`).join('\n') || item.roomType || 'Pet hotel stay'
+        ? (item.petRooms || []).map((room, index) => `${room.petName || 'Pet'}: ${room.roomType || 'Room'}${hotelSlots[index] ? ` · Slot ${hotelSlots[index]}` : ''}${room.pricePerNight ? ` (${formatMoney(room.pricePerNight)} per night)` : ''}`).join('\n') || item.roomType || 'Pet hotel stay'
         : (item.petServices || []).map(service => `${service.petName || 'Pet'}: ${service.service || 'Grooming'}${service.price != null ? ` (${formatMoney(service.price)})` : ''}`).join('\n') || item.service || 'Grooming service';
       const schedule = isHotel
-        ? `Check-in: ${formatDate(item.checkIn)}${item.checkInTime ? ` at ${item.checkInTime}` : ''}; Check-out: ${formatDate(item.checkOut)}${item.checkOutTime ? ` at ${item.checkOutTime}` : ''}`
+        ? `Check-in: ${hotelCheckIn}; Check-out: ${hotelCheckOut}`
         : `Appointment: ${formatDate(item.date)} at ${item.time || 'Time TBA'}${item.pickupTime ? `; Pickup: ${item.pickupTime}` : ''}`;
       const amount = isHotel ? item.totalPrice : item.price;
       const paidAt = item.paymentPaidAt || item.updatedAt;
       const receiptItems = isHotel
-        ? (item.petRooms || []).map((room, index) => ({
-            label: `${room.petName || 'Pet'} — ${String(room.roomType || item.roomType || 'Hotel stay').replace(/^staycation-/, '').replace(/-/g, ' ')}`,
-            amount: Number(item.pricingBreakdown?.petQuotes?.[index]?.total ?? (Number(amount || 0) / Math.max(1, item.petRooms.length))),
-            unitLabel: room.pricePerNight ? `${formatMoney(room.pricePerNight)} per night` : '',
-          }))
+        ? (item.petRooms || []).map((room, index) => {
+            const petQuote = item.pricingBreakdown?.petQuotes?.[index];
+            const nights = Number(item.pricingBreakdown?.nights) || 0;
+            const nightlyRate = petQuote?.baseAmount != null && nights
+              ? `${formatMoney(petQuote.baseAmount / nights)} base per night`
+              : room.pricePerNight ? `${formatMoney(room.pricePerNight)} average per night after discounts` : '';
+            return {
+              label: `${room.petName || 'Pet'} — ${String(room.roomType || item.roomType || 'Hotel stay').replace(/^staycation-/, '').replace(/-/g, ' ')}`,
+              amount: Number(petQuote?.baseAmount ?? (Number(room.pricePerNight || 0) * (nights || 1))),
+              unitLabel: [`Slot ${hotelSlots[index] || 'not recorded'}`, `${nights || '—'} night(s)`, `${hotelCheckIn} → ${hotelCheckOut}`, nightlyRate].filter(Boolean).join(' · '),
+            };
+          })
         : (item.petServices || []).map(service => ({
             label: `${service.petName || 'Pet'} — ${String(service.service || 'Grooming').replace(/^grooming-/, '').replace(/^ayurveda-herb-/, '').replace(/^ayurveda-pkg-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`,
             amount: Number(service.price || 0),
@@ -634,9 +602,26 @@
           }));
       if (!receiptItems.length) receiptItems.push({
         label: isHotel ? (item.roomType || 'Pet hotel stay') : (item.service || 'Grooming service'),
-        amount: Number(amount || 0),
-        unitLabel: '',
+        amount: Number(isHotel ? (item.pricingBreakdown?.baseAmount ?? amount) : amount || 0),
+        unitLabel: isHotel ? `Slot ${hotelSlots[0] || 'not recorded'} · ${hotelCheckIn} → ${hotelCheckOut}` : '',
       });
+      if (isHotel && item.pricingBreakdown) {
+        if (Number(item.pricingBreakdown.multiPetDiscount)) receiptItems.push({
+          label: 'Multi-pet discount',
+          amount: -Number(item.pricingBreakdown.multiPetDiscount),
+          unitLabel: 'Discount applied to eligible pet room(s)',
+        });
+        if (Number(item.pricingBreakdown.longStayDiscount)) receiptItems.push({
+          label: 'Long-stay discount',
+          amount: -Number(item.pricingBreakdown.longStayDiscount),
+          unitLabel: 'Discount applied to eligible stay(s)',
+        });
+        if (item.pricingBreakdown.complimentaryBath) receiptItems.push({
+          label: 'Complimentary bath & dry',
+          amount: 0,
+          unitLabel: 'Included with this stay',
+        });
+      }
       return `
         <details class="reservation-ticket payment-receipt-summary" data-payment-receipt data-booking-id="${escapeHtml(String(item.id))}" data-booking-type="${escapeHtml(type)}">
           <summary class="receipt-link">View payment receipt</summary>
@@ -657,6 +642,7 @@
               <div><dt>Payment method</dt><dd>GCash (PayMongo)</dd></div>
               <div><dt>Transaction ID</dt><dd>${escapeHtml(item.paymentReference)}</dd></div>
               <div><dt>Schedule</dt><dd>${escapeHtml(schedule)}</dd></div>
+              ${isHotel ? `<div><dt>Stay length</dt><dd>${Number(item.pricingBreakdown?.nights) || '—'} night(s)</dd></div>` : ''}
             </dl>
             <table class="receipt-items">
               <thead><tr><th>${isHotel ? 'Room / pet' : 'Service / pet'}</th><th>Details</th><th>Amount</th></tr></thead>
@@ -678,6 +664,12 @@
       const linkedPets = (item.petIds || (item.petId ? [item.petId] : []))
         .map(id => pets.find(pet => String(pet.id) === String(id)))
         .filter(Boolean);
+      const hotelSlots = type === 'hotel'
+        ? (item.hotelSlotAssignments?.[item.checkIn]
+          || Object.values(item.hotelSlotAssignments || {}).find(Array.isArray)
+          || item.hotelSlotNumbers
+          || [])
+        : [];
       const petDetails = linkedPets.length
         ? linkedPets.map(pet => `${pet.name || 'Pet'} — ${pet.species || 'Species not set'}, ${pet.breed || 'Breed not set'}, ${pet.age == null ? 'Age not set' : `${pet.age} yrs`}`).join('\n')
         : (item.petNames || []).join(', ');
@@ -686,7 +678,7 @@
           ? item.petServices.map(service => `${service.petName || 'Pet'}: ${String(service.service || '').replace(/^grooming-/, '').replace(/^ayurveda-herb-/, '').replace(/^ayurveda-pkg-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()).replace(/\bXl\b/g, 'XL')} (${formatMoney(service.price)})`).join('\n')
           : (item.service || 'Grooming')
         : Array.isArray(item.petRooms) && item.petRooms.length
-          ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')} — ${formatMoney(petRoom.pricePerNight)} per night`).join('\n')
+          ? item.petRooms.map((petRoom, index) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')} — Slot ${hotelSlots[index] || 'not recorded'} — ${formatMoney(petRoom.pricePerNight)} average per night after discounts`).join('\n')
           : `${item.roomType || 'Pet hotel'}${item.pricePerNight ? ` — ${formatMoney(item.pricePerNight)} per night` : ''}`;
       const schedule = type === 'grooming'
         ? `Date: ${formatDate(item.date)}; Time: ${item.time || 'Not set'}${item.pickupTime ? `; Pickup: ${item.pickupTime}` : ''}`
@@ -798,7 +790,7 @@
     }
 
     loadProfile();
-    autoRefresh = setInterval(loadProfile, 5000);
+    autoRefresh = setInterval(loadProfile, 30000);
 
     // Stop auto-refresh while editing profile so the form stays intact
     document.addEventListener('focusin', (e) => {
@@ -808,7 +800,7 @@
     });
     document.addEventListener('focusout', (e) => {
       if (e.target.closest('#profile-edit') || e.target.closest('.profile-edit') || e.target.closest('#pet-editor')) {
-        autoRefresh = setInterval(loadProfile, 5000);
+        autoRefresh = setInterval(loadProfile, 30000);
       }
     });
   </script>

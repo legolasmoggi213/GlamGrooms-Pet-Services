@@ -47,7 +47,7 @@ const HOTEL = {
 };
 
 const HOTEL_POLICIES = [
-  '3-night minimum stay includes one complimentary bath & dry grooming session.',
+  'One-night minimum stay. Stays of 3 nights or more include one complimentary bath & dry grooming session.',
   '5-night stays receive a 10% discount on the total room rate.',
   'Multi-pet bookings: 2nd pet 15% off, 3rd+ pets 25% off per night.',
   'Vaccination records must be presented at check-in (DHIA-compliant).',

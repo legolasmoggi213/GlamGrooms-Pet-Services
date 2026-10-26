@@ -64,6 +64,10 @@ const ROOM_PRICES = {
   let customerProfileLoaded = false;
   let availabilityRequest = 0;
   let slotRequest = 0;
+  let quoteRequest = 0;
+  let latestQuote = null;
+  let latestQuoteKey = null;
+  let latestQuoteMessage = 'Enter your stay dates to calculate the total.';
   let selectedHotelSlots = new Set();
   let savedPets = [];
   const hotelSlotPicker = document.getElementById('hotel-slot-picker');
@@ -108,40 +112,58 @@ const ROOM_PRICES = {
       .replaceAll("'", '&#39;');
     const pets = collectPets();
     const nights = Math.round((new Date(checkOutInput.value) - new Date(checkInInput.value)) / 864e5);
-    const petText = pets.map((pet) => `${pet.name || 'Unnamed pet'} (${pet.species}, age ${pet.age ?? 'not entered'}, ${pet.breed || 'breed not entered'})`).join(', ');
     const quoteKey = JSON.stringify({ checkIn: checkInInput.value, checkOut: checkOutInput.value, roomTypes: pets.map((pet) => pet.roomType) });
     const quote = latestQuoteKey === quoteKey ? latestQuote : null;
     const notesValue = getField('notes')?.value || '';
-    const rows = [
-      ...pets.map((pet, index) => {
-        const roomField = petFields.querySelector(`[name="roomType-${index}"]`);
-        const roomText = roomField?.options[roomField.selectedIndex]?.textContent || pet.roomType;
-        const petQuote = quote && quote.petQuotes[index];
-        return [`${pet.name || `Pet ${index + 1}`} room`, `${roomText}${petQuote ? ` — ${fmtMoney(petQuote.baseAmount)} before discounts` : ''}`];
-      }),
-      ['Pets', petText],
-      ['Check-in', `${fmtDate(checkInInput.value)} at ${checkInTime.value}`],
-      ['Check-out', `${fmtDate(checkOutInput.value)} at ${checkOutTime.value}`],
-      ['Nights', quote ? String(quote.nights) : (nights > 0 ? String(nights) : '3-night minimum')],
-      ...(quote ? [
-        ['Room subtotal', fmtMoney(quote.baseAmount)],
-        ['Multi-pet discount', `−${fmtMoney(quote.multiPetDiscount)}`],
-        ...(quote.longStayDiscount ? [['5+ night discount', `−${fmtMoney(quote.longStayDiscount)}`]] : []),
-        ...(quote.complimentaryBath ? [['Complimentary bath & dry', 'Included']] : []),
-      ] : []),
-      ['Special care', notesValue || 'Not entered'],
-      ['Total', quote ? fmtMoney(quote.total) : latestQuoteMessage],
-    ];
+    const slots = selectedSlots();
+    const petCards = pets.map((pet, index) => {
+      const roomField = petFields.querySelector(`[name="roomType-${index}"]`);
+      const roomText = roomField?.options[roomField.selectedIndex]?.textContent?.trim() || pet.roomType;
+      const petQuote = quote?.petQuotes?.[index];
+      const slot = slots[index];
+      return `
+        <article class="booking-summary-pet">
+          <div class="booking-summary-pet-heading">
+            <div><span class="booking-summary-eyebrow">PET ${index + 1}</span><h4>${escapeSummary(pet.name || 'Pet name not entered')}</h4></div>
+            <strong>${petQuote ? fmtMoney(petQuote.total) : 'Quote pending'}</strong>
+          </div>
+          <dl class="booking-summary-details">
+            <div><dt>Pet</dt><dd>${escapeSummary([pet.species, pet.breed, pet.age == null ? '' : `${pet.age} yrs`].filter(Boolean).join(' · ') || 'Details not entered')}</dd></div>
+            <div><dt>Booked suite</dt><dd>${escapeSummary(roomText)}</dd></div>
+            <div><dt>Reserved slot</dt><dd>${slot ? `Slot ${slot}` : 'Choose one available slot'}</dd></div>
+            ${petQuote ? `<div><dt>Room subtotal</dt><dd>${fmtMoney(petQuote.baseAmount)}</dd></div>
+              <div><dt>Average base rate per night</dt><dd>${fmtMoney(petQuote.baseAmount / quote.nights)}</dd></div>
+              ${petQuote.multiPetDiscount ? `<div><dt>Multi-pet discount</dt><dd>−${fmtMoney(petQuote.multiPetDiscount)}</dd></div>` : ''}
+              ${petQuote.longStayDiscount ? `<div><dt>Long-stay discount</dt><dd>−${fmtMoney(petQuote.longStayDiscount)}</dd></div>` : ''}` : ''}
+          </dl>
+        </article>`;
+    });
+    const paymentMethod = form.querySelector('input[name="paymentMethod"]:checked')?.value || 'cash';
 
     summaryBox.innerHTML = `
-      <div class="form-section-label">Booking Summary</div>
-      <div class="summary-card">
-        ${rows.map(([label, value]) => `
-          <div class="summary-row">
-            <span>${escapeSummary(label)}</span>
-            <strong>${escapeSummary(value)}</strong>
-          </div>
-        `).join('')}
+      <section class="booking-summary-card" aria-label="Pet hotel reservation summary">
+        <header class="booking-summary-header">
+          <div><span class="booking-summary-eyebrow">REVIEW YOUR STAY</span><h3>Pet hotel reservation</h3><p>Review the suite, assigned slot, dates, and estimated charges for each pet.</p></div>
+          <span class="booking-summary-badge">${pets.length} pet${pets.length === 1 ? '' : 's'}</span>
+        </header>
+        <div class="booking-summary-pets">${petCards.join('')}</div>
+        <div class="booking-summary-section">
+          <h4>Stay schedule</h4>
+          <dl class="booking-summary-details">
+            <div><dt>Check-in</dt><dd>${escapeSummary(fmtDate(checkInInput.value))} · ${escapeSummary(checkInTime.value || 'Select time')}</dd></div>
+            <div><dt>Check-out</dt><dd>${escapeSummary(fmtDate(checkOutInput.value))} · ${escapeSummary(checkOutTime.value || 'Select time')}</dd></div>
+            <div><dt>Length of stay</dt><dd>${quote ? `${quote.nights} night${quote.nights === 1 ? '' : 's'}` : (nights > 0 ? `${nights} night${nights === 1 ? '' : 's'}` : 'Minimum 1 night')}</dd></div>
+            <div><dt>Special care instructions</dt><dd>${escapeSummary(String(notesValue).trim() || 'None provided')}</dd></div>
+          </dl>
+        </div>
+        ${quote ? `<div class="booking-summary-pricing">
+          <div><span>Room subtotal</span><strong>${fmtMoney(quote.baseAmount)}</strong></div>
+          ${quote.multiPetDiscount ? `<div><span>Multi-pet discount</span><strong>−${fmtMoney(quote.multiPetDiscount)}</strong></div>` : ''}
+          ${quote.longStayDiscount ? `<div><span>5+ night discount</span><strong>−${fmtMoney(quote.longStayDiscount)}</strong></div>` : ''}
+          ${quote.complimentaryBath ? '<div><span>Complimentary bath &amp; dry</span><strong>Included</strong></div>' : ''}
+        </div>` : `<p class="booking-summary-payment">${escapeSummary(latestQuoteMessage)}</p>`}
+        <div class="booking-summary-total"><span>Estimated total</span><strong>${quote ? fmtMoney(quote.total) : 'Quote pending'}</strong></div>
+        <p class="booking-summary-payment">${paymentMethod === 'qrph' ? 'GCash QR payment selected. Your reservation will be confirmed after successful payment.' : 'Cash payment selected. Please pay at the counter.'}</p>
       </div>
     `;
   };
@@ -162,7 +184,7 @@ const ROOM_PRICES = {
     checkInInput.min = today;
     const checkIn = checkInInput.value;
     const minimumCheckOut = checkIn ? new Date(`${checkIn}T00:00:00`) : new Date(`${today}T00:00:00`);
-    minimumCheckOut.setDate(minimumCheckOut.getDate() + 3);
+    minimumCheckOut.setDate(minimumCheckOut.getDate() + 1);
     checkOutInput.min = localDate(minimumCheckOut);
     if (checkIn && checkOutInput.value && checkOutInput.value < checkOutInput.min) {
       checkOutInput.value = checkOutInput.min;
@@ -195,14 +217,23 @@ const ROOM_PRICES = {
   };
 
   const updatePrice = async () => {
-    if (!pricePreview) return;
+    const pets = collectPets();
+    const requestId = ++quoteRequest;
+    const quoteKey = JSON.stringify({ checkIn: checkInInput.value, checkOut: checkOutInput.value, roomTypes: pets.map((pet) => pet.roomType) });
+    latestQuoteKey = quoteKey;
+    latestQuote = null;
     const nights = Math.round((new Date(checkOutInput.value) - new Date(checkInInput.value)) / 864e5);
-    if (nights > 0) {
-      const pets = collectPets();
-      const total = pets.reduce((sum, pet) => sum + (ROOM_PRICES[pet.roomType] || 0), 0) * nights;
-      pricePreview.textContent = `${nights} night${nights > 1 ? 's' : ''} × selected room rates = ${fmtMoney(total)}`;
-    } else {
-      pricePreview.textContent = 'Check-out must be after check-in';
+    if (!checkInInput.value || !checkOutInput.value) {
+      latestQuoteMessage = 'Enter your stay dates to calculate the total.';
+      if (pricePreview) pricePreview.textContent = latestQuoteMessage;
+      renderOrderSummary();
+      return;
+    }
+    if (nights <= 0) {
+      latestQuoteMessage = 'Check-out must be after check-in.';
+      if (pricePreview) pricePreview.textContent = latestQuoteMessage;
+      renderOrderSummary();
+      return;
     }
     latestQuoteMessage = 'Calculating quote…';
     if (pricePreview) pricePreview.textContent = latestQuoteMessage;
@@ -213,14 +244,16 @@ const ROOM_PRICES = {
       const response = await fetch(`/api/v1/bookings/hotel/quote?${query}`, { credentials: 'include', cache: 'no-store' });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Unable to calculate the stay total.');
-      if (requestId !== quoteRequest) return;
+      if (result.ok === false) throw new Error(result.error || 'Unable to calculate the stay total.');
+      if (requestId !== quoteRequest || quoteKey !== latestQuoteKey) return;
       latestQuote = result;
+      latestQuoteMessage = '';
       if (pricePreview) {
         const discounts = result.multiPetDiscount + result.longStayDiscount;
         pricePreview.textContent = `${result.nights} nights · Total ${fmtMoney(result.total)}${discounts ? ` · Discounts ${fmtMoney(discounts)}` : ''}`;
       }
     } catch (error) {
-      if (requestId !== quoteRequest) return;
+      if (requestId !== quoteRequest || quoteKey !== latestQuoteKey) return;
       if (pricePreview) pricePreview.textContent = error.message;
       latestQuoteMessage = error.message;
     }
@@ -259,7 +292,7 @@ const ROOM_PRICES = {
     submitBtn.disabled = !roomAvailable || !customerProfileLoaded || !hasRequiredSlots;
   };
 
-  const renderHotelSlots = (availableSlotNumbers = null, error = null) => {
+  const renderHotelSlots = (availableSlotNumbers = null, error = null, checkInOnly = false) => {
     const checkIn = checkInInput.value;
     hotelSlotPicker.hidden = false;
     hotelSlotNumbersInput.value = selectedSlots().join(',');
@@ -308,6 +341,8 @@ const ROOM_PRICES = {
       hotelSlotStatus.textContent = 'Checking slot availability for your selected stay…';
     } else if (available.size < collectPets().length) {
       hotelSlotStatus.textContent = `Only ${available.size} slot${available.size === 1 ? '' : 's'} are available for the full stay; ${collectPets().length} required.`;
+    } else if (checkInOnly) {
+      hotelSlotStatus.textContent = `${available.size} slot${available.size === 1 ? '' : 's'} available on the check-in date. After choosing your checkout date, availability will be checked for the full stay.`;
     } else {
       hotelSlotStatus.textContent = `${available.size} slot${available.size === 1 ? '' : 's'} available for the full stay.`;
     }
@@ -326,25 +361,21 @@ const ROOM_PRICES = {
       renderHotelSlots(null, 'Select a room type before checking slot availability.');
       return;
     }
-    let checkOut = checkOutInput.value;
-    if (!checkOut || checkOut <= checkIn) {
-      const nextNight = new Date(`${checkIn}T00:00:00`);
-      nextNight.setDate(nextNight.getDate() + 1);
-      checkOut = localDate(nextNight);
-    }
+    const checkOut = checkOutInput.value;
+    const hasCheckoutDate = Boolean(checkOut && checkOut > checkIn);
     renderHotelSlots();
     try {
       const query = new URLSearchParams({
         roomType: roomTypes[0],
         checkIn,
-        checkOut,
         pets: String(collectPets().length),
       });
+      if (hasCheckoutDate) query.set('checkOut', checkOut);
       const response = await fetch(`/api/v1/bookings/hotel/availability?${query}`, { credentials: 'include' });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Could not check hotel slot availability.');
       if (requestId !== slotRequest) return;
-      renderHotelSlots(data.availableSlotNumbers);
+      renderHotelSlots(data.availableSlotNumbers, null, data.checkInOnly === true);
     } catch (error) {
       if (requestId !== slotRequest) return;
       console.error('Could not load hotel slot availability:', error);
@@ -361,6 +392,7 @@ const ROOM_PRICES = {
     renderHotelSlots([...hotelSlotGrid.querySelectorAll('[data-hotel-slot]')]
       .filter((button) => !button.classList.contains('unavailable'))
       .map((button) => Number(button.dataset.hotelSlot)));
+    renderOrderSummary();
   });
 
 
@@ -388,7 +420,8 @@ const checkAvailability = async () => {
     syncReservationButton();
     if (!badge) return;
     if (roomAvailable) {
-      badge.textContent = `${data.availablePets} of ${data.capacity} pet spaces available for these dates`;
+      const remainingSlots = Math.min(...results.map((result) => result.remainingSlots));
+      badge.textContent = `${remainingSlots} of ${results[0].capacity} pet spaces available for these dates`;
       badge.style.color = '#1a6b4a';
     } else {
       badge.textContent = '✗ Not enough pet-hotel spaces are available for these dates';
@@ -445,6 +478,8 @@ const checkAvailability = async () => {
     renderOrderSummary();
   });
   checkInInput.addEventListener('change', applyCheckInDates);
+  form.addEventListener('input', renderOrderSummary);
+  form.addEventListener('change', renderOrderSummary);
   petCount.addEventListener('change', () => { selectedHotelSlots.clear(); renderPetFields(); updatePrice(); checkAvailability(); renderOrderSummary(); });
   populateTimeOptions(checkInTime, '14:00');
   populateTimeOptions(checkOutTime, '12:00');

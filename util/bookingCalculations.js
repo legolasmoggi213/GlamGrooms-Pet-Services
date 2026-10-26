@@ -2,7 +2,8 @@ const { HOTEL } = require('./serviceCatalog');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BUSINESS_TIME_ZONE = 'Asia/Manila';
-const MIN_HOTEL_NIGHTS = 3;
+const MIN_HOTEL_NIGHTS = 1;
+const COMPLIMENTARY_BATH_MIN_NIGHTS = 3;
 
 const roundMoney = (amount) => Math.round((Number(amount) + Number.EPSILON) * 100) / 100;
 
@@ -124,7 +125,7 @@ const quoteHotelStay = ({ petRoomTypes, checkIn, checkOut, minimumNights = MIN_H
     multiPetDiscount: roundMoney(multiPetDiscount),
     longStayDiscount: roundMoney(longStayDiscount),
     total,
-    complimentaryBath: nights >= MIN_HOTEL_NIGHTS,
+    complimentaryBath: nights >= COMPLIMENTARY_BATH_MIN_NIGHTS,
     petQuotes,
   };
 };

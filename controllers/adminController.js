@@ -3,6 +3,8 @@ const { firestore } = require('../config/firebase');
 const { createQrPhCheckout, getPayMongoKey } = require('../util/paymongo');
 const { isValidMobileNumber } = require('../util/mobileNumber');
 const { forecastTrend } = require('../util/trendForecast');
+const { SERVICE_PRICES } = require('./groomingController');
+const { ROOM_PRICES } = require('./hotelController');
 
 const ACTIVE_GROOMING_STATUSES = ['scheduled', 'in-progress'];
 const ACTIVE_HOTEL_STATUSES = ['pending', 'reserved', 'confirmed', 'checked-in'];
@@ -106,7 +108,8 @@ const walkInSalesDateKey = (transaction) => {
 const getWalkInSalesAnalytics = async (req, res, next) => {
   try {
     const period = ['daily', 'weekly', 'monthly'].includes(req.query.period) ? req.query.period : 'daily';
-    const transactions = await CashTransaction.findAll({ where: { type: 'walk-in' } });
+    const transactions = (await CashTransaction.findAll({ where: { type: 'walk-in' } }))
+      .filter(isPaidWalkInTransaction);
     const buckets = createRevenueBuckets(period, businessDateKey());
     const values = new Map(buckets.map(({ key }) => [key, { sales: 0, count: 0 }]));
     let allTimeSales = 0;
@@ -232,6 +235,12 @@ const getStats = async (req, res, next) => {
     const overTheCounterRevenue = cashTransactions
       .filter(isPaidWalkInTransaction)
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
+    const productSalesRevenue = cashTransactions
+      .filter(isPaidWalkInTransaction)
+      .reduce((total, transaction) => total + (Array.isArray(transaction.items) ? transaction.items : [])
+        .filter((item) => item.inventoryId)
+        .reduce((subtotal, item) => subtotal + Number(item.lineTotal
+          ?? Number(item.unitPrice || 0) * Number(item.quantity || 0)), 0), 0);
     res.json({
       customers,
       pets,
@@ -944,6 +953,7 @@ module.exports = {
   getRevenueBreakdown,
   getRevenueAnalytics,
   getOperationalReport,
+  getWalkInSalesAnalytics,
   listCashTransactions,
   createCashTransaction,
 };

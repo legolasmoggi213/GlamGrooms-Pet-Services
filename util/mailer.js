@@ -142,6 +142,13 @@ const formatServiceName = (value) => String(value || 'Grooming service')
 const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) => {
   const isGrooming = type === 'grooming';
   const total = Number(isGrooming ? booking.price : booking.totalPrice);
+  const hotelSlots = isGrooming
+    ? []
+    : (booking.hotelSlotAssignments?.[booking.checkIn]
+      || Object.values(booking.hotelSlotAssignments || {}).find(Array.isArray)
+      || booking.hotelSlotNumbers
+      || []);
+  const hotelSchedule = `Check-in: ${booking.checkIn || 'Not provided'}${booking.checkInTime ? ` at ${booking.checkInTime}` : ''}; Check-out: ${booking.checkOut || 'Not provided'}${booking.checkOutTime ? ` at ${booking.checkOutTime}` : ''}`;
   const petDetails = (pets || []).map((pet) => {
     const age = pet.age == null ? 'Age not provided' : `${pet.age} year${Number(pet.age) === 1 ? '' : 's'}`;
     return `${pet.name || 'Pet'} (${pet.species || 'Species not provided'}, ${pet.breed || 'Breed not provided'}, ${age})`;
@@ -151,7 +158,7 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
       ? booking.petServices.map((assignment) => `${assignment.petName || 'Pet'}: ${formatServiceName(assignment.service)} (${formatCurrency(assignment.price)})`)
       : [formatServiceName(booking.service)]
     : Array.isArray(booking.petRooms) && booking.petRooms.length
-      ? booking.petRooms.map((petRoom) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || 'Pet hotel').replace(/^staycation-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())} (${formatCurrency(petRoom.pricePerNight)} per night)`)
+      ? booking.petRooms.map((petRoom, index) => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || 'Pet hotel').replace(/^staycation-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())} · Slot ${hotelSlots[index] || 'not recorded'} (${formatCurrency(petRoom.pricePerNight)} average per night after discounts)`)
       : [`${booking.roomType || 'Pet hotel'} (${formatCurrency(booking.pricePerNight)} per night)`];
   const receiptItems = isGrooming
     ? Array.isArray(booking.petServices) && booking.petServices.length
@@ -164,10 +171,27 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
     : Array.isArray(booking.petRooms) && booking.petRooms.length
       ? booking.petRooms.map((item, index) => ({
         label: `${item.petName || 'Pet'} — ${String(item.roomType || 'Pet hotel').replace(/^staycation-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())}`,
-        detail: `${booking.checkIn || 'Check-in not provided'} to ${booking.checkOut || 'Check-out not provided'}`,
-        amount: Number(booking.pricingBreakdown?.petQuotes?.[index]?.total ?? (total / booking.petRooms.length)),
+        detail: `Slot ${hotelSlots[index] || 'not recorded'} · ${booking.pricingBreakdown?.nights || '—'} night(s) · ${hotelSchedule} · ${booking.pricingBreakdown?.petQuotes?.[index]?.baseAmount != null && booking.pricingBreakdown?.nights ? `${formatCurrency(booking.pricingBreakdown.petQuotes[index].baseAmount / booking.pricingBreakdown.nights)} base per night` : `${formatCurrency(item.pricePerNight)} average per night after discounts`}`,
+        amount: Number(booking.pricingBreakdown?.petQuotes?.[index]?.baseAmount ?? (Number(item.pricePerNight || 0) * (Number(booking.pricingBreakdown?.nights) || 1))),
       }))
-      : [{ label: booking.roomType || 'Pet hotel', detail: `${booking.checkIn || 'Check-in not provided'} to ${booking.checkOut || 'Check-out not provided'}`, amount: total }];
+      : [{ label: booking.roomType || 'Pet hotel', detail: `Slot ${hotelSlots[0] || 'not recorded'} · ${hotelSchedule}`, amount: Number(booking.pricingBreakdown?.baseAmount ?? total) }];
+  if (!isGrooming && booking.pricingBreakdown) {
+    if (Number(booking.pricingBreakdown.multiPetDiscount)) receiptItems.push({
+      label: 'Multi-pet discount',
+      detail: 'Discount applied to eligible pet room(s)',
+      amount: -Number(booking.pricingBreakdown.multiPetDiscount),
+    });
+    if (Number(booking.pricingBreakdown.longStayDiscount)) receiptItems.push({
+      label: 'Long-stay discount',
+      detail: 'Discount applied to eligible stay(s)',
+      amount: -Number(booking.pricingBreakdown.longStayDiscount),
+    });
+    if (booking.pricingBreakdown.complimentaryBath) receiptItems.push({
+      label: 'Complimentary bath & dry',
+      detail: 'Included with this stay',
+      amount: 0,
+    });
+  }
   const rows = [
     ['Booking reference', booking.id],
     ['Customer', customer.name],
@@ -185,6 +209,7 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
     rows.push(
       ['Check-in', `${booking.checkIn || 'Not provided'}${booking.checkInTime ? ` at ${booking.checkInTime}` : ''}`],
       ['Check-out', `${booking.checkOut || 'Not provided'}${booking.checkOutTime ? ` at ${booking.checkOutTime}` : ''}`],
+      ['Stay length', `${booking.pricingBreakdown?.nights || '—'} night(s)`],
     );
   }
   if (booking.notes) rows.push(['Special requests', booking.notes]);
@@ -199,6 +224,9 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
       ? booking.petRooms.reduce((sum, petRoom) => sum + Number(petRoom.pricePerNight || 0), 0)
       : Number(booking.pricePerNight || 0) * Math.max(1, (booking.petIds || []).length);
     if (nightlyTotal) rows.push(['Total per night', formatCurrency(nightlyTotal)]);
+    if (Number(booking.pricingBreakdown?.multiPetDiscount)) rows.push(['Multi-pet discount', `−${formatCurrency(booking.pricingBreakdown.multiPetDiscount)}`]);
+    if (Number(booking.pricingBreakdown?.longStayDiscount)) rows.push(['Long-stay discount', `−${formatCurrency(booking.pricingBreakdown.longStayDiscount)}`]);
+    if (booking.pricingBreakdown?.complimentaryBath) rows.push(['Complimentary service', 'Bath & dry included']);
   }
   rows.push(['Total', formatCurrency(total)]);
 

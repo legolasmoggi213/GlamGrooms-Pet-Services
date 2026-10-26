@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Glam Grooms Pet Spa & Hotel</title>
-  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/style.css?v=home-modern-20261027" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 </head>
-<body>
+<body class="home-page">
   <header class="navbar">
     <a class="brand" href="/">Glam Grooms Pet Spa & Hotel</a>
     <nav>
@@ -38,6 +38,11 @@
         <a class="btn btn-primary" href="/grooming.html">Make a Reservation</a>
         <a class="btn btn-accent" href="/hotel.html">Reserve a Suite</a>
       </div>
+      <div class="home-highlights" aria-label="Care options">
+        <div><strong>Grooming &amp; spa</strong><span>Baths, styling &amp; add-on care</span></div>
+        <div><strong>Ayurveda wellness</strong><span>Herbal treatments &amp; packages</span></div>
+        <div><strong>Pet hotel</strong><span>Comfortable overnight stays</span></div>
+      </div>
     </div>
     <div class="hero-art">
       <div class="hero-images">
@@ -58,68 +63,85 @@
       <div class="card">
         <img class="card-img" src="/assets/Baths%20and%20Dry.jpg" alt="Bath and Dry" />
         <h3>Bath and Dry</h3>
-        <p>Relaxing baths and gentle drying for a clean, fresh, and comfortable coat.</p>
+        <p>A soothing bath with gentle cleansing and careful blow-drying, finished with a brush-out to leave your pet feeling fresh and comfortable.</p>
+        <ul class="service-highlights"><li>Gentle wash and rinse</li><li>Careful drying and coat brush-out</li><li>Available as a stand-alone or grooming service</li></ul>
         <div class="price"><span class="currency">Starting at</span> ₱450</div>
+        <a class="service-link" href="/grooming.html">Explore grooming <span aria-hidden="true">→</span></a>
       </div>
       <div class="card">
         <img class="card-img" src="/assets/Haircutstyling.jpg" alt="Hairstyling" />
         <h3>Hairstyling</h3>
-        <p>Breed-appropriate haircuts and styling to keep your pet looking their best.</p>
+        <p>Personalized coat care with a breed-aware haircut and tidy finish. Choose a Basic, Full, or Premium grooming tier to suit your pet.</p>
+        <ul class="service-highlights"><li>Bath and coat preparation</li><li>Haircut and styling</li><li>Nail and ear care included in selected tiers</li></ul>
         <div class="price"><span class="currency">Starting at</span> ₱550</div>
+        <a class="service-link" href="/grooming.html">View grooming options <span aria-hidden="true">→</span></a>
       </div>
       <div class="card">
         <img class="card-img" src="/assets/Ayurvedatreatment.jpg" alt="Ayurveda Treatment" />
         <h3>Ayurveda Treatment</h3>
-        <p>Traditional Ayurveda-inspired care using natural treatments for your pet's wellness.</p>
+        <p>A calming, Ayurveda-inspired grooming option featuring herbal treatments. Choose a focused treatment or a combined package during booking.</p>
+        <ul class="service-highlights"><li>Herbal beauty, moisture, and Doctor’s options</li><li>Individual treatments or multi-step packages</li><li>Available for different pet sizes</li></ul>
         <div class="price"><span class="currency">Starting at</span> ₱600</div>
+        <a class="service-link" href="#wellness-services">Explore wellness <span aria-hidden="true">→</span></a>
       </div>
     </div>
   </section>
 
   <section class="section" id="grooming-menu">
     <h2 class="section-title">Grooming & Spa Services</h2>
-    <p class="section-sub">Choose from our range of spa treatments</p>
+    <p class="section-sub">Explore a clear menu of grooming tiers, individual add-ons, and Ayurveda-inspired care. Final options and pricing are shown when you book.</p>
     <div class="card-grid" id="grooming-services">
       <div class="card service-flyer">
         <img class="card-img" src="/assets/Grooming%20%26%20Spa%20Services.jpg" alt="Animal Ayurveda packages menu" />
         <h3>Animal Ayurveda Packages</h3>
+        <p>Multi-step herbal care in Basic, Full, and Premium tiers. Choose a Beauty/Moisture combination or a Doctor’s package, then select the size that fits your pet.</p>
+        <a class="service-link" href="#wellness-services">View package menu <span aria-hidden="true">→</span></a>
       </div>
       <div class="card service-flyer">
         <img class="card-img" src="/assets/Grooming%20%26%20Spa%20Servicess.jpg" alt="Grooming and Spa services menu" />
         <h3>Grooming and Spa</h3>
+        <p>Basic, Full, and Premium grooming options combine bath and coat care with additional finishing services. Small, medium, large, XL, and cat options are available where listed.</p>
+        <a class="service-link" href="/grooming.html">Choose grooming services <span aria-hidden="true">→</span></a>
       </div>
       <div class="card service-flyer">
         <img class="card-img" src="/assets/Grooming%20%26%20Spa%20Servicessss.jpg" alt="Animal Ayurveda services menu" />
         <h3>Animal Ayurveda</h3>
+        <p>Choose an individual Beauty, Doctor’s, or Moisture herbal treatment. Service duration and inclusions vary by selection and appear in the booking summary.</p>
+        <a class="service-link" href="#wellness-services">Browse treatments <span aria-hidden="true">→</span></a>
       </div>
     </div>
   </section>
 
   <section class="section" id="hotel-services">
     <h2 class="section-title">Hotel Services</h2>
-    <p class="section-sub">Comfortable, luxurious stays while you're away</p>
+    <p class="section-sub">Choose a standard or deluxe overnight stay and reserve a slot for each pet. Check-in and check-out dates, times, and availability are confirmed during booking.</p>
     <div class="card-grid">
       <div class="card">
         <img class="card-img" src="/assets/Small%20Breed.jpg" alt="Standard room for small breed" />
-        <h3>Standard Room — Small Breed</h3>
-        <p>A comfortable stay designed for small breeds, with a clean resting area and attentive care.</p>
-        <div class="price"><span class="currency">Starting at</span> ₱500 <span style="font-weight:400;font-size:0.8rem;color:var(--muted)">/ night</span></div>
+        <h3>Standard Stay</h3>
+        <p>A comfortable overnight option with a clean resting space and attentive care, suited to everyday boarding needs.</p>
+        <ul class="service-highlights"><li>Wi-Fi, air conditioning, and TV</li><li>Private bathroom</li><li>Weekday ₱500 · Weekend ₱700 per night</li></ul>
+        <a class="service-link" href="/hotel.html">Check standard availability <span aria-hidden="true">→</span></a>
+        <div class="price"><span class="currency">From</span> ₱500 <span class="price-unit">/ night</span></div>
       </div>
       <div class="card">
         <img class="card-img" src="/assets/Large%20Breed.jpg" alt="Deluxe room for large breed" />
-        <h3>Deluxe Room — Large Breed</h3>
-        <p>A spacious stay designed for large breeds, with extra room to relax and move comfortably.</p>
-        <div class="price"><span class="currency">Starting at</span> ₱800 <span style="font-weight:400;font-size:0.8rem;color:var(--muted)">/ night</span></div>
+        <h3>Deluxe Stay</h3>
+        <p>A roomier stay with additional comforts for pets who benefit from more space to settle in and relax.</p>
+        <ul class="service-highlights"><li>Wi-Fi, air conditioning, TV, and bathroom</li><li>Mini fridge and balcony</li><li>Weekday ₱800 · Weekend ₱1,000 per night</li></ul>
+        <a class="service-link" href="/hotel.html">Check deluxe availability <span aria-hidden="true">→</span></a>
+        <div class="price"><span class="currency">From</span> ₱800 <span class="price-unit">/ night</span></div>
       </div>
     </div>
   </section>
 
-  <section class="section" id="ayurveda-services">
+  <section class="section" id="wellness-services">
     <h2 class="section-title">Ayurveda Wellness Services</h2>
-    <p class="section-sub">Holistic treatments combining traditional herbs with modern pet care</p>
-    <div class="card-grid" id="ayurveda-services">
+    <p class="section-sub">Browse the current treatment menu by service and size. Each option lists its price, estimated duration, and included care.</p>
+    <div class="home-service-menu" id="ayurveda-services">
       <div class="loading">Loading Ayurveda services...</div>
     </div>
+    <p class="home-menu-note">Ayurveda services are grooming and wellness treatments, not veterinary diagnosis or medical care. Please share any sensitivities or care instructions when booking.</p>
   </section>
 
   <!-- Lightbox Modal -->
@@ -193,35 +215,76 @@
             .replace(/\bBeauty Moisture\b/g, 'Beauty/Moisture');
           return `${category} ${size}`;
         };
+        const escapeHtml = (value) => String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+        const serviceDescription = (service) => {
+          const name = service.name.toLowerCase();
+          if (name.includes('-pkg-')) {
+            const tier = name.includes('-premium-') ? 'Premium' : name.includes('-full-') ? 'Full' : 'Basic';
+            if (name.includes('doctors')) return `${tier} Doctor’s package with a longer appointment and the cataloged ${service.details?.includes?.[0]?.toLowerCase() || 'Ayurveda-inspired care'}.`;
+            const treatment = name.includes('beauty-moisture') ? 'Beauty/Moisture' : 'combined herbal';
+            return `${tier} ${treatment} package with a curated treatment combination and an estimated ${service.details?.duration || 'extended'}-minute appointment.`;
+          }
+          if (name.includes('moisture')) return 'A moisture-focused herbal grooming treatment with conditioning care for a soft, well-finished coat.';
+          if (name.includes('beauty')) return 'A beauty-focused herbal grooming treatment designed as a gentle, refreshing coat-care experience.';
+          if (name.includes('doctors')) return 'A more involved Ayurveda-inspired treatment option with a longer appointment and focused herbal care.';
+          return 'A gentle Ayurveda-inspired treatment option with an estimated appointment time and inclusions shown below.';
+        };
+        const renderServiceCard = (service) => {
+          const details = service.details || {};
+          const serviceName = service.name.toLowerCase();
+          const includes = serviceName.includes('-herb-beauty-')
+            ? ['Herbal bath', 'Aromatherapy', 'Massage therapy']
+            : serviceName.includes('-herb-moisture-')
+              ? ['Natural oil treatment', 'Deep conditioning']
+              : serviceName.includes('-herb-doctors-')
+                ? ['Complete Ayurvedic treatment', 'Herbal products', 'Therapeutic massage']
+                : Array.isArray(details.includes) ? details.includes : [];
+          const suitable = Array.isArray(details.suitable) ? details.suitable : [];
+          const duration = Number(details.duration);
+          const suitabilityLabel = suitable.length && suitable.every((size) => ['S', 'M', 'L', 'XL'].includes(size))
+            ? `Available sizes: ${suitable.join(', ')}`
+            : suitable.length ? `Suitable for ${suitable.join(', ').toLowerCase()}` : 'Ask our team about suitability';
+          return `
+            <article class="card home-menu-card">
+              <div class="home-menu-card-top">
+                <span class="home-menu-tag">${service.name.includes('-pkg-') ? 'Ayurveda package' : 'Herbal treatment'}</span>
+                <span class="home-menu-duration">${duration ? `${duration} min` : 'Duration varies'}</span>
+              </div>
+              <h4>${escapeHtml(formatServiceName(service.name))}</h4>
+              <p>${escapeHtml(serviceDescription(service))}</p>
+              ${includes.length ? `<div class="home-menu-includes"><strong>Included care</strong><ul>${includes.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>` : ''}
+              <div class="home-menu-footer">
+                <span>${escapeHtml(suitabilityLabel)}</span>
+                <strong>₱${Number(service.price).toLocaleString('en-PH')}</strong>
+              </div>
+              <a class="service-link" href="/grooming.html">Choose this treatment <span aria-hidden="true">→</span></a>
+            </article>
+          `;
+        };
         
         container.innerHTML = `
-          <div class="card" style="grid-column: 1 / -1; margin-bottom: 2rem;">
-            <h3 style="color: var(--primary); margin-bottom: 1rem;">Ayurveda Herbs</h3>
-            <div class="card-grid">
-              ${herbs.map(service => {
-                const serviceName = formatServiceName(service.name);
-                return `
-                  <div class="card">
-                    <h4 style="font-size: 1.1rem; margin-bottom: 0.5rem;">${serviceName}</h4>
-                    <div class="price">₱${service.price}</div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-          </div>
-          <div class="card" style="grid-column: 1 / -1;">
-            <h3 style="color: var(--primary); margin-bottom: 1rem;">Ayurveda Packages</h3>
-            <div class="card-grid">
-              ${packages.map(service => {
-                const serviceName = formatServiceName(service.name);
-                return `
-                  <div class="card">
-                    <h4 style="font-size: 1.1rem; margin-bottom: 0.5rem;">${serviceName}</h4>
-                    <div class="price">₱${service.price}</div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
+          <section class="home-service-group" aria-labelledby="herbal-menu-title">
+            <header class="home-service-group-heading">
+              <div><span class="home-section-kicker">INDIVIDUAL TREATMENTS</span><h3 id="herbal-menu-title">Ayurveda Herbs</h3></div>
+              <p>Choose a focused herbal treatment and size.</p>
+            </header>
+            <div class="card-grid">${herbs.map(renderServiceCard).join('')}</div>
+          </section>
+          <section class="home-service-group" aria-labelledby="package-menu-title">
+            <header class="home-service-group-heading">
+              <div><span class="home-section-kicker">COMBINED CARE</span><h3 id="package-menu-title">Ayurveda Packages</h3></div>
+              <p>Combined herbal options with estimated time and inclusions.</p>
+            </header>
+            <div class="card-grid">${packages.map(renderServiceCard).join('')}</div>
+          </section>
+          <div class="home-menu-cta">
+            <div><strong>Need help choosing?</strong><span>Review the options and add pet details in your booking.</span></div>
+            <a class="btn btn-primary btn-sm" href="/grooming.html">Book a grooming service</a>
           </div>
         `;
       } catch (error) {

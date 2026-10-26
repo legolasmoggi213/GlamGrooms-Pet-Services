@@ -20,6 +20,7 @@ const {
   releaseBookingSlotsByIds,
 } = require('../util/bookingLocks');
 const { validateTime, validatePickupTime } = require('../util/businessHours');
+const { validateFutureDate, getStayNights } = require('../util/bookingCalculations');
 const { sendPayMongoReceipt } = require('../util/mailer');
 const { isValidMobileNumber } = require('../util/mobileNumber');
 const { notifyStaffOfBooking, notifyStaffOfCancellation } = require('../util/staffNotifications');
@@ -1053,28 +1054,46 @@ const getHotelAvailability = async (req, res, next) => {
 
     const { roomType: submittedRoomType, checkIn, checkOut } = req.query;
     const roomType = normalizeRoomType(submittedRoomType);
-    if (!roomType || !checkIn || !checkOut) {
-      return res.status(400).json({ error: 'roomType, checkIn, and checkOut are required' });
+    if (!roomType || !checkIn) {
+      return res.status(400).json({ error: 'roomType and checkIn are required' });
     }
     if (!Object.prototype.hasOwnProperty.call(ROOM_PRICES, roomType)) {
       return res.status(400).json({ error: 'A valid roomType is required' });
     }
     const checkInDate = validateFutureDate(checkIn, 'Check-in');
     if (!checkInDate.ok) return res.status(400).json({ error: checkInDate.error });
-    const checkOutDate = validateFutureDate(checkOut, 'Check-out');
-    if (!checkOutDate.ok) return res.status(400).json({ error: checkOutDate.error });
-    const nights = getStayNights(checkIn, checkOut);
-    if (nights < 3) return res.status(400).json({ error: 'Hotel stays require at least 3 nights.' });
-
-    if (!isValidDateKey(checkIn) || !isValidDateKey(checkOut) || checkOut <= checkIn) {
-      return res.status(400).json({ error: 'Choose valid check-in and check-out dates.' });
+    if (!isValidDateKey(checkIn)) {
+      return res.status(400).json({ error: 'Choose a valid check-in date.' });
+    }
+    let availabilityCheckOut = checkOut;
+    if (checkOut) {
+      const checkOutDate = validateFutureDate(checkOut, 'Check-out');
+      if (!checkOutDate.ok) return res.status(400).json({ error: checkOutDate.error });
+      const nights = getStayNights(checkIn, checkOut);
+      if (nights < 1) return res.status(400).json({ error: 'Hotel stays require at least 1 night.' });
+      if (!isValidDateKey(checkOut) || checkOut <= checkIn) {
+        return res.status(400).json({ error: 'Choose valid check-in and check-out dates.' });
+      }
+    } else {
+      const nextDate = new Date(`${checkIn}T00:00:00.000Z`);
+      nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+      availabilityCheckOut = nextDate.toISOString().slice(0, 10);
     }
     const reservations = await HotelReservation.findAll();
-    const availableSlotNumbers = await getAvailableHotelSlots(reservations, checkIn, checkOut);
+    const availableSlotNumbers = await getAvailableHotelSlots(reservations, checkIn, availabilityCheckOut);
     const remainingSlots = availableSlotNumbers.length;
     const available = remainingSlots >= requestedPets;
 
-    res.json({ roomType, checkIn, checkOut, available, remainingSlots, availableSlotNumbers, capacity: HOTEL_DAILY_CAPACITY });
+    res.json({
+      roomType,
+      checkIn,
+      checkOut: checkOut || null,
+      checkInOnly: !checkOut,
+      available,
+      remainingSlots,
+      availableSlotNumbers,
+      capacity: HOTEL_DAILY_CAPACITY,
+    });
   } catch (error) {
     next(error);
   }

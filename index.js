@@ -457,10 +457,10 @@ app.post('/admin/login', async (req, res) => {
       let role = null;
       let staffEmail = '';
       if (username === ADMIN_USERNAME) {
-        const admin = await findAdminAccount();
         const envPass = String(process.env.ADMIN_PASS || '');
-        const dbMatch = admin && admin.passwordHash && bcrypt.compareSync(password, admin.passwordHash);
         const envMatch = Boolean(envPass && password === envPass);
+        const admin = envMatch ? null : await findAdminAccount();
+        const dbMatch = admin && admin.passwordHash && bcrypt.compareSync(password, admin.passwordHash);
         if (dbMatch || envMatch) role = ADMIN_USERNAME;
       } else {
         const staff = await db.StaffAccount.findOne({ where: { username } });
@@ -630,6 +630,9 @@ app.use('/admin', async (req, res, next) => {
   const token = getCookie('admin_token');
   const user = parseToken(token);
   const isStaff = isStaffRole(user) && await isActiveStaffRole(user);
+  if (user === ADMIN_USERNAME && req.path === '/employees.html') {
+    return res.redirect('/admin/staff.html');
+  }
   const staffPages = ['/grooming.html', '/hotel.html', '/customers.html', '/pets.html', '/reports.html', '/inventory.html', '/notifications.html'];
   const hasAccess = user === ADMIN_USERNAME || (isStaff && staffPages.includes(req.path));
   if (!hasAccess) return res.redirect('/admin/login.html');

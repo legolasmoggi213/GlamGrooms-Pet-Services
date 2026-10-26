@@ -10,6 +10,7 @@ const publicInventoryItem = (item) => ({
   category: item.category || '',
   unit: item.unit || 'each',
   description: item.description || '',
+  price: item.price == null || item.price === '' ? null : Number(item.price),
   quantity: Number(item.quantity || 0),
   lowStockThreshold: Number(item.lowStockThreshold || 0),
   active: item.active !== false,
@@ -26,6 +27,8 @@ const validateItem = (body = {}, current = {}) => {
   const category = String(body.category === undefined ? current.category || '' : body.category).trim();
   const unit = String(body.unit === undefined ? current.unit || 'each' : body.unit).trim();
   const description = String(body.description === undefined ? current.description || '' : body.description).trim();
+  const rawPrice = body.price === undefined ? current.price : body.price;
+  const price = rawPrice == null || rawPrice === '' ? null : Number(rawPrice);
   const quantity = Number(body.quantity === undefined ? current.quantity || 0 : body.quantity);
   const lowStockThreshold = Number(body.lowStockThreshold === undefined ? current.lowStockThreshold || 0 : body.lowStockThreshold);
   if (!name || name.length > 120) return { error: 'Product name is required and must be 120 characters or fewer.' };
@@ -33,11 +36,14 @@ const validateItem = (body = {}, current = {}) => {
   if (category.length > 80 || !unit || unit.length > 30 || description.length > 1000) {
     return { error: 'Check the category, unit, and description lengths.' };
   }
+  if (price !== null && (!Number.isFinite(price) || price <= 0 || price > 10000000)) {
+    return { error: 'Sale price must be greater than 0 and no more than 10,000,000 PHP.' };
+  }
   if (!Number.isInteger(quantity) || quantity < 0 || quantity > MAX_STOCK
     || !Number.isInteger(lowStockThreshold) || lowStockThreshold < 0 || lowStockThreshold > MAX_STOCK) {
     return { error: `Stock and low-stock threshold must be whole numbers from 0 to ${MAX_STOCK}.` };
   }
-  return { value: { name, sku, category, unit, description, quantity, lowStockThreshold, active: body.active === undefined ? current.active !== false : body.active !== false } };
+  return { value: { name, sku, category, unit, description, price, quantity, lowStockThreshold, active: body.active === undefined ? current.active !== false : body.active !== false } };
 };
 
 const listInventoryItems = async (req, res, next) => {

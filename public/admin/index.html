@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -121,11 +121,12 @@
 
   <script src="/js/api.js"></script>
   <script src="/js/admin.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script>
     const initDashboard = () => {
       renderSidebar('Dashboard');
+      let bookingReportRows = [];
 
       const statCard = (label, value, color, href) => `
         <a class="stat-card stat-card-link" href="${href}" aria-label="View ${escapeHtml(label)}">
@@ -148,6 +149,89 @@
           statCard('Product Sales', fmtMoney(s.productSalesRevenue), 'green', '/admin/pos.html') +
           statCard('Walk-in Cash Sales', fmtMoney(s.overTheCounterRevenue), 'green', '/admin/pos.html') +
           statCard('Total Revenue', fmtMoney(s.totalRevenue), 'purple', '#revenue');
+      }
+
+      async function generateBookingReport() {
+        const startDate = document.getElementById('report-start').value;
+        const endDate = document.getElementById('report-end').value;
+        if (startDate && endDate && startDate > endDate) {
+          throw new Error('The start date must be on or before the end date.');
+        }
+
+        const [grooming, hotel] = await Promise.all([
+          apiGet('/grooming'),
+          apiGet('/hotel'),
+        ]);
+        bookingReportRows = [
+          ...grooming.map((booking) => ({
+            date: booking.date,
+            type: 'Grooming',
+            customer: booking.Customer?.name || booking.customerDetails?.name || 'Customer',
+            service: (booking.petServices || []).map((service) => service.service).filter(Boolean).join(', ') || booking.service || 'Grooming',
+            status: booking.status || 'unknown',
+            amount: Number(booking.price || 0),
+          })),
+          ...hotel.map((booking) => ({
+            date: booking.checkIn,
+            type: 'Hotel',
+            customer: booking.Customer?.name || booking.customerDetails?.name || 'Customer',
+            service: (booking.petRooms || []).map((room) => room.roomType).filter(Boolean).join(', ') || booking.roomType || 'Hotel stay',
+            status: booking.status || 'unknown',
+            amount: Number(booking.totalPrice || 0),
+          })),
+        ]
+          .filter((booking) => (!startDate || booking.date >= startDate) && (!endDate || booking.date <= endDate))
+          .sort((left, right) => String(right.date).localeCompare(String(left.date)));
+
+        const rows = document.getElementById('booking-report-rows');
+        rows.innerHTML = bookingReportRows.length
+          ? bookingReportRows.map((booking) => `
+            <tr>
+              <td>${fmtDate(booking.date)}</td>
+              <td>${escapeHtml(booking.type)}</td>
+              <td>${escapeHtml(booking.customer)}</td>
+              <td>${escapeHtml(booking.service)}</td>
+              <td>${statusBadge(booking.status)}</td>
+              <td>${fmtMoney(booking.amount)}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="6" class="empty">No bookings found for this date range.</td></tr>';
+        document.getElementById('export-booking-report').disabled = bookingReportRows.length === 0;
+      }
+
+      function exportBookingReportPdf() {
+        if (!bookingReportRows.length) return;
+        if (!window.jspdf) {
+          alert('PDF export is unavailable right now. Please refresh and try again.');
+          return;
+        }
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF();
+        const lines = [
+          'Booking Report',
+          '',
+          'Date | Type | Customer | Service / Room | Status | Amount',
+          ...bookingReportRows.map((booking) => [
+            fmtDate(booking.date),
+            booking.type,
+            booking.customer,
+            booking.service,
+            booking.status,
+            fmtMoney(booking.amount),
+          ].join(' | ')),
+        ];
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        let y = 15;
+        for (const line of lines) {
+          const wrapped = pdf.splitTextToSize(line, 180);
+          if (y + wrapped.length * 7 > pageHeight - 12) {
+            pdf.addPage();
+            y = 15;
+          }
+          pdf.text(wrapped, 15, y);
+          y += wrapped.length * 7;
+        }
+        pdf.save('booking-report.pdf');
       }
 
       async function loadOccupancy() {
@@ -336,7 +420,7 @@
               .map((part) => `<span>${escapeHtml(part)}</span>`)
               .join('');
             return `
-              <div class="revenue-bar-column" title="${escapeHtml(`${bucket.label}: ${fmtMoney(value)}, ${bucket.count} ${countLabel}`)}">
+              <div class="revenue-bar-column" title="${escapeHtml(`${bucket.label}: ${fmtMoney(value)}, ${bucket.count} bookings`)}">
                 <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
                 <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
                 <span class="revenue-bar-label">${dateLabel}</span>

@@ -61,14 +61,14 @@
           <label for="checkIn">Check-in date *</label>
           <input id="checkIn" name="checkIn" type="date" required />
         </div>
-        <div class="form-section-label">Pick a Slot</div>
+        <div class="form-section-label">Choose Your Suite Slot</div>
         <section id="hotel-slot-picker" class="hotel-slot-picker" aria-label="Choose hotel slot">
           <h3 id="hotel-slot-date" aria-live="polite">Choose a check-in date</h3>
-          <p id="hotel-slot-instructions" class="text-muted">Select one available slot for each pet.</p>
-          <div id="hotel-slot-grid" class="hotel-slot-grid" role="group" aria-label="Hotel slots 1 through 35"></div>
+          <p id="hotel-slot-instructions" class="text-muted">Select one available slot for each pet. Slots are numbered 1 through 35.</p>
+          <div id="hotel-slot-grid" class="hotel-slot-grid" role="group" aria-label="Hotel suite slots 1 through 35"></div>
           <div class="hotel-calendar-legend">
             <span><i class="hotel-calendar-key available"></i> Available</span>
-            <span><i class="hotel-calendar-key unavailable">×</i> Unavailable</span>
+            <span><i class="hotel-calendar-key unavailable">×</i> Occupied</span>
             <span><i class="hotel-calendar-key selected"></i> Selected</span>
           </div>
           <p id="hotel-slot-status" class="text-muted" aria-live="polite">Pick a check-in date to view slots.</p>
@@ -115,7 +115,7 @@
 
   <script src="/js/mobile-number.js"></script>
   <script src="/js/api.js?v=2"></script>
-  <script src="/js/hotel.js?v=9"></script>
+  <script src="/js/hotel.js?v=13"></script>
 <script>
     // Show "My Account" if the customer is logged in, otherwise "Login".
     // Verified against the server via the httpOnly token — no stale cookie issues.

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Point of Sale — Glam Grooms Admin</title>
-  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -134,6 +134,21 @@
       .replace(/-/g, ' ')
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
+    const productDescription = (product) => {
+      if (product.kind === 'hotel') {
+        return product.description || (product.amenities.length
+          ? `${product.occupancy ? `Fits up to ${product.occupancy} pets. ` : ''}${product.amenities.join(' · ')}.`
+          : 'Overnight accommodation for your pet.');
+      }
+      if (product.kind === 'product') {
+        return product.description || `${product.category || 'Retail item'} available for walk-in purchase.`;
+      }
+      if (product.kind === 'ayurveda') {
+        return 'Ayurveda-inspired grooming and wellness treatment; included care is listed below.';
+      }
+      return `${product.category} grooming service for walk-in customers; service inclusions are listed below.`;
+    };
+
     function renderProducts() {
       const visible = catalog.filter((product) => {
         const matchesCategory = categoryFilter === 'all'
@@ -141,9 +156,15 @@
         return matchesCategory;
       });
       productContainer.innerHTML = visible.length ? visible.map((product) => `
-        <button type="button" class="pos-product" data-product-id="${escapeHtml(product.id)}" ${product.kind === 'product' && (!product.price || product.quantity < 1) ? 'disabled' : ''}>
+        <button type="button" class="pos-product pos-product-${escapeHtml(product.kind)}" data-product-id="${escapeHtml(product.id)}" ${product.kind === 'product' && (!product.price || product.quantity < 1) ? 'disabled' : ''}>
+          <span class="pos-product-category">${escapeHtml(product.category || capitalize(product.kind))}</span>
           <strong>${escapeHtml(product.label)}</strong>
-          <span>${product.kind === 'product' && product.quantity < 1 ? 'Out of stock' : product.price ? `${money(product.price)}${product.unit ? ` / ${escapeHtml(product.unit)}` : ''}` : 'Set price in Inventory'}</span>
+          <span class="pos-product-description">${escapeHtml(productDescription(product))}</span>
+          ${product.details.length ? `<span class="pos-product-details">${product.details.slice(0, 3).map((detail) => `<span>${escapeHtml(detail)}</span>`).join('')}</span>` : ''}
+          <span class="pos-product-footer">
+            <span>${product.kind === 'product' ? `${Number(product.quantity || 0).toLocaleString('en-PH')} ${escapeHtml(product.unit || 'unit(s)')} in stock` : product.kind === 'hotel' ? `Weekday ${money(product.weekdayRate)} · Weekend ${money(product.weekendRate)} / ${escapeHtml(product.unit || 'night')}` : product.duration ? `About ${product.duration} min` : 'Price per service'}</span>
+            <strong>${product.kind === 'product' && product.quantity < 1 ? 'Out of stock' : product.price ? `${money(product.price)}${product.unit ? ` / ${escapeHtml(product.unit)}` : ''}` : 'Set price in Inventory'}</strong>
+          </span>
         </button>`).join('') : '<div class="empty">No matching services.</div>';
     }
 
@@ -467,6 +488,11 @@
           price: Number(service.price),
           category: service.details && service.details.category || 'Service',
           kind: service.name.startsWith('ayurveda-') ? 'ayurveda' : 'grooming',
+          description: service.details && service.details.description || '',
+          duration: Number(service.details && service.details.duration) || 0,
+          includes: Array.isArray(service.details && service.details.includes) ? service.details.includes : [],
+          amenities: [],
+          details: Array.isArray(service.details && service.details.includes) ? service.details.includes : [],
         }))
         .filter((service) => Number.isFinite(service.price) && service.price > 0);
       const hotel = Array.isArray(services.hotel) ? services.hotel : [];
@@ -477,6 +503,13 @@
         category: `Hotel - ${service.details && service.details.category || 'Service'}`,
         kind: 'hotel',
         unit: service.unit || 'night',
+        description: service.details && service.details.description || '',
+        occupancy: Number(service.details && service.details.occupancy) || 0,
+        amenities: Array.isArray(service.details && service.details.amenities) ? service.details.amenities : [],
+        weekdayRate: Number(service.rates && service.rates.weekday || service.price),
+        weekendRate: Number(service.rates && service.rates.weekend || service.price),
+        includes: [],
+        details: Array.isArray(service.details && service.details.amenities) ? service.details.amenities : [],
       }))).filter((service) => Number.isFinite(service.price) && service.price > 0);
       catalog = [...groomingCatalog, ...hotelCatalog];
       catalog.push(...(Array.isArray(products) ? products : []).map((product) => ({
@@ -488,6 +521,10 @@
         kind: 'product',
         quantity: Number(product.quantity || 0),
         unit: product.unit || 'unit(s)',
+        description: product.description || '',
+        includes: [],
+        amenities: [],
+        details: [],
       })));
       renderProducts();
     }).catch((error) => {

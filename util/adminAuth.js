@@ -36,4 +36,16 @@ function parseToken(token) {
   }
 }
 
-module.exports = { createToken, parseToken };
+const isStaffRole = (role) => role === 'STAFF' || (typeof role === 'string' && role.startsWith('STAFF:'));
+
+const isActiveStaffRole = async (role) => {
+  if (role === 'STAFF') return true;
+  if (typeof role !== 'string' || !role.startsWith('STAFF:')) return false;
+  const staffId = role.slice('STAFF:'.length);
+  if (!staffId) return false;
+  const { StaffAccount } = require('../models');
+  const account = await StaffAccount.findByPk(staffId);
+  return Boolean(account && account.active === true);
+};
+
+module.exports = { createToken, parseToken, isStaffRole, isActiveStaffRole };

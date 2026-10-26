@@ -57,12 +57,26 @@
         <div class="field"><label for="pet-count">How many pets?</label><select id="pet-count" name="petCount"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
         <div id="pet-fields" class="form-grid"></div>
 
+        <div class="field">
+          <label for="checkIn">Check-in date *</label>
+          <input id="checkIn" name="checkIn" type="date" required />
+        </div>
+        <div class="form-section-label">Pick a Slot</div>
+        <section id="hotel-slot-picker" class="hotel-slot-picker" aria-label="Choose hotel slot">
+          <h3 id="hotel-slot-date" aria-live="polite">Choose a check-in date</h3>
+          <p id="hotel-slot-instructions" class="text-muted">Select one available slot for each pet.</p>
+          <div id="hotel-slot-grid" class="hotel-slot-grid" role="group" aria-label="Hotel slots 1 through 35"></div>
+          <div class="hotel-calendar-legend">
+            <span><i class="hotel-calendar-key available"></i> Available</span>
+            <span><i class="hotel-calendar-key unavailable">×</i> Unavailable</span>
+            <span><i class="hotel-calendar-key selected"></i> Selected</span>
+          </div>
+          <p id="hotel-slot-status" class="text-muted" aria-live="polite">Pick a check-in date to view slots.</p>
+        </section>
+        <input type="hidden" id="hotel-slot-numbers" name="slotNumbers" />
+
         <div class="form-section-label">Stay Details</div>
         <div class="form-grid stay-details-grid">
-          <div class="field">
-            <label for="checkIn">Check-in *</label>
-            <input id="checkIn" name="checkIn" type="date" required />
-          </div>
           <div class="field">
             <label for="checkInTime">Check-in time *</label>
             <select id="checkInTime" name="checkInTime" required></select>

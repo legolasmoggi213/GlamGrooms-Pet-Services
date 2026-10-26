@@ -28,8 +28,19 @@
         <input id="password" name="password" type="password" autocomplete="current-password" required />
       </div>
       <div class="field login-actions">
-        <button class="btn btn-primary" type="submit">Sign in</button>
+        <button class="btn btn-primary" type="submit">Continue</button>
         <a href="/customer/login.html" style="margin-left:1rem;">← Back to customer login</a>
+      </div>
+    </form>
+    <form id="verification-form" method="POST" action="/admin/login/verify-code" hidden>
+      <p class="text-muted">A 6-digit sign-in code was sent to the Gmail address on the staff account. Enter it to continue.</p>
+      <div class="field">
+        <label for="verification-code">Verification code</label>
+        <input id="verification-code" name="verificationCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required />
+      </div>
+      <div class="field login-actions">
+        <button class="btn btn-primary" type="submit">Verify and sign in</button>
+        <a href="/admin/login.html">Back</a>
       </div>
     </form>
   </div>

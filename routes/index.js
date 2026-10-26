@@ -107,7 +107,8 @@ router.get('/grooming/:id', groomingController.getAppointment);
 router.post('/grooming', groomingController.createAppointment);
 router.post('/grooming/:id/resend-ticket', groomingController.resendAppointmentTicket);
 router.put('/grooming/:id', groomingController.updateAppointment);
-router.delete('/grooming/:id', groomingController.deleteAppointment);
+router.post('/grooming/:id/ticket', groomingController.sendAppointmentTicket);
+router.delete('/grooming/:id', adminOnly, groomingController.deleteAppointment);
 
 // Hotel reservations
 router.get('/hotel', hotelController.listReservations);
@@ -115,7 +116,25 @@ router.get('/hotel/:id', hotelController.getReservation);
 router.post('/hotel', hotelController.createReservation);
 router.post('/hotel/:id/resend-ticket', hotelController.resendReservationTicket);
 router.put('/hotel/:id', hotelController.updateReservation);
-router.delete('/hotel/:id', hotelController.deleteReservation);
+router.post('/hotel/:id/ticket', hotelController.sendReservationTicketEmail);
+router.delete('/hotel/:id', adminOnly, hotelController.deleteReservation);
+
+// Staff and admin inventory workflows; only admins review or delete records.
+router.get('/inventory/items', inventoryController.listInventoryItems);
+router.post('/inventory/items', inventoryController.createInventoryItem);
+router.put('/inventory/items/:id', inventoryController.updateInventoryItem);
+router.delete('/inventory/items/:id', adminOnly, inventoryController.deleteInventoryItem);
+router.get('/inventory/requests', inventoryController.listStockRequests);
+router.post('/inventory/requests', inventoryController.createStockRequest);
+router.put('/inventory/requests/:id/review', adminOnly, inventoryController.reviewStockRequest);
+router.get('/notifications', notificationController.listNotifications);
+router.put('/notifications/:id/read', notificationController.markNotificationRead);
+
+// Admin-managed staff accounts.
+router.get('/admin/staff', adminOnly, staffController.listStaffAccounts);
+router.post('/admin/staff', adminOnly, staffController.createStaffAccount);
+router.put('/admin/staff/:id', adminOnly, staffController.updateStaffAccount);
+router.delete('/admin/staff/:id', adminOnly, staffController.deleteStaffAccount);
 
 // Inventory and stock requests
 router.get('/inventory/products', operationsController.listProducts);
@@ -132,6 +151,8 @@ router.post('/bookings/hotel', bookingController.bookHotel);
 router.get('/bookings/hotel/quote', hotelController.getReservationQuote);
 router.post('/payments/verify', bookingController.verifyPayment);
 router.post('/payments/cancel', bookingController.cancelPayment);
+router.put('/bookings/customer/:bookingType/:id', bookingController.updateCustomerBooking);
+router.post('/bookings/customer/:bookingType/:id/cancel', bookingController.cancelCustomerBooking);
 router.get('/bookings/grooming/availability', bookingController.getGroomingAvailability);
 router.get('/bookings/hotel/availability', bookingController.getHotelAvailability);
 router.get('/services', getServices);

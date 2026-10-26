@@ -33,12 +33,14 @@ const includeAll = [
 
 const addRelatedRecords = async (reservation) => {
   if (!reservation) return reservation;
-  const [customer, pet] = await Promise.all([
+  const petIds = reservation.petIds || (reservation.petId ? [reservation.petId] : []);
+  const [customer, pets] = await Promise.all([
     Customer.findByPk(reservation.customerId),
-    Pet.findByPk(reservation.petId),
+    Promise.all([...new Set(petIds.map(String))].map((id) => Pet.findByPk(id))),
   ]);
   reservation.Customer = customer;
-  reservation.Pet = pet;
+  reservation.Pets = pets.filter(Boolean);
+  reservation.Pet = reservation.Pets[0] || null;
   return reservation;
 };
 
@@ -69,6 +71,52 @@ const reservationRoomTypes = (reservation) => [...new Set(
       : [reservation.roomType])
     .filter(Boolean)
 )];
+
+const reservationPetCount = (reservation) => Math.max(
+  1,
+  (Array.isArray(reservation.petRooms) && reservation.petRooms.length)
+    || (Array.isArray(reservation.petIds) && reservation.petIds.length)
+    || (reservation.petId ? 1 : 0),
+);
+
+const reservationLockIds = (reservation) => reservation.hotelSlotAssignments
+  ? hotelLockIdsForAssignments(reservation.hotelSlotAssignments)
+  : Array.isArray(reservation.hotelSlotNumbers)
+    ? hotelLockIdsForSlots(reservation.hotelSlotNumbers, reservation.checkIn, reservation.checkOut)
+    : hotelLockIdsForTypes(reservationRoomTypes(reservation), reservation.checkIn, reservation.checkOut);
+
+const legacyOccupancyByDate = async (checkIn, checkOut, excludeReservationId = null) => {
+  const reservations = await HotelReservation.findAll();
+  const occupancy = new Map(hotelDateKeys(checkIn, checkOut).map((date) => [date, new Set()]));
+  for (const reservation of reservations) {
+    if (['cancelled', 'checked-out'].includes(reservation.status)
+      || (excludeReservationId && String(reservation.id) === String(excludeReservationId))
+      || reservation.checkIn >= checkOut
+      || (reservation.status !== 'checked-in' && reservation.checkOut <= checkIn)) continue;
+    const keepOccupiedUntilCheckedOut = reservation.status === 'checked-in';
+    const overlapStart = reservation.checkIn > checkIn ? reservation.checkIn : checkIn;
+    const overlapEnd = keepOccupiedUntilCheckedOut || reservation.checkOut >= checkOut ? checkOut : reservation.checkOut;
+    for (const date of hotelDateKeys(overlapStart, overlapEnd)) {
+      const usedSlots = occupancy.get(date);
+      const recordedSlots = reservation.hotelSlotAssignments?.[date]
+        || (keepOccupiedUntilCheckedOut ? Object.values(reservation.hotelSlotAssignments || {}).find((slots) => slots.length) : null)
+        || reservation.hotelSlotNumbers
+        || [];
+      if (recordedSlots.length) {
+        recordedSlots.forEach((slot) => usedSlots.add(Number(slot)));
+        continue;
+      }
+      let assigned = 0;
+      for (let slot = 1; slot <= 35 && assigned < reservationPetCount(reservation); slot += 1) {
+        if (!usedSlots.has(slot)) {
+          usedSlots.add(slot);
+          assigned += 1;
+        }
+      }
+    }
+  }
+  return occupancy;
+};
 
 const listReservations = async (req, res, next) => {
   try {
@@ -157,6 +205,8 @@ const createReservation = async (req, res, next) => {
         capacityManaged: true,
         capacityLockIds: capacityClaim.lockIds,
         status: status || 'pending',
+        hotelSlotAssignments,
+        hotelSlotOwnerId,
         pricePerNight,
         totalPrice: quote.total,
         pricingBreakdown: quote,
@@ -178,6 +228,7 @@ const updateReservation = async (req, res, next) => {
     if (!reservation) {
       return res.status(404).json({ error: 'Reservation not found' });
     }
+    const wasAlreadyCancelled = reservation.status === 'cancelled';
     const { roomType, checkIn, checkInTime, checkOut, checkOutTime, status, notes, customerId, petId } = req.body;
     if (status && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'A valid status is required' });
@@ -279,6 +330,10 @@ const updateReservation = async (req, res, next) => {
       capacityManaged: true,
       capacityLockIds: capacityClaim.lockIds,
       };
+      if (shouldClaimCapacity || reservation.hotelSlotAssignments || Array.isArray(reservation.hotelSlotNumbers) || !isNextStatusOccupying) {
+        updates.hotelSlotAssignments = isNextStatusOccupying ? nextSlotAssignments : {};
+        updates.hotelSlotOwnerId = ownerId;
+      }
       if (needsAdminConfirmation) updates.confirmedAt = new Date();
       await reservation.update(updates);
     } catch (error) {

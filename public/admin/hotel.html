@@ -23,7 +23,7 @@
       </div>
 
       <div class="table-wrap">
-        <table>
+        <table class="hotel-table">
           <thead>
             <tr><th>ID</th><th>Check-in</th><th>Check-out</th><th>Room</th><th>Pet</th><th>Customer</th><th>Total</th><th>Status</th><th>Actions</th></tr>
           </thead>
@@ -48,6 +48,7 @@
 
     async function loadReservations() {
       const items = await apiGet('/hotel');
+      const session = await fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json());
       if (!items.length) {
         rowsEl.innerHTML = '<tr><td colspan="9" class="empty">No reservations yet.</td></tr>';
         return;
@@ -56,7 +57,7 @@
         .map(
           (r) => `
         <tr>
-          <td>${r.id}</td>
+          <td><button class="record-id" type="button" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})' aria-label="View reservation ${escapeHtml(r.id)}">${escapeHtml(r.id)}</button></td>
           <td>${fmtDate(r.checkIn)}</td>
           <td>${fmtDate(r.checkOut)}</td>
           <td>${roomSummary(r)}</td>
@@ -75,7 +76,9 @@
               <button class="btn btn-outline btn-sm" type="button" data-save-reservation-status="${escapeHtml(r.id)}">Update</button>
             </div>
             <button class="btn btn-outline btn-sm" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})'>View</button>
-            <button class="btn btn-danger btn-sm" onclick='removeRes(${escapeHtml(JSON.stringify(r.id))})'>Delete</button>
+            ${r.status !== 'cancelled' && r.status !== 'checked-in' && r.status !== 'checked-out' ? `<button class="btn btn-danger btn-sm" onclick='rejectRes(${escapeHtml(JSON.stringify(r.id))}, ${escapeHtml(JSON.stringify(r.status))})'>${r.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
+            ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeRes(${escapeHtml(JSON.stringify(r.id))})'>Delete</button>` : ''}
+            </div>
           </td>
         </tr>`
         )
@@ -246,6 +249,17 @@
           alert(error.message);
         }
       });
+
+    window.rejectRes = async (id, status) => {
+      const action = status === 'pending' ? 'Reject this reservation?' : 'Cancel this reservation?';
+      if (!window.confirm(action)) return;
+      try {
+        await apiPut(`/hotel/${id}`, { status: 'cancelled' });
+        await loadReservations();
+      } catch (error) {
+        alert(error.message);
+      }
+    };
 
     (async () => {
       try {

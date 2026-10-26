@@ -55,6 +55,7 @@
   const form = document.getElementById('hotel-form');
   const getField = (name) => form?.elements?.namedItem?.(name) || document.querySelector(`[name="${name}"]`);
   let roomAvailable = false;
+  let customerProfileLoaded = false;
   let availabilityRequest = 0;
   let quoteRequest = 0;
   let latestQuote = null;
@@ -133,7 +134,12 @@
     copy.setMinutes(copy.getMinutes() - copy.getTimezoneOffset());
     return copy.toISOString().slice(0, 10);
   };
-  const today = localDate(new Date());
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 
   const applyCheckInDates = () => {
     checkInInput.min = today;
@@ -189,6 +195,7 @@
   const renderPetFields = () => {
     petFields.innerHTML = Array.from({ length: Math.max(1, Math.min(5, Number(petCount.value) || 1)) }, (_, index) => `
       <div class="field full"><strong>Pet ${index + 1}</strong></div>
+      <div class="field full"><label for="pet-profile-${index}">Use a saved pet profile</label><select id="pet-profile-${index}" name="petProfile-${index}" data-saved-pet><option value="">Enter a new pet</option>${savedPets.map((pet) => `<option value="${escapeHtml(pet.id)}">${escapeHtml(pet.name)} — ${escapeHtml(pet.species)}, ${escapeHtml(pet.breed)}</option>`).join('')}</select></div>
       <div class="field"><label for="pet-name-${index}">Pet Name *</label><input id="pet-name-${index}" name="petName-${index}" required /></div>
       <div class="field"><label for="pet-species-${index}">Species *</label><select id="pet-species-${index}" name="species-${index}"><option value="dog">Dog</option><option value="cat">Cat</option></select></div>
       <div class="field"><label for="pet-breed-${index}">Breed *</label><input id="pet-breed-${index}" name="breed-${index}" required /></div>
@@ -196,10 +203,13 @@
       <div class="field full"><label for="pet-medical-history-${index}">Medical history</label><textarea id="pet-medical-history-${index}" name="medicalHistory-${index}" rows="2" placeholder="Allergies, conditions, or medications"></textarea></div>
       <div class="field full"><label for="pet-room-${index}">Room for Pet ${index + 1} *</label><select id="pet-room-${index}" name="roomType-${index}" required>${roomSelect.innerHTML}</select></div>
     `).join('');
+    Array.from({ length: Math.max(1, Math.min(5, Number(petCount.value) || 1)) }, (_, index) => updateRoomPreview(index));
   };
   const collectPets = () => Array.from({ length: Math.max(1, Math.min(5, Number(petCount.value) || 1)) }, (_, index) => {
     const petField = (fieldName) => petFields.querySelector(`[name="${fieldName}-${index}"]`);
+    const profileId = petField('petProfile')?.value;
     return {
+      ...(profileId ? { id: profileId } : {}),
       name: petField('petName')?.value.trim() || '',
       species: petField('species')?.value || 'dog',
       breed: petField('breed')?.value.trim() || null,
@@ -209,6 +219,117 @@
     };
   });
 
+  const selectedSlots = () => [...selectedHotelSlots].sort((a, b) => a - b);
+  const syncReservationButton = () => {
+    hotelSlotNumbersInput.value = selectedSlots().join(',');
+    const hasRequiredSlots = selectedHotelSlots.size === collectPets().length;
+    submitBtn.disabled = !roomAvailable || !customerProfileLoaded || !hasRequiredSlots;
+  };
+
+  const renderHotelSlots = (availableSlotNumbers = null, error = null) => {
+    const checkIn = checkInInput.value;
+    hotelSlotPicker.hidden = false;
+    hotelSlotNumbersInput.value = selectedSlots().join(',');
+    if (!checkIn) {
+      hotelSlotDate.textContent = 'Choose a check-in date';
+      hotelSlotInstructions.textContent = 'Choose a check-in date to see which slots are available.';
+      hotelSlotGrid.innerHTML = Array.from({ length: 35 }, (_, index) => {
+        const slot = index + 1;
+        return `<button type="button" class="hotel-slot" data-hotel-slot="${slot}" aria-label="Slot ${slot}, choose a check-in date to check availability" title="Choose a check-in date to check availability" disabled>${slot}</button>`;
+      }).join('');
+      hotelSlotStatus.textContent = 'Slots 1–35 are shown. Choose a check-in date to load availability.';
+      syncReservationButton();
+      return;
+    }
+
+    const dateLabel = new Date(`${checkIn}T00:00:00`).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).replace(',', '').toUpperCase();
+    hotelSlotDate.textContent = `Slots for ${dateLabel}`;
+    hotelSlotInstructions.textContent = `Choose ${collectPets().length} slot${collectPets().length === 1 ? '' : 's'} (one per pet). Your selected slot${collectPets().length === 1 ? '' : 's'} ${collectPets().length === 1 ? 'stays' : 'stay'} reserved until check-out.`;
+
+    const available = new Set(availableSlotNumbers || []);
+    if (availableSlotNumbers) {
+      for (const slot of selectedHotelSlots) {
+        if (!available.has(slot)) selectedHotelSlots.delete(slot);
+      }
+    }
+    hotelSlotGrid.innerHTML = Array.from({ length: 35 }, (_, index) => {
+      const slot = index + 1;
+      const isAvailable = available.has(slot);
+      const isSelected = selectedHotelSlots.has(slot);
+      const isUnavailable = availableSlotNumbers && !isAvailable;
+      const atSelectionLimit = selectedHotelSlots.size >= collectPets().length && !isSelected;
+      const label = isAvailable
+        ? `Slot ${slot}${isSelected ? ', selected' : atSelectionLimit ? ', available, selection limit reached' : ', available'}`
+        : error ? `Slot ${slot}, availability not loaded` : `Slot ${slot}, unavailable for these dates`;
+      const content = isUnavailable ? `${slot} ×` : slot;
+      return `<button type="button" class="hotel-slot${isSelected ? ' selected' : ''}${isUnavailable ? ' unavailable' : ''}" data-hotel-slot="${slot}" aria-label="${label}" title="${label}" ${!isAvailable || atSelectionLimit ? 'disabled' : ''}>${content}</button>`;
+    }).join('');
+
+    if (error) {
+      hotelSlotStatus.textContent = error;
+    } else if (!availableSlotNumbers) {
+      hotelSlotStatus.textContent = 'Checking slot availability for your selected stay…';
+    } else if (available.size < collectPets().length) {
+      hotelSlotStatus.textContent = `Only ${available.size} slot${available.size === 1 ? '' : 's'} are available for the full stay; ${collectPets().length} required.`;
+    } else {
+      hotelSlotStatus.textContent = `${available.size} slot${available.size === 1 ? '' : 's'} available for the full stay.`;
+    }
+    syncReservationButton();
+  };
+
+  const refreshHotelSlots = async () => {
+    const requestId = ++slotRequest;
+    const checkIn = checkInInput.value;
+    if (!checkIn) {
+      renderHotelSlots();
+      return;
+    }
+    const roomTypes = [...new Set(collectPets().map((pet) => pet.roomType).filter(Boolean))];
+    if (!roomTypes.length) {
+      renderHotelSlots(null, 'Select a room type before checking slot availability.');
+      return;
+    }
+    let checkOut = checkOutInput.value;
+    if (!checkOut || checkOut <= checkIn) {
+      const nextNight = new Date(`${checkIn}T00:00:00`);
+      nextNight.setDate(nextNight.getDate() + 1);
+      checkOut = localDate(nextNight);
+    }
+    renderHotelSlots();
+    try {
+      const query = new URLSearchParams({
+        roomType: roomTypes[0],
+        checkIn,
+        checkOut,
+        pets: String(collectPets().length),
+      });
+      const response = await fetch(`/api/v1/bookings/hotel/availability?${query}`, { credentials: 'include' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not check hotel slot availability.');
+      if (requestId !== slotRequest) return;
+      renderHotelSlots(data.availableSlotNumbers);
+    } catch (error) {
+      if (requestId !== slotRequest) return;
+      console.error('Could not load hotel slot availability:', error);
+      renderHotelSlots(null, error.message || 'Could not check hotel slot availability. Please try again.');
+    }
+  };
+
+  hotelSlotGrid.addEventListener('click', (event) => {
+    const slotButton = event.target.closest('[data-hotel-slot]');
+    if (!slotButton || slotButton.disabled) return;
+    const slot = Number(slotButton.dataset.hotelSlot);
+    if (selectedHotelSlots.has(slot)) selectedHotelSlots.delete(slot);
+    else if (selectedHotelSlots.size < collectPets().length) selectedHotelSlots.add(slot);
+    renderHotelSlots([...hotelSlotGrid.querySelectorAll('[data-hotel-slot]')]
+      .filter((button) => !button.classList.contains('unavailable'))
+      .map((button) => Number(button.dataset.hotelSlot)));
+  });
+
 
 // Real-time room availability check
 const checkAvailability = async () => {
@@ -216,8 +337,9 @@ const checkAvailability = async () => {
   const checkIn = checkInInput.value;
   const checkOut = checkOutInput.value;
   const requestId = ++availabilityRequest;
+  refreshHotelSlots();
   roomAvailable = false;
-  submitBtn.disabled = true;
+  syncReservationButton();
   if (!roomTypes.length || !checkIn || !checkOut) return;
   try {
     const query = new URLSearchParams({ roomType: roomTypes[0], checkIn, checkOut, petCount: String(collectPets().length) });
@@ -239,7 +361,8 @@ const checkAvailability = async () => {
   } catch (err) {
     console.warn('Could not check availability:', err);
     if (requestId === availabilityRequest) {
-      submitBtn.disabled = true;
+      roomAvailable = false;
+      syncReservationButton();
       const badge = document.getElementById('availability-badge');
       if (badge) {
         badge.textContent = err.message || 'Could not check room availability. Please try again shortly.';
@@ -279,6 +402,36 @@ const checkAvailability = async () => {
     submitBtn.classList.toggle('btn-success', type === 'success');
     submitBtn.classList.toggle('btn-error', type === 'error');
   };
+
+  const loadCustomerProfile = async () => {
+    try {
+      const response = await fetch('/customer/profile', { credentials: 'include', cache: 'no-store' });
+      if (response.status === 401) {
+        window.location.href = `/customer/login.html?return=${encodeURIComponent('/hotel.html')}`;
+        return;
+      }
+      if (!response.ok) throw new Error('Unable to load your customer profile.');
+      const data = await response.json();
+      const customer = data.customer || {};
+      for (const [field, value] of Object.entries({
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+        address: customer.address,
+      })) {
+        if (form.elements[field] && value) form.elements[field].value = value;
+      }
+      savedPets = Array.isArray(data.pets) ? data.pets : [];
+      customerProfileLoaded = true;
+      renderPetFields();
+      updatePrice();
+      checkAvailability();
+      renderOrderSummary();
+    } catch (error) {
+      showAlert('error', error.message);
+    }
+  };
+  loadCustomerProfile();
 
   const checkAndCancelPendingPayMongo = async () => {
     const params = new URLSearchParams(window.location.search);
@@ -332,18 +485,27 @@ const checkAvailability = async () => {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!form.reportValidity()) return;
-    if (!roomAvailable) {
-      showAlert('error', 'That room is not available for the selected dates. Please choose different dates or another room.');
+    if (!checkInInput.value) {
+      showAlert('error', 'Choose a check-in date to see available slots.');
       return;
     }
-    if (!checkInInput.value || !checkOutInput.value) {
-      showAlert('error', 'Please provide both check-in and check-out dates.');
+    if (!checkOutInput.value) {
+      showAlert('error', 'Please provide a check-out date.');
+      return;
+    }
+    if (selectedHotelSlots.size !== collectPets().length) {
+      showAlert('error', `Pick ${collectPets().length} available hotel slot${collectPets().length === 1 ? '' : 's'} for the selected stay.`);
+      hotelSlotPicker.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     if (checkOutInput.value <= checkInInput.value) {
       showAlert('error', 'Check-out must be after check-in.');
       applyCheckInDates();
       updatePrice();
+      return;
+    }
+    if (!roomAvailable) {
+      showAlert('error', 'That room is not available for the selected dates. Please choose different dates or another room.');
       return;
     }
 
@@ -365,6 +527,7 @@ const checkAvailability = async () => {
         address: customerAddress.trim() || null,
       },
       pets: collectPets(),
+      slotNumbers: selectedSlots(),
       roomType: collectPets()[0]?.roomType || roomSelect.value,
       checkIn: checkInInput.value,
       checkInTime: checkInTime.value,
@@ -389,14 +552,17 @@ const checkAvailability = async () => {
       }
       showAlert('success', `You completed a booking! ${result.message} for ${result.pets.map((pet) => pet.name).join(', ')}. Reference #${result.reservation.id}. ${fmtDate(result.reservation.checkIn)} → ${fmtDate(result.reservation.checkOut)}, total ${fmtMoney(result.reservation.totalPrice)}.`);
       form.reset();
+      selectedHotelSlots.clear();
       petCount.value = '1';
       renderPetFields();
       applyCheckInDates();
       updatePrice();
+      await loadCustomerProfile();
     } catch (error) {
       showAlert('error', `${error.message}`);
     } finally {
-      submitBtn.disabled = !roomAvailable;
+      syncReservationButton();
       submitBtn.textContent = 'Reserve Stay';
     }
   });
+})();

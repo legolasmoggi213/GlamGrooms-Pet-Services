@@ -1,6 +1,11 @@
 // Shared admin helpers: sidebar injection + modal utilities.
 
 const ADMIN_PAGES = [
+  { href: '/admin/grooming.html', label: 'Grooming' },
+  { href: '/admin/hotel.html', label: 'Hotel' },
+  { href: '/admin/notifications.html', label: 'Notifications' },
+  { href: '/admin/reports.html', label: 'Reports' },
+  { href: '/admin/inventory.html', label: 'Inventory' },
   { href: '/admin/index.html', label: 'Dashboard' },
   { href: '/admin/index.html#revenue', label: 'Reports' },
   { href: '/admin/grooming.html', label: 'Grooming' },

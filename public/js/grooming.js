@@ -125,6 +125,12 @@
   const pricePreview = document.getElementById('price-preview');
   const serviceSelect = document.getElementById('service');
   const dateInput = document.getElementById('date');
+  dateInput.min = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
   const timeSelect = document.getElementById('time');
   const pickupTimeInput = document.getElementById('pickupTime');
   const petCountSelect = document.getElementById('pet-count');
@@ -132,15 +138,18 @@
   const summaryBox = document.getElementById('order-summary');
 
   let submitting = false;
+  let customerProfileLoaded = false;
   let slotRequest = 0;
   let availableSlotsCache = [];
   let lastSuccessfulBookingKey = null;
+  let savedPets = [];
 
   const field = (name) => form.querySelector(`[name="${name}"]`);
 
   const renderPetFields = () => {
     petFields.innerHTML = Array.from({ length: Math.max(1, Math.min(5, Number(petCountSelect.value) || 1)) }, (_, index) => `
       <div class="field full"><strong>Pet ${index + 1}</strong></div>
+      <div class="field full"><label for="pet-profile-${index}">Use a saved pet profile</label><select id="pet-profile-${index}" name="petProfile-${index}" data-saved-pet><option value="">Enter a new pet</option>${savedPets.map((pet) => `<option value="${escapeHtml(pet.id)}">${escapeHtml(pet.name)} — ${escapeHtml(pet.species)}, ${escapeHtml(pet.breed)}</option>`).join('')}</select></div>
       <div class="field"><label for="pet-name-${index}">Pet Name *</label><input id="pet-name-${index}" name="petName-${index}" required /></div>
       <div class="field"><label for="pet-species-${index}">Species *</label><select id="pet-species-${index}" name="species-${index}"><option value="dog">Dog</option><option value="cat">Cat</option></select></div>
       <div class="field"><label for="pet-breed-${index}">Breed *</label><input id="pet-breed-${index}" name="breed-${index}" required /></div>
@@ -182,6 +191,110 @@
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 
+  const serviceDescriptions = {
+    'grooming-basic': {
+      title: 'Basic Grooming',
+      description: 'A tidy-up with the essential bath and grooming care.',
+      includes: ['Bath and blow-dry', 'Sanitary and paw trim', 'Simple facial trim', 'Nail clipping', 'Ear cleaning'],
+    },
+    'grooming-full': {
+      title: 'Full Grooming',
+      description: 'Everything in Basic Grooming, with a simple body haircut and teeth brushing.',
+      includes: ['Basic Grooming inclusions', 'Simple body haircut', 'Teeth brushing'],
+    },
+    'grooming-premium': {
+      title: 'Premium Grooming',
+      description: 'A styled haircut with extra bathing and hygiene care.',
+      includes: ['Special cut: puppy, teddy bear, Asian fusion, or brown bear style', 'Bubble bath (not included for L and XL pets)', 'Anal-sac expressing'],
+    },
+    'grooming-a-la-carte-face-trim': {
+      title: 'Face Trim',
+      description: 'A neat facial trim to tidy the hair around your pet’s face.',
+      includes: ['Facial hair shaping'],
+    },
+    'grooming-a-la-carte-paw-trim': {
+      title: 'Paw Trim',
+      description: 'Trims excess hair around the paws for a cleaner finish.',
+      includes: ['Paw hair trimming'],
+    },
+    'grooming-a-la-carte-nail-clipping': {
+      title: 'Nail Clipping',
+      description: 'A standalone nail-trimming service.',
+      includes: ['Nail clipping'],
+    },
+    'grooming-a-la-carte-ear-cleaning': {
+      title: 'Ear Cleaning',
+      description: 'A standalone ear-cleaning service.',
+      includes: ['Ear cleaning'],
+    },
+    'grooming-a-la-carte-anal-sac-expressing': {
+      title: 'Anal Sac Expressing',
+      description: 'A standalone hygiene service.',
+      includes: ['Anal-sac expressing'],
+    },
+    'grooming-a-la-carte-de-matting': {
+      title: 'De-matting',
+      description: 'A coat-care service to help remove mats and tangles.',
+      includes: ['De-matting and coat brush-out'],
+      priceLabel: '₱300–₱500 (final price depends on coat condition)',
+    },
+    'ayurveda-herb-beauty': {
+      title: 'Beauty & Health Herb Treatment',
+      description: 'A herbal treatment intended to help reduce tangles, hold the coat style, and remove excess hair.',
+      includes: ['Herbal treatment', 'Coat and style care'],
+    },
+    'ayurveda-herb-doctors': {
+      title: "Doctor’s Health Herb Treatment",
+      description: 'Recommended for pets with strong odor or very oily skin; the flyer highlights Shih Tzus and Bulldogs.',
+      includes: ['Herbal treatment', 'For strong odor or excessively oily skin'],
+    },
+    'ayurveda-herb-moisture': {
+      title: 'Moisture Herb Treatment',
+      description: 'Adds extra moisture and helps reduce dirt sticking to the coat from static.',
+      includes: ['Moisture-focused herbal treatment', 'Coat care'],
+    },
+  };
+
+  const describeService = (serviceKey) => {
+    const base = serviceDescriptions[serviceKey]
+      || serviceDescriptions[serviceKey.replace(/-(s|m|l|xl|cat)$/, '')];
+    if (base) return base;
+
+    const packageMatch = serviceKey.match(/^ayurveda-pkg-(basic|full|premium)-(beauty-moisture|doctors)-(s|m|l|xl)$/);
+    if (packageMatch) {
+      const [, tier, treatment, size] = packageMatch;
+      const treatmentLabel = treatment === 'doctors' ? "Doctor’s Health" : 'Beauty/Moisture';
+      const tierLabel = `${tier[0].toUpperCase()}${tier.slice(1)}`;
+      return {
+        title: `${tierLabel} Grooming + ${treatmentLabel}`,
+        description: `Combines ${tierLabel.toLowerCase()} grooming with the selected Ayurveda treatment.`,
+        includes: [`${tierLabel} Grooming`, `${treatmentLabel} Ayurveda treatment`, `${size.toUpperCase()} size`],
+      };
+    }
+
+    return {
+      title: 'Selected service',
+      description: 'Service details are available from our grooming team.',
+      includes: [],
+    };
+  };
+
+  const renderServiceDetail = (serviceKey) => {
+    const detail = describeService(serviceKey);
+    const price = PRICES[serviceKey];
+    if (!serviceKey || price == null) return '<div class="grooming-service-detail" hidden></div>';
+    return `
+      <div class="grooming-service-detail" aria-live="polite">
+        <div class="grooming-service-detail-heading">
+          <strong>${escapeHtml(detail.title)}</strong>
+          <span>${escapeHtml(detail.priceLabel || formatMoney(price))}</span>
+        </div>
+        <p>${escapeHtml(detail.description)}</p>
+        ${detail.includes.length ? `<ul>${detail.includes.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+      </div>
+    `;
+  };
+
   const showAlert = (type, message) => {
     alertBox.hidden = false;
     alertBox.className = `alert alert-${type} show`;
@@ -190,6 +303,34 @@
     submitBtn.classList.toggle('btn-success', type === 'success');
     submitBtn.classList.toggle('btn-error', type === 'error');
   };
+
+  const loadCustomerProfile = async () => {
+    try {
+      const response = await fetch('/customer/profile', { credentials: 'include', cache: 'no-store' });
+      if (response.status === 401) {
+        window.location.href = `/customer/login.html?return=${encodeURIComponent('/grooming.html')}`;
+        return;
+      }
+      if (!response.ok) throw new Error('Unable to load your customer profile.');
+      const data = await response.json();
+      const customer = data.customer || {};
+      for (const [name, value] of Object.entries({
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+        address: customer.address,
+      })) {
+        if (form.elements[name] && value) form.elements[name].value = value;
+      }
+      savedPets = Array.isArray(data.pets) ? data.pets : [];
+      customerProfileLoaded = true;
+      renderPetFields();
+      renderSummary();
+    } catch (error) {
+      showAlert('error', error.message);
+    }
+  };
+  loadCustomerProfile();
 
   const clearAlert = () => {
     alertBox.hidden = true;
@@ -320,6 +461,10 @@
     event.preventDefault();
     event.stopImmediatePropagation();
     if (submitting || !form.reportValidity()) return;
+    if (!customerProfileLoaded) {
+      showAlert('error', 'Sign in and load your customer profile before booking.');
+      return;
+    }
 
     try {
       const payload = {
@@ -400,7 +545,29 @@
   };
 
   form.addEventListener('submit', submitBooking, { capture: true });
-  petFields.addEventListener('change', () => {
+  petFields.addEventListener('change', (event) => {
+    const profileSelect = event.target.closest('[data-saved-pet]');
+    if (profileSelect) {
+      const index = Number(profileSelect.name.split('-').pop());
+      const pet = savedPets.find((item) => String(item.id) === profileSelect.value);
+      const setField = (name, value) => {
+        const input = field(`${name}-${index}`);
+        if (!input) return;
+        input.value = value == null ? '' : value;
+        if (input.tagName === 'SELECT') input.disabled = Boolean(pet);
+        else input.readOnly = Boolean(pet);
+      };
+      setField('petName', pet?.name || '');
+      setField('species', pet?.species || 'dog');
+      setField('breed', pet?.breed || '');
+      setField('age', pet?.age ?? '');
+    }
+    const serviceSelect = event.target.closest('select[name^="service-"]');
+    if (serviceSelect) {
+      const index = Number(serviceSelect.name.split('-').pop());
+      const detail = petFields.querySelector(`[data-service-detail="${index}"]`);
+      if (detail) detail.innerHTML = renderServiceDetail(serviceSelect.value);
+    }
     updatePrice();
     renderSummary();
     loadAvailability();

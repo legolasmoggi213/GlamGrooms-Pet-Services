@@ -173,9 +173,21 @@ const hotelReservationLockIds = (reservation) => {
 
 const areBookingSlotsAvailable = async (lockIds) => {
   if (!lockIds.length) return true;
-  const refs = lockIds.map((id) => lockCollection.doc(id));
-  const snapshots = await firestore.getAll(...refs);
-  return snapshots.every((snapshot) => !snapshot.exists);
+  return (await getUnavailableBookingSlotIds(lockIds)).size === 0;
+};
+
+const getUnavailableBookingSlotIds = async (lockIds) => {
+  const ids = [...new Set(lockIds)];
+  const unavailable = new Set();
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const batch = ids.slice(offset, offset + 100);
+    const refs = batch.map((id) => lockCollection.doc(id));
+    const snapshots = await firestore.getAll(...refs);
+    snapshots.forEach((snapshot, index) => {
+      if (snapshot.exists) unavailable.add(batch[index]);
+    });
+  }
+  return unavailable;
 };
 
 const claimBookingSlots = async (lockIds, details) => {

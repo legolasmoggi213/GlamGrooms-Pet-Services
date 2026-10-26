@@ -47,12 +47,14 @@ const includeAll = [
 
 const addRelatedRecords = async (appointment) => {
   if (!appointment) return appointment;
-  const [customer, pet] = await Promise.all([
+  const petIds = appointment.petIds || (appointment.petId ? [appointment.petId] : []);
+  const [customer, pets] = await Promise.all([
     Customer.findByPk(appointment.customerId),
-    Pet.findByPk(appointment.petId),
+    Promise.all([...new Set(petIds.map(String))].map((id) => Pet.findByPk(id))),
   ]);
   appointment.Customer = customer;
-  appointment.Pet = pet;
+  appointment.Pets = pets.filter(Boolean);
+  appointment.Pet = appointment.Pets[0] || null;
   return appointment;
 };
 
@@ -162,6 +164,7 @@ const updateAppointment = async (req, res, next) => {
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
+    const wasAlreadyCancelled = appointment.status === 'cancelled';
     const { service, date, time, pickupTime, status, notes, customerId, petId } = req.body;
     if (status && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'A valid status is required' });
@@ -230,7 +233,6 @@ const updateAppointment = async (req, res, next) => {
       })) return res.status(409).json({ error: 'That grooming time is already booked.' });
     }
     const needsAdminConfirmation = status === 'confirmed' && !appointment.confirmedAt;
-    const shouldSendTicket = status === 'confirmed' && !appointment.reservationTicketEmailSentAt;
     if (needsAdminConfirmation) updates.confirmedAt = new Date();
     const oldDate = appointment.date;
     const oldTime = appointment.time;

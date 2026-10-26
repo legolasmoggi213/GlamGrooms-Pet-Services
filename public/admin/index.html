@@ -24,7 +24,7 @@
 
       <div class="panel-grid">
         <div class="panel">
-          <h3>Hotel Occupancy — Next 14 Days</h3>
+          <h3>Hotel Occupancy — This Month</h3>
           <div id="occupancy"><div class="loading">Loading…</div></div>
         </div>
         <div class="panel">
@@ -90,6 +90,22 @@
             <thead><tr><th>Date</th><th>Type</th><th>Customer</th><th>Service / Room</th><th>Status</th><th>Amount</th></tr></thead>
             <tbody id="booking-report-rows"><tr><td colspan="6" class="empty">Choose a date range or generate a report for all bookings.</td></tr></tbody>
           </table>
+        </div>
+      </section>
+
+      <section class="panel" aria-label="Revenue forecast">
+        <h3>Revenue Forecast</h3>
+        <p class="text-muted">A linear estimate based on the periods selected above; actual results may vary.</p>
+        <div id="revenue-forecast" aria-live="polite">Loading forecast…</div>
+      </section>
+
+      <section class="panel" aria-label="Operational reports">
+        <h3>Operational Reports</h3>
+        <p class="text-muted">Download current bookings, payment statuses, or customer records as CSV.</p>
+        <div class="button-row">
+          <a class="btn btn-outline" href="/api/v1/admin/reports?type=bookings">Bookings CSV</a>
+          <a class="btn btn-outline" href="/api/v1/admin/reports?type=payments">Payments CSV</a>
+          <a class="btn btn-outline" href="/api/v1/admin/reports?type=customers">Customers CSV</a>
         </div>
       </section>
 
@@ -302,6 +318,9 @@
           return buckets.map((bucket) => {
             const value = Number(bucket.revenue) || 0;
             const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
+            const dateLabel = formatBucketLabel(bucket.label)
+              .map((part) => `<span>${escapeHtml(part)}</span>`)
+              .join('');
             return `
               <div class="revenue-bar-column" title="${escapeHtml(`${bucket.label}: ${fmtMoney(value)}, ${bucket.count} ${countLabel}`)}">
                 <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>

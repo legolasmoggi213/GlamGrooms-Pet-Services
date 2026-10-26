@@ -58,6 +58,7 @@ const handlePayMongoWebhook = async (req, res) => {
     const { Customer, Pet } = require('../models');
     const customer = await Customer.findByPk(booking.customerId);
     const pets = await Promise.all((booking.petIds || (booking.petId ? [booking.petId] : [])).map((petId) => Pet.findByPk(petId)));
+    await notifyStaffOfBooking({ type: bookingType, booking, customer, pets: pets.filter(Boolean) });
 
     // The verification endpoint and webhook may both run; the mailer claims delivery once.
     if (customer) {

@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { GroomingAppointment, HotelReservation } = require('../models');
 const { sendPayMongoReceipt, sendReservationTicket } = require('./mailer');
 const { sendSms } = require('./sms');
-const { markBookingPaidAndConfirmed } = require('./paymentConfirmation');
+const { notifyStaffOfBooking } = require('./staffNotifications');
 
 const isValidSignature = (rawBody, signature, secret) => {
   if (!Buffer.isBuffer(rawBody) || !secret || !/^[a-f\d]{64}$/i.test(String(signature || ''))) return false;
@@ -33,10 +33,35 @@ const handlePayMongoWebhook = async (req, res) => {
 
     const checkoutSession = event?.attributes?.data || event?.data;
     const attributes = checkoutSession && checkoutSession.attributes;
-    const metadata = attributes?.metadata || event?.attributes?.metadata || {};
+    const metadata = attributes?.metadata || eventAttributes.metadata || {};
+    const sessionId = String(checkoutSession?.id || eventAttributes.checkout_session_id || '').trim();
+    if (metadata.type === 'walk-in') {
+      const { CashTransaction } = require('../models');
+      const transactionId = metadata.transactionId;
+      if (!transactionId || !sessionId) {
+        return res.status(400).json({ error: 'Webhook missing walk-in payment metadata' });
+      }
+      const transaction = await CashTransaction.findByPk(transactionId);
+      if (!transaction) return res.status(404).json({ error: 'Walk-in transaction not found' });
+      if (transaction.paymentMethod !== 'qrph' || transaction.type !== 'walk-in') {
+        return res.json({ received: true, skipped: true });
+      }
+      if (transaction.paymentReference && transaction.paymentReference !== sessionId) {
+        return res.json({ received: true, skipped: true });
+      }
+      const alreadyPaid = transaction.paymentStatus === 'paid';
+      if (!alreadyPaid) {
+        await transaction.update({
+          paymentStatus: 'paid',
+          paymentReference: sessionId,
+          paidAt: new Date(),
+        });
+      }
+      return res.json({ received: true, transactionId, status: 'paid', alreadyPaid });
+    }
+
     const bookingType = metadata.bookingType;
     const bookingId = metadata.bookingId;
-    const sessionId = String(checkoutSession?.id || event?.attributes?.checkout_session_id || '').trim();
     if (!['grooming', 'hotel'].includes(bookingType) || !bookingId || !sessionId) {
       return res.status(400).json({ error: 'Webhook missing booking metadata' });
     }
@@ -52,12 +77,24 @@ const handlePayMongoWebhook = async (req, res) => {
     }
 
     const alreadyPaid = booking.paymentStatus === 'paid';
-    await markBookingPaidAndConfirmed(booking, sessionId);
+    if (!alreadyPaid || (bookingType === 'hotel' && booking.status !== 'confirmed')) {
+      const updatePayload = {
+        paymentStatus: 'paid',
+        paymentReference: sessionId,
+        paymentPaidAt: new Date(),
+      };
+      if (bookingType === 'hotel') {
+        updatePayload.status = 'confirmed';
+        updatePayload.confirmedAt = booking.confirmedAt || new Date();
+      }
+      await booking.update(updatePayload);
+    }
 
     // Fetch booking details for the receipt and payment notification.
     const { Customer, Pet } = require('../models');
     const customer = await Customer.findByPk(booking.customerId);
     const pets = await Promise.all((booking.petIds || (booking.petId ? [booking.petId] : [])).map((petId) => Pet.findByPk(petId)));
+    await notifyStaffOfBooking({ type: bookingType, booking, customer, pets: pets.filter(Boolean) });
 
     // The verification endpoint and webhook may both run; the mailer claims delivery once.
     if (customer) {
@@ -79,7 +116,9 @@ const handlePayMongoWebhook = async (req, res) => {
       if (!alreadyPaid) {
         await sendSms({
           to: customer.phone,
-          message: `Hello ${customer.name || 'Customer'}, your GCash payment for Glam Grooms booking #${booking.id} has been received and your booking is confirmed.`,
+          message: bookingType === 'hotel'
+            ? `Hello ${customer.name || 'Customer'}, your GCash payment for Glam Grooms hotel reservation #${booking.id} was received and your reservation is confirmed. View your reservation in My Account.`
+            : `Hello ${customer.name || 'Customer'}, your GCash payment for Glam Grooms grooming booking #${booking.id} has been received. The reservation ticket will be available in My Account after an admin confirms your appointment.`,
         });
       }
     }

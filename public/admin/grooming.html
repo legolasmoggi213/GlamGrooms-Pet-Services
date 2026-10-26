@@ -4,11 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Grooming Appointments — Glam Grooms Admin</title>
-  <link rel="stylesheet" href="/css/style.css" />
-  <link rel="icon" href="/favicon.ico" sizes="any" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/css/style.css?v=2" />
 </head>
 <body>
   <div class="admin-layout">
@@ -24,7 +20,7 @@
       </div>
 
       <div class="table-wrap">
-        <table>
+        <table class="grooming-table">
           <thead>
             <tr><th>ID</th><th>Date</th><th>Time</th><th>Pickup</th><th>Service</th><th>Pet</th><th>Customer</th><th>Price</th><th>Status</th><th>Actions</th></tr>
           </thead>
@@ -55,15 +51,16 @@
 
     async function loadAppointments() {
       const items = await apiGet('/grooming');
+      const session = await fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json());
       if (!items.length) {
-        rowsEl.innerHTML = '<tr><td colspan="9" class="empty">No appointments yet.</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">No appointments yet.</td></tr>';
         return;
       }
       rowsEl.innerHTML = items
         .map(
           (a) => `
         <tr>
-          <td>${a.id}</td>
+          <td><button class="record-id" type="button" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})' aria-label="View appointment ${escapeHtml(a.id)}">${escapeHtml(a.id)}</button></td>
           <td>${fmtDate(a.date)}</td>
           <td>${escapeHtml(a.time)}</td>
           <td>${escapeHtml(a.pickupTime || '—')}</td>
@@ -72,12 +69,13 @@
           <td>${a.Customer ? escapeHtml(a.Customer.name) : '—'}</td>
           <td>${fmtMoney(a.price)}</td>
           <td>${statusBadge(a.status)}</td>
-          <td>
-            ${['pending', 'scheduled'].includes(a.status) ? `<button class="btn btn-success btn-sm" onclick="confirmAppt('${a.id}', this)">Confirm</button>` : ''}
-            ${['confirmed', 'in-progress', 'completed'].includes(a.status) ? `<button class="btn btn-success btn-sm" onclick='resendApptTicket(${escapeHtml(JSON.stringify(a.id))}, this)'>Send Ticket</button>` : ''}
-            ${a.status === 'pending' ? `<button class="btn btn-danger btn-sm" type="button" onclick='rejectAppt(${escapeHtml(JSON.stringify(a.id))}, this)'>Reject</button>` : ''}
+          <td class="grooming-actions-cell">
+            <div class="grooming-actions">
+            ${a.status !== 'cancelled' && ((!a.confirmedAt && a.status !== 'completed') || (a.confirmedAt && !a.reservationTicketEmailSentAt)) ? `<button class="btn btn-success btn-sm" onclick="confirmAppt('${a.id}', this)">${a.confirmedAt ? 'Send Ticket' : 'Confirm'}</button>` : ''}
             <button class="btn btn-outline btn-sm" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})'>View</button>
-            <button class="btn btn-danger btn-sm" onclick='removeAppt(${escapeHtml(JSON.stringify(a.id))})'>Delete</button>
+            ${a.status !== 'cancelled' && a.status !== 'completed' ? `<button class="btn btn-danger btn-sm" onclick='rejectAppt(${escapeHtml(JSON.stringify(a.id))}, ${escapeHtml(JSON.stringify(a.status))})'>${a.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
+            ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeAppt(${escapeHtml(JSON.stringify(a.id))})'>Delete</button>` : ''}
+            </div>
           </td>
         </tr>`
         )
@@ -161,28 +159,10 @@
       const a = await apiGet(`/grooming/${id}`);
       const pet = a.Pet ? escapeHtml(a.Pet.name) : '—';
       const customer = a.Customer ? escapeHtml(a.Customer.name) : '—';
-      const petIds = Array.isArray(a.petIds) && a.petIds.length ? a.petIds : (a.petId ? [a.petId] : []);
-      const petRecords = petIds.length
-        ? petIds.map((petId) => {
-            const petRecord = petsCache.find((item) => String(item.id) === String(petId));
-            const details = petRecord || a.Pet;
-            const name = details?.name || 'Pet';
-            const species = details?.species || '—';
-            const breed = details?.breed || '—';
-            const age = details?.age != null ? details.age : '—';
-            const medicalHistory = String(details?.medicalHistory || '').trim();
-            return {
-              details: `${name}: Species: ${species}, Breed: ${breed}, Age: ${age}`,
-              medicalHistory: `${name}: ${medicalHistory || 'No medical records provided.'}`,
-            };
-          })
-        : a.Pet ? [{
-            details: `Species: ${a.Pet.species || '—'}, Breed: ${a.Pet.breed || '—'}, Age: ${a.Pet.age != null ? a.Pet.age : '—'}`,
-            medicalHistory: `${a.Pet.name || 'Pet'}: ${String(a.Pet.medicalHistory || '').trim() || 'No medical records provided.'}`,
-          }] : [];
-      const petInfo = petRecords.map((record) => record.details).join('\n');
-      const medicalRecords = petRecords.map((record) => record.medicalHistory).join('\n');
-      const customerInfo = a.Customer ? `Email: ${escapeHtml(a.Customer.email || '—')}, Phone: ${escapeHtml(a.Customer.phone || '—')}` : '';
+      const petInfo = (a.Pets || (a.Pet ? [a.Pet] : [])).map((item) =>
+        `ID: ${item.id}\nName: ${item.name || '—'}\nSpecies: ${item.species || '—'}\nBreed: ${item.breed || '—'}\nAge: ${item.age != null ? item.age : '—'}\nSize: ${item.size || '—'}\nCare notes: ${item.notes || '—'}`
+      ).join('\n\n');
+      const customerInfo = a.Customer ? `ID: ${a.Customer.id}\nEmail: ${a.Customer.email || '—'}\nPhone: ${a.Customer.phone || '—'}\nAddress: ${a.Customer.address || '—'}` : '';
       const serviceInfo = Array.isArray(a.petServices) && a.petServices.length
         ? a.petServices.map((item) => `${item.petName || 'Pet'}: ${serviceLabel(item.service)}`).join('\n')
         : serviceLabel(a.service);
@@ -197,78 +177,42 @@
           <div class="field"><label>Pickup Time</label><input type="text" readonly value="${escapeHtml(a.pickupTime || '—')}" /></div>
           <div class="field"><label>Price</label><input type="text" readonly value="${fmtMoney(a.price)}" /></div>
           <div class="field"><label>Status</label><input type="text" readonly value="${escapeHtml(a.status)}" /></div>
-          <div class="field full"><label>Pet Details</label><textarea rows="3" readonly>${escapeHtml(petInfo) || '—'}</textarea></div>
-          <div class="field full"><label>Medical Records</label><textarea rows="${Math.max(2, petRecords.length)}" readonly>${escapeHtml(medicalRecords) || 'No medical records available.'}</textarea></div>
-          <div class="field full"><label>Customer Details</label><textarea rows="2" readonly>${customerInfo || '—'}</textarea></div>
+          <div class="field"><label>Customer ID</label><input type="text" readonly value="${escapeHtml(a.customerId || '—')}" /></div>
+          <div class="field"><label>Pet ID(s)</label><input type="text" readonly value="${escapeHtml((a.petIds || (a.petId ? [a.petId] : [])).join(', ') || '—')}" /></div>
+          <div class="field"><label>Payment Status</label><input type="text" readonly value="${escapeHtml(a.paymentStatus || '—')}" /></div>
+          <div class="field"><label>Payment Method</label><input type="text" readonly value="${escapeHtml(a.paymentMethod || '—')}" /></div>
+          <div class="field"><label>Payment Reference</label><input type="text" readonly value="${escapeHtml(a.paymentReference || '—')}" /></div>
+          <div class="field"><label>Confirmed At</label><input type="text" readonly value="${escapeHtml(a.confirmedAt ? fmtDateTime(a.confirmedAt) : '—')}" /></div>
+          <div class="field"><label>Created At</label><input type="text" readonly value="${escapeHtml(a.createdAt ? fmtDateTime(a.createdAt) : '—')}" /></div>
+          <div class="field"><label>Updated At</label><input type="text" readonly value="${escapeHtml(a.updatedAt ? fmtDateTime(a.updatedAt) : '—')}" /></div>
+          <div class="field full"><label>Pet Details</label><textarea rows="5" readonly>${escapeHtml(petInfo || '—')}</textarea></div>
+          <div class="field full"><label>Customer Details</label><textarea rows="4" readonly>${escapeHtml(customerInfo || '—')}</textarea></div>
           <div class="field full"><label>Customer Notes</label><textarea rows="3" readonly>${escapeHtml(a.notes || 'No notes.')}</textarea></div>
         </div>
       `);
     };
 
     window.confirmAppt = async (id, button) => {
-      const bookingId = String(id);
-      if (bookingActionsInProgress.has(bookingId)) return;
-      bookingActionsInProgress.add(bookingId);
-      const originalLabel = button ? button.textContent : 'Confirm';
-      if (button) button.disabled = true;
-      if (button) button.textContent = originalLabel === 'Send Ticket' ? 'Sending ticket...' : 'Confirming...';
-      try {
-        const result = await apiPut(`/grooming/${encodeURIComponent(bookingId)}`, { status: 'confirmed' });
-        if (result.emailSent) {
-          showAdminNotice('Appointment confirmed and reservation ticket emailed.');
-        } else {
-          showAdminNotice(`Appointment confirmed, but the ticket email was not sent. ${result.emailError || 'Check the provider response in Render logs, sender address/domain, and email credentials. You can retry with Send Ticket.'}`, 'error');
-        }
-      } catch (error) {
-        showAdminNotice(error.message, 'error');
-      } finally {
-        bookingActionsInProgress.delete(bookingId);
-        if (button && button.isConnected) {
-          button.disabled = false;
-          button.textContent = originalLabel;
-        }
-        try {
-          await loadAppointments();
-        } catch (error) {
-          showAdminNotice(`Booking action finished, but the appointments could not be refreshed: ${error.message}`, 'error');
-        }
+      const actionLabel = button ? button.textContent : 'Confirm';
+      if (button) {
+        button.disabled = true;
+        button.textContent = actionLabel === 'Send Ticket' ? 'Sending ticket...' : 'Confirming...';
       }
-    };
-
-    window.resendApptTicket = async (id, button) => {
-      const bookingId = String(id);
-      if (bookingActionsInProgress.has(bookingId)) return;
-      bookingActionsInProgress.add(bookingId);
-      button.disabled = true;
-      const originalLabel = button.textContent;
-      button.textContent = 'Sending ticket...';
       try {
-        const result = await apiPost(`/grooming/${encodeURIComponent(bookingId)}/resend-ticket`, {});
-        showAdminNotice(result.emailSent ? 'Appointment ticket emailed.' : 'The appointment ticket was not sent.', result.emailSent ? 'success' : 'error');
-      } catch (error) {
-        showAdminNotice(error.message, 'error');
-      } finally {
-        bookingActionsInProgress.delete(bookingId);
-        if (button.isConnected) {
-          button.disabled = false;
-          button.textContent = originalLabel;
+        const result = actionLabel === 'Send Ticket'
+          ? await apiPost(`/grooming/${id}/ticket`, {})
+          : await apiPut(`/grooming/${id}`, { status: 'confirmed' });
+        if (actionLabel === 'Send Ticket' && !result.emailSent) {
+          alert('The ticket email was not sent. Check the email configuration.');
+        } else if (actionLabel !== 'Send Ticket') {
+          alert('Booking confirmed. Use Send Ticket to email the customer.');
         }
-        try {
-          await loadAppointments();
-        } catch (error) {
-          showAdminNotice(`Ticket action finished, but appointments could not be refreshed: ${error.message}`, 'error');
-        }
-      }
-    };
-
-    window.rejectAppt = async (id, button) => {
-      if (!window.confirm('Reject this grooming booking?')) return;
-      button.disabled = true;
-      try {
-        await apiPut(`/grooming/${encodeURIComponent(id)}`, { status: 'cancelled' });
         await loadAppointments();
       } catch (error) {
-        button.disabled = false;
+        if (button) {
+          button.disabled = false;
+          button.textContent = actionLabel;
+        }
         alert(error.message);
       }
     };
@@ -282,6 +226,17 @@
           alert(error.message);
         }
       });
+
+    window.rejectAppt = async (id, status) => {
+      const action = status === 'pending' ? 'Reject this appointment?' : 'Cancel this appointment?';
+      if (!window.confirm(action)) return;
+      try {
+        await apiPut(`/grooming/${id}`, { status: 'cancelled' });
+        await loadAppointments();
+      } catch (error) {
+        alert(error.message);
+      }
+    };
 
     (async () => {
       try {

@@ -47,51 +47,50 @@
         window.location.replace(`/customer/account.html?${returnParams}`);
       };
       try {
-        for (let attempt = 0; attempt < 20; attempt += 1) {
-          const response = await fetch('/api/v1/payments/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify(verifyPayload),
-          });
-          const result = await response.json().catch(() => ({}));
-
-          if (response.status >= 500) {
-            if (attempt < 3) {
-              message.textContent = 'Our payment service is temporarily unavailable. Retrying verification…';
-              await new Promise(resolve => setTimeout(resolve, 1500));
-              continue;
-            }
-            returnToProfileForRetry();
-            return;
-          }
-
-          if (response.status === 401 || response.status === 403) {
-            const returnPath = `${location.pathname}${location.search}`;
-            location.replace(`/customer/login.html?return=${encodeURIComponent(returnPath)}`);
-            return;
-          }
-
-          if (response.status === 400 && result.error === 'Payment has not been completed.') {
-            if (attempt < 19) {
-              message.textContent = 'Payment is processing. Confirming your booking…';
-              await new Promise(resolve => setTimeout(resolve, 1500));
-              continue;
-            }
-            throw new Error(`PayMongo has not confirmed this payment yet. Please do not pay again if your wallet shows a completed charge. Contact the business with booking ${bookingId || 'unknown'}${sessionId ? ` and session ${sessionId}` : ''}.`);
-          }
-
-          if (!response.ok) throw new Error(result.error || `Payment verification failed (${response.status}).`);
-          if (!result.receipt) throw new Error('Payment was verified, but the booking receipt is unavailable. Please contact the business.');
-
-          const receipt = result.receipt;
-          const redirectTarget = `/customer/account.html?payment_success=1&bookingType=${encodeURIComponent(receipt.bookingType)}&bookingId=${encodeURIComponent(receipt.bookingId)}`;
-          sessionStorage.removeItem('pending_paymongo_booking');
-          document.getElementById('payment-title').textContent = 'Payment received';
-          message.textContent = 'Your payment is confirmed. Returning to your profile…';
-          window.location.replace(redirectTarget);
-          return;
-        }
+        const result = await apiPost('/payments/verify', { sessionId });
+        if (!result.receipt) throw new Error('Payment was verified, but the receipt is unavailable. Please contact the business.');
+        const receipt = result.receipt;
+        const receiptElement = document.getElementById('payment-receipt');
+        const isHotel = receipt.bookingType === 'hotel';
+        const service = String(receipt.service || (isHotel ? 'Pet hotel stay' : 'Grooming service'))
+          .replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+        const schedule = isHotel
+          ? `Check-in: ${fmtDate(receipt.checkIn)}${receipt.checkInTime ? ` at ${escapeHtml(receipt.checkInTime)}` : ''}<br>Check-out: ${fmtDate(receipt.checkOut)}${receipt.checkOutTime ? ` at ${escapeHtml(receipt.checkOutTime)}` : ''}`
+          : `Appointment: ${fmtDate(receipt.date)} at ${escapeHtml(receipt.time || 'Time TBA')}${receipt.pickupTime ? `<br>Pickup: ${escapeHtml(receipt.pickupTime)}` : ''}`;
+        const pets = Array.isArray(receipt.petNames) && receipt.petNames.length
+          ? receipt.petNames.map(escapeHtml).join(', ')
+          : '—';
+        const services = isHotel && Array.isArray(receipt.petRooms) && receipt.petRooms.length
+          ? receipt.petRooms.map((assignment) => `${escapeHtml(assignment.petName || 'Pet')}: ${escapeHtml(String(assignment.roomType || 'Room').replace(/^staycation-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()))} — ${fmtMoney(assignment.pricePerNight)} per night`).join('<br>')
+          : !isHotel && Array.isArray(receipt.petServices) && receipt.petServices.length
+            ? receipt.petServices.map((assignment) => `${escapeHtml(assignment.petName || 'Pet')}: ${escapeHtml(String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()))}`).join('<br>')
+            : escapeHtml(service);
+        receiptElement.innerHTML = `
+          <div class="receipt-heading">
+            <div class="receipt-mark">GG</div>
+            <div><strong>Glam Grooms</strong><span>Pet Spa &amp; Hotel</span></div>
+            <span class="receipt-paid">${isHotel ? 'Confirmed' : 'Paid'}</span>
+          </div>
+          <h3>Payment receipt</h3>
+          <div class="receipt-meta"><span>Receipt #${escapeHtml(receipt.bookingId)}</span><span>${escapeHtml(fmtDateTime(receipt.paidAt))}</span></div>
+          <div class="receipt-details">
+            <div><span>Customer</span><strong>${escapeHtml(receipt.customerName || 'Customer')}</strong></div>
+            <div><span>Pet${receipt.petNames && receipt.petNames.length === 1 ? '' : 's'}</span><strong>${pets}</strong></div>
+            <div><span>${isHotel ? 'Stay' : 'Services'}</span><strong>${services}</strong></div>
+            <div><span>Schedule</span><strong>${schedule}</strong></div>
+            <div><span>Payment method</span><strong>GCash · PayMongo QR Ph</strong></div>
+            <div><span>Payment reference</span><strong>${escapeHtml(receipt.paymentReference)}</strong></div>
+          </div>
+          <div class="receipt-total"><span>Total paid</span><strong>${fmtMoney(receipt.amount)}</strong></div>
+          <div class="receipt-actions">
+            <button class="btn btn-primary" type="button" id="print-receipt">Print receipt</button>
+          </div>`;
+        receiptElement.hidden = false;
+        document.getElementById('payment-title').textContent = isHotel ? 'Reservation confirmed' : 'Payment received';
+        message.textContent = isHotel
+          ? 'Your GCash payment was received and your hotel reservation is confirmed.'
+          : 'Your payment is confirmed. Here is your receipt.';
+        document.getElementById('print-receipt').addEventListener('click', () => window.print());
       } catch (error) {
         if (error instanceof TypeError) {
           returnToProfileForRetry();

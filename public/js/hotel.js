@@ -1,4 +1,10 @@
 // Hotel reservation page logic
+(() => {
+const ROOM_PRICES = {
+  'staycation-standard': 500,
+  'staycation-deluxe': 800,
+};
+
   const ROOM_DETAILS = {
     'staycation-standard': { category: 'Staycation', size: 'Medium', occupancy: 2, amenities: ['WiFi', 'Air Conditioning', 'TV', 'Bathroom'], description: 'Standard overnight stay — weekday ₱500 / weekend ₱700 per night' },
     'staycation-deluxe': { category: 'Staycation', size: 'Large', occupancy: 2, amenities: ['WiFi', 'Air Conditioning', 'TV', 'Bathroom', 'Mini Fridge', 'Balcony'], description: 'Deluxe overnight stay — weekday ₱800 / weekend ₱1000 per night' },
@@ -55,11 +61,23 @@
   const form = document.getElementById('hotel-form');
   const getField = (name) => form?.elements?.namedItem?.(name) || document.querySelector(`[name="${name}"]`);
   let roomAvailable = false;
+  let customerProfileLoaded = false;
   let availabilityRequest = 0;
-  let quoteRequest = 0;
-  let latestQuote = null;
-  let latestQuoteKey = '';
-  let latestQuoteMessage = 'Select dates to calculate the total (3-night minimum).';
+  let slotRequest = 0;
+  let selectedHotelSlots = new Set();
+  let savedPets = [];
+  const hotelSlotPicker = document.getElementById('hotel-slot-picker');
+  const hotelSlotDate = document.getElementById('hotel-slot-date');
+  const hotelSlotInstructions = document.getElementById('hotel-slot-instructions');
+  const hotelSlotGrid = document.getElementById('hotel-slot-grid');
+  const hotelSlotStatus = document.getElementById('hotel-slot-status');
+  const hotelSlotNumbersInput = document.getElementById('hotel-slot-numbers');
+  const escapeHtml = (value) => String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 
   const populateTimeOptions = (select, date, selectedValue) => {
     const day = date ? new Date(`${date}T00:00:00.000Z`).getUTCDay() : -1;
@@ -133,7 +151,12 @@
     copy.setMinutes(copy.getMinutes() - copy.getTimezoneOffset());
     return copy.toISOString().slice(0, 10);
   };
-  const today = localDate(new Date());
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 
   const applyCheckInDates = () => {
     checkInInput.min = today;
@@ -152,17 +175,34 @@
   applyCheckInDates();
   updateDateTimes();
 
-  const updatePrice = async () => {
-    const requestId = ++quoteRequest;
-    latestQuote = null;
-    const pets = collectPets();
-    const quoteKey = JSON.stringify({ checkIn: checkInInput.value, checkOut: checkOutInput.value, roomTypes: pets.map((pet) => pet.roomType) });
-    latestQuoteKey = quoteKey;
-    if (!checkInInput.value || !checkOutInput.value) {
-      latestQuoteMessage = 'Select valid dates (3-night minimum).';
-      if (pricePreview) pricePreview.textContent = latestQuoteMessage;
-      renderOrderSummary();
-      return;
+  const updateRoomPreview = (index) => {
+    const roomField = petFields.querySelector(`[name="roomType-${index}"]`);
+    const preview = petFields.querySelector(`[data-room-preview="${index}"]`);
+    if (!roomField || !preview) return;
+
+    const roomPreview = roomField.value === 'staycation-standard'
+      ? { image: '/assets/pet-hotel-standard-shih-tzu.png', alt: 'Shih Tzu in the standard pet hotel room', title: 'Standard Room' }
+      : { image: '/assets/pet-hotel-premium-bulldog.png', alt: 'Bulldog in the premium pet hotel room', title: 'Premium Deluxe Room' };
+    preview.innerHTML = `
+      <div class="hotel-room-preview-card">
+        <img src="${roomPreview.image}" alt="${roomPreview.alt}" loading="lazy" />
+        <p>${roomPreview.title}</p>
+      </div>
+    `;
+    preview.classList.remove('hotel-room-preview-enter');
+    void preview.offsetWidth;
+    preview.classList.add('hotel-room-preview-enter');
+  };
+
+  const updatePrice = () => {
+    if (!pricePreview) return;
+    const nights = Math.round((new Date(checkOutInput.value) - new Date(checkInInput.value)) / 864e5);
+    if (nights > 0) {
+      const pets = collectPets();
+      const total = pets.reduce((sum, pet) => sum + (ROOM_PRICES[pet.roomType] || 0), 0) * nights;
+      pricePreview.textContent = `${nights} night${nights > 1 ? 's' : ''} × selected room rates = ${fmtMoney(total)}`;
+    } else {
+      pricePreview.textContent = 'Check-out must be after check-in';
     }
     latestQuoteMessage = 'Calculating quote…';
     if (pricePreview) pricePreview.textContent = latestQuoteMessage;
@@ -189,17 +229,20 @@
   const renderPetFields = () => {
     petFields.innerHTML = Array.from({ length: Math.max(1, Math.min(5, Number(petCount.value) || 1)) }, (_, index) => `
       <div class="field full"><strong>Pet ${index + 1}</strong></div>
+      <div class="field full"><label for="pet-profile-${index}">Use a saved pet profile</label><select id="pet-profile-${index}" name="petProfile-${index}" data-saved-pet><option value="">Enter a new pet</option>${savedPets.map((pet) => `<option value="${escapeHtml(pet.id)}">${escapeHtml(pet.name)} — ${escapeHtml(pet.species)}, ${escapeHtml(pet.breed)}</option>`).join('')}</select></div>
       <div class="field"><label for="pet-name-${index}">Pet Name *</label><input id="pet-name-${index}" name="petName-${index}" required /></div>
       <div class="field"><label for="pet-species-${index}">Species *</label><select id="pet-species-${index}" name="species-${index}"><option value="dog">Dog</option><option value="cat">Cat</option></select></div>
       <div class="field"><label for="pet-breed-${index}">Breed *</label><input id="pet-breed-${index}" name="breed-${index}" required /></div>
       <div class="field"><label for="pet-age-${index}">Age (years) *</label><input id="pet-age-${index}" name="age-${index}" type="number" min="0" max="50" required /></div>
-      <div class="field full"><label for="pet-medical-history-${index}">Medical history</label><textarea id="pet-medical-history-${index}" name="medicalHistory-${index}" rows="2" placeholder="Allergies, conditions, or medications"></textarea></div>
-      <div class="field full"><label for="pet-room-${index}">Room for Pet ${index + 1} *</label><select id="pet-room-${index}" name="roomType-${index}" required>${roomSelect.innerHTML}</select></div>
+      <div class="field full"><label for="pet-room-${index}">Room for Pet ${index + 1} *</label><select id="pet-room-${index}" name="roomType-${index}" required>${roomSelect.innerHTML}</select><div class="hotel-room-preview" data-room-preview="${index}" aria-live="polite"></div></div>
     `).join('');
+    Array.from({ length: Math.max(1, Math.min(5, Number(petCount.value) || 1)) }, (_, index) => updateRoomPreview(index));
   };
   const collectPets = () => Array.from({ length: Math.max(1, Math.min(5, Number(petCount.value) || 1)) }, (_, index) => {
     const petField = (fieldName) => petFields.querySelector(`[name="${fieldName}-${index}"]`);
+    const profileId = petField('petProfile')?.value;
     return {
+      ...(profileId ? { id: profileId } : {}),
       name: petField('petName')?.value.trim() || '',
       species: petField('species')?.value || 'dog',
       breed: petField('breed')?.value.trim() || null,
@@ -209,6 +252,117 @@
     };
   });
 
+  const selectedSlots = () => [...selectedHotelSlots].sort((a, b) => a - b);
+  const syncReservationButton = () => {
+    hotelSlotNumbersInput.value = selectedSlots().join(',');
+    const hasRequiredSlots = selectedHotelSlots.size === collectPets().length;
+    submitBtn.disabled = !roomAvailable || !customerProfileLoaded || !hasRequiredSlots;
+  };
+
+  const renderHotelSlots = (availableSlotNumbers = null, error = null) => {
+    const checkIn = checkInInput.value;
+    hotelSlotPicker.hidden = false;
+    hotelSlotNumbersInput.value = selectedSlots().join(',');
+    if (!checkIn) {
+      hotelSlotDate.textContent = 'Choose a check-in date';
+      hotelSlotInstructions.textContent = 'Choose a check-in date to see which slots are available.';
+      hotelSlotGrid.innerHTML = Array.from({ length: 35 }, (_, index) => {
+        const slot = index + 1;
+        return `<button type="button" class="hotel-slot" data-hotel-slot="${slot}" aria-label="Slot ${slot}, choose a check-in date to check availability" title="Choose a check-in date to check availability" disabled>${slot}</button>`;
+      }).join('');
+      hotelSlotStatus.textContent = 'Slots 1–35 are shown. Choose a check-in date to load availability.';
+      syncReservationButton();
+      return;
+    }
+
+    const dateLabel = new Date(`${checkIn}T00:00:00`).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).replace(',', '').toUpperCase();
+    hotelSlotDate.textContent = `Slots for ${dateLabel}`;
+    hotelSlotInstructions.textContent = `Choose ${collectPets().length} slot${collectPets().length === 1 ? '' : 's'} (one per pet). Your selected slot${collectPets().length === 1 ? '' : 's'} ${collectPets().length === 1 ? 'stays' : 'stay'} reserved until check-out.`;
+
+    const available = new Set(availableSlotNumbers || []);
+    if (availableSlotNumbers) {
+      for (const slot of selectedHotelSlots) {
+        if (!available.has(slot)) selectedHotelSlots.delete(slot);
+      }
+    }
+    hotelSlotGrid.innerHTML = Array.from({ length: 35 }, (_, index) => {
+      const slot = index + 1;
+      const isAvailable = available.has(slot);
+      const isSelected = selectedHotelSlots.has(slot);
+      const isUnavailable = availableSlotNumbers && !isAvailable;
+      const atSelectionLimit = selectedHotelSlots.size >= collectPets().length && !isSelected;
+      const label = isAvailable
+        ? `Slot ${slot}${isSelected ? ', selected' : atSelectionLimit ? ', available, selection limit reached' : ', available'}`
+        : error ? `Slot ${slot}, availability not loaded` : `Slot ${slot}, unavailable for these dates`;
+      const content = isUnavailable ? `${slot} ×` : slot;
+      return `<button type="button" class="hotel-slot${isSelected ? ' selected' : ''}${isUnavailable ? ' unavailable' : ''}" data-hotel-slot="${slot}" aria-label="${label}" title="${label}" ${!isAvailable || atSelectionLimit ? 'disabled' : ''}>${content}</button>`;
+    }).join('');
+
+    if (error) {
+      hotelSlotStatus.textContent = error;
+    } else if (!availableSlotNumbers) {
+      hotelSlotStatus.textContent = 'Checking slot availability for your selected stay…';
+    } else if (available.size < collectPets().length) {
+      hotelSlotStatus.textContent = `Only ${available.size} slot${available.size === 1 ? '' : 's'} are available for the full stay; ${collectPets().length} required.`;
+    } else {
+      hotelSlotStatus.textContent = `${available.size} slot${available.size === 1 ? '' : 's'} available for the full stay.`;
+    }
+    syncReservationButton();
+  };
+
+  const refreshHotelSlots = async () => {
+    const requestId = ++slotRequest;
+    const checkIn = checkInInput.value;
+    if (!checkIn) {
+      renderHotelSlots();
+      return;
+    }
+    const roomTypes = [...new Set(collectPets().map((pet) => pet.roomType).filter(Boolean))];
+    if (!roomTypes.length) {
+      renderHotelSlots(null, 'Select a room type before checking slot availability.');
+      return;
+    }
+    let checkOut = checkOutInput.value;
+    if (!checkOut || checkOut <= checkIn) {
+      const nextNight = new Date(`${checkIn}T00:00:00`);
+      nextNight.setDate(nextNight.getDate() + 1);
+      checkOut = localDate(nextNight);
+    }
+    renderHotelSlots();
+    try {
+      const query = new URLSearchParams({
+        roomType: roomTypes[0],
+        checkIn,
+        checkOut,
+        pets: String(collectPets().length),
+      });
+      const response = await fetch(`/api/v1/bookings/hotel/availability?${query}`, { credentials: 'include' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not check hotel slot availability.');
+      if (requestId !== slotRequest) return;
+      renderHotelSlots(data.availableSlotNumbers);
+    } catch (error) {
+      if (requestId !== slotRequest) return;
+      console.error('Could not load hotel slot availability:', error);
+      renderHotelSlots(null, error.message || 'Could not check hotel slot availability. Please try again.');
+    }
+  };
+
+  hotelSlotGrid.addEventListener('click', (event) => {
+    const slotButton = event.target.closest('[data-hotel-slot]');
+    if (!slotButton || slotButton.disabled) return;
+    const slot = Number(slotButton.dataset.hotelSlot);
+    if (selectedHotelSlots.has(slot)) selectedHotelSlots.delete(slot);
+    else if (selectedHotelSlots.size < collectPets().length) selectedHotelSlots.add(slot);
+    renderHotelSlots([...hotelSlotGrid.querySelectorAll('[data-hotel-slot]')]
+      .filter((button) => !button.classList.contains('unavailable'))
+      .map((button) => Number(button.dataset.hotelSlot)));
+  });
+
 
 // Real-time room availability check
 const checkAvailability = async () => {
@@ -216,30 +370,35 @@ const checkAvailability = async () => {
   const checkIn = checkInInput.value;
   const checkOut = checkOutInput.value;
   const requestId = ++availabilityRequest;
+  refreshHotelSlots();
   roomAvailable = false;
-  submitBtn.disabled = true;
+  syncReservationButton();
   if (!roomTypes.length || !checkIn || !checkOut) return;
   try {
-    const query = new URLSearchParams({ roomType: roomTypes[0], checkIn, checkOut, petCount: String(collectPets().length) });
-    const res = await fetch(`/api/v1/bookings/hotel/availability?${query}`, { credentials: 'include' });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Could not check hotel availability');
+    const results = await Promise.all(roomTypes.map(async (roomType) => {
+      const query = new URLSearchParams({ roomType, checkIn, checkOut, pets: String(collectPets().length) });
+      const res = await fetch(`/api/v1/bookings/hotel/availability?${query}`, { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not check room availability');
+      return data;
+    }));
     if (requestId !== availabilityRequest) return;
     const badge = document.getElementById('availability-badge');
-    roomAvailable = data.available;
-    submitBtn.disabled = !roomAvailable;
+    roomAvailable = results.every((result) => result.available);
+    syncReservationButton();
     if (!badge) return;
     if (roomAvailable) {
       badge.textContent = `${data.availablePets} of ${data.capacity} pet spaces available for these dates`;
       badge.style.color = '#1a6b4a';
     } else {
-      badge.textContent = `Only ${data.availablePets} of ${data.capacity} pet spaces remain for these dates`;
+      badge.textContent = '✗ Not enough pet-hotel spaces are available for these dates';
       badge.style.color = '#c0392b';
     }
   } catch (err) {
     console.warn('Could not check availability:', err);
     if (requestId === availabilityRequest) {
-      submitBtn.disabled = true;
+      roomAvailable = false;
+      syncReservationButton();
       const badge = document.getElementById('availability-badge');
       if (badge) {
         badge.textContent = err.message || 'Could not check room availability. Please try again shortly.';
@@ -251,14 +410,33 @@ const checkAvailability = async () => {
 
 [checkInTime, checkOutTime].forEach((el) => el.addEventListener('change', renderOrderSummary));
   form.addEventListener('input', renderOrderSummary);
-  petFields.addEventListener('change', () => { updatePrice(); checkAvailability(); renderOrderSummary(); });
-  checkInInput.addEventListener('change', () => {
-    applyCheckInDates();
-    updateDateTimes();
+  petFields.addEventListener('change', (event) => {
+    const roomSelect = event.target.closest('[name^="roomType-"]');
+    if (roomSelect) {
+      updateRoomPreview(Number(roomSelect.name.split('-').pop()));
+    }
+    const profileSelect = event.target.closest('[data-saved-pet]');
+    if (profileSelect) {
+      const index = Number(profileSelect.name.split('-').pop());
+      const pet = savedPets.find((item) => String(item.id) === profileSelect.value);
+      const setField = (name, value) => {
+        const field = petFields.querySelector(`[name="${name}-${index}"]`);
+        if (!field) return;
+        field.value = value == null ? '' : value;
+        if (field.tagName === 'SELECT') field.disabled = Boolean(pet);
+        else field.readOnly = Boolean(pet);
+      };
+      setField('petName', pet?.name || '');
+      setField('species', pet?.species || 'dog');
+      setField('breed', pet?.breed || '');
+      setField('age', pet?.age ?? '');
+    }
+    selectedHotelSlots.clear();
     updatePrice();
     checkAvailability();
     renderOrderSummary();
   });
+  checkInInput.addEventListener('change', () => { selectedHotelSlots.clear(); updatePrice(); checkAvailability(); renderOrderSummary(); });
   checkOutInput.addEventListener('change', () => {
     if (checkInInput.value && checkOutInput.value && checkOutInput.value < checkOutInput.min) applyCheckInDates();
     updateDateTimes();
@@ -266,7 +444,10 @@ const checkAvailability = async () => {
     checkAvailability();
     renderOrderSummary();
   });
-  petCount.addEventListener('change', () => { renderPetFields(); updatePrice(); checkAvailability(); renderOrderSummary(); });
+  checkInInput.addEventListener('change', applyCheckInDates);
+  petCount.addEventListener('change', () => { selectedHotelSlots.clear(); renderPetFields(); updatePrice(); checkAvailability(); renderOrderSummary(); });
+  populateTimeOptions(checkInTime, '14:00');
+  populateTimeOptions(checkOutTime, '12:00');
   renderPetFields();
   updatePrice();
   checkAvailability();
@@ -279,6 +460,36 @@ const checkAvailability = async () => {
     submitBtn.classList.toggle('btn-success', type === 'success');
     submitBtn.classList.toggle('btn-error', type === 'error');
   };
+
+  const loadCustomerProfile = async () => {
+    try {
+      const response = await fetch('/customer/profile', { credentials: 'include', cache: 'no-store' });
+      if (response.status === 401) {
+        window.location.href = `/customer/login.html?return=${encodeURIComponent('/hotel.html')}`;
+        return;
+      }
+      if (!response.ok) throw new Error('Unable to load your customer profile.');
+      const data = await response.json();
+      const customer = data.customer || {};
+      for (const [field, value] of Object.entries({
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+        address: customer.address,
+      })) {
+        if (form.elements[field] && value) form.elements[field].value = value;
+      }
+      savedPets = Array.isArray(data.pets) ? data.pets : [];
+      customerProfileLoaded = true;
+      renderPetFields();
+      updatePrice();
+      checkAvailability();
+      renderOrderSummary();
+    } catch (error) {
+      showAlert('error', error.message);
+    }
+  };
+  loadCustomerProfile();
 
   const checkAndCancelPendingPayMongo = async () => {
     const params = new URLSearchParams(window.location.search);
@@ -332,18 +543,27 @@ const checkAvailability = async () => {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!form.reportValidity()) return;
-    if (!roomAvailable) {
-      showAlert('error', 'That room is not available for the selected dates. Please choose different dates or another room.');
+    if (!checkInInput.value) {
+      showAlert('error', 'Choose a check-in date to see available slots.');
       return;
     }
-    if (!checkInInput.value || !checkOutInput.value) {
-      showAlert('error', 'Please provide both check-in and check-out dates.');
+    if (!checkOutInput.value) {
+      showAlert('error', 'Please provide a check-out date.');
+      return;
+    }
+    if (selectedHotelSlots.size !== collectPets().length) {
+      showAlert('error', `Pick ${collectPets().length} available hotel slot${collectPets().length === 1 ? '' : 's'} for the selected stay.`);
+      hotelSlotPicker.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     if (checkOutInput.value <= checkInInput.value) {
       showAlert('error', 'Check-out must be after check-in.');
       applyCheckInDates();
       updatePrice();
+      return;
+    }
+    if (!roomAvailable) {
+      showAlert('error', 'That room is not available for the selected dates. Please choose different dates or another room.');
       return;
     }
 
@@ -365,6 +585,7 @@ const checkAvailability = async () => {
         address: customerAddress.trim() || null,
       },
       pets: collectPets(),
+      slotNumbers: selectedSlots(),
       roomType: collectPets()[0]?.roomType || roomSelect.value,
       checkIn: checkInInput.value,
       checkInTime: checkInTime.value,
@@ -389,14 +610,17 @@ const checkAvailability = async () => {
       }
       showAlert('success', `You completed a booking! ${result.message} for ${result.pets.map((pet) => pet.name).join(', ')}. Reference #${result.reservation.id}. ${fmtDate(result.reservation.checkIn)} → ${fmtDate(result.reservation.checkOut)}, total ${fmtMoney(result.reservation.totalPrice)}.`);
       form.reset();
+      selectedHotelSlots.clear();
       petCount.value = '1';
       renderPetFields();
       applyCheckInDates();
       updatePrice();
+      await loadCustomerProfile();
     } catch (error) {
       showAlert('error', `${error.message}`);
     } finally {
-      submitBtn.disabled = !roomAvailable;
+      syncReservationButton();
       submitBtn.textContent = 'Reserve Stay';
     }
   });
+})();

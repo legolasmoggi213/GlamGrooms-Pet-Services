@@ -53,7 +53,7 @@
             </div>
             <div class="field">
               <label for="sale-contact">Contact</label>
-              <input id="sale-contact" maxlength="160" placeholder="Optional" />
+              <input id="sale-contact" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number pattern="[0-9]{11}" title="Leave blank or enter exactly 11 digits." placeholder="Optional" />
             </div>
             <div class="field" id="sale-pet-field" hidden>
               <label for="sale-pet">Pet name</label>
@@ -63,8 +63,7 @@
               <span class="field-label">Payment method</span>
               <div class="pos-tender-options">
                 <label><input type="radio" name="paymentMethod" value="cash" checked /><span>Cash</span></label>
-                <label><input type="radio" name="paymentMethod" value="gcash" /><span>GCash</span></label>
-                <label><input type="radio" name="paymentMethod" value="card" /><span>Card</span></label>
+                <label><input type="radio" name="paymentMethod" value="qrph" /><span>QR</span></label>
               </div>
             </div>
             <div id="cash-received-field" class="field">
@@ -102,6 +101,7 @@
     </main>
   </div>
 
+  <script src="/js/mobile-number.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/admin.js"></script>
   <script>
@@ -193,6 +193,9 @@
       document.getElementById('change-preview').textContent = isCash && received >= saleTotal() && saleTotal() > 0
         ? `Change: ${money(change)}`
         : '';
+      if (!isCash) {
+        cashReceived.value = '';
+      }
     }
 
     function showMessage(text, kind) {
@@ -433,6 +436,16 @@
         petNameInput.value = '';
         renderCart();
         document.getElementById('sale-contact').value = '';
+
+        if (paymentMethod === 'qrph' && result.checkoutUrl) {
+          const qrWindow = window.open(result.checkoutUrl, '_blank', 'width=430,height=760,noopener,noreferrer');
+          if (qrWindow) {
+            qrWindow.opener = null;
+          }
+          showMessage('PayMongo QR opened in a new window.', 'success');
+          return;
+        }
+
         showMessage('Sale recorded.', 'success');
         renderReceipt(result.transaction, sale, paymentMethod, tenderedAmount, customerName);
         await Promise.all([loadSavedReceipts(), loadSalesAnalytics()]);

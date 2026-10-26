@@ -1,7 +1,14 @@
 const { HotelReservation, Customer, Pet } = require('../models');
-const { sendReservationTicket, getEmailDeliveryConfig } = require('../util/mailer');
-const { hotelReservationLockIds, releaseBookingSlotsByIds } = require('../util/bookingLocks');
-const { claimHotelStayCapacity, HOTEL_PET_CAPACITY } = require('../util/hotelCapacity');
+const { randomUUID } = require('crypto');
+const { sendReservationTicket, sendBookingCancellation } = require('../util/mailer');
+const {
+  hotelDateKeys,
+  hotelLockIdsForTypes,
+  hotelLockIdsForSlots,
+  hotelLockIdsForAssignments,
+  claimHotelSlots,
+  releaseBookingSlotsByIds,
+} = require('../util/bookingLocks');
 const { validateTime } = require('../util/businessHours');
 const catalog = require('../util/serviceCatalog');
 const { quoteHotelStay, validateFutureDate, validateFutureBookingTime, getStayNights } = require('../util/bookingCalculations');
@@ -33,12 +40,14 @@ const includeAll = [
 
 const addRelatedRecords = async (reservation) => {
   if (!reservation) return reservation;
-  const [customer, pet] = await Promise.all([
+  const petIds = reservation.petIds || (reservation.petId ? [reservation.petId] : []);
+  const [customer, pets] = await Promise.all([
     Customer.findByPk(reservation.customerId),
-    Pet.findByPk(reservation.petId),
+    Promise.all([...new Set(petIds.map(String))].map((id) => Pet.findByPk(id))),
   ]);
   reservation.Customer = customer;
-  reservation.Pet = pet;
+  reservation.Pets = pets.filter(Boolean);
+  reservation.Pet = reservation.Pets[0] || null;
   return reservation;
 };
 
@@ -69,6 +78,52 @@ const reservationRoomTypes = (reservation) => [...new Set(
       : [reservation.roomType])
     .filter(Boolean)
 )];
+
+const reservationPetCount = (reservation) => Math.max(
+  1,
+  (Array.isArray(reservation.petRooms) && reservation.petRooms.length)
+    || (Array.isArray(reservation.petIds) && reservation.petIds.length)
+    || (reservation.petId ? 1 : 0),
+);
+
+const reservationLockIds = (reservation) => reservation.hotelSlotAssignments
+  ? hotelLockIdsForAssignments(reservation.hotelSlotAssignments)
+  : Array.isArray(reservation.hotelSlotNumbers)
+    ? hotelLockIdsForSlots(reservation.hotelSlotNumbers, reservation.checkIn, reservation.checkOut)
+    : hotelLockIdsForTypes(reservationRoomTypes(reservation), reservation.checkIn, reservation.checkOut);
+
+const legacyOccupancyByDate = async (checkIn, checkOut, excludeReservationId = null) => {
+  const reservations = await HotelReservation.findAll();
+  const occupancy = new Map(hotelDateKeys(checkIn, checkOut).map((date) => [date, new Set()]));
+  for (const reservation of reservations) {
+    if (['cancelled', 'checked-out'].includes(reservation.status)
+      || (excludeReservationId && String(reservation.id) === String(excludeReservationId))
+      || reservation.checkIn >= checkOut
+      || (reservation.status !== 'checked-in' && reservation.checkOut <= checkIn)) continue;
+    const keepOccupiedUntilCheckedOut = reservation.status === 'checked-in';
+    const overlapStart = reservation.checkIn > checkIn ? reservation.checkIn : checkIn;
+    const overlapEnd = keepOccupiedUntilCheckedOut || reservation.checkOut >= checkOut ? checkOut : reservation.checkOut;
+    for (const date of hotelDateKeys(overlapStart, overlapEnd)) {
+      const usedSlots = occupancy.get(date);
+      const recordedSlots = reservation.hotelSlotAssignments?.[date]
+        || (keepOccupiedUntilCheckedOut ? Object.values(reservation.hotelSlotAssignments || {}).find((slots) => slots.length) : null)
+        || reservation.hotelSlotNumbers
+        || [];
+      if (recordedSlots.length) {
+        recordedSlots.forEach((slot) => usedSlots.add(Number(slot)));
+        continue;
+      }
+      let assigned = 0;
+      for (let slot = 1; slot <= 35 && assigned < reservationPetCount(reservation); slot += 1) {
+        if (!usedSlots.has(slot)) {
+          usedSlots.add(slot);
+          assigned += 1;
+        }
+      }
+    }
+  }
+  return occupancy;
+};
 
 const listReservations = async (req, res, next) => {
   try {
@@ -137,11 +192,19 @@ const createReservation = async (req, res, next) => {
     if (!quote.ok) return res.status(400).json({ error: quote.error });
     const nights = quote.nights;
 
-    const pricePerNight = quote.petQuotes[0].effectiveNightlyRate;
-    const inactiveStatus = ['cancelled', 'checked-out'].includes(status);
-    const capacityClaim = inactiveStatus
-      ? { lockIds: [], createdLockIds: [] }
-      : await claimHotelStayCapacity({ petCount: 1, checkIn, checkOut });
+    const pricePerNight = ROOM_PRICES[roomType];
+    const hotelSlotOwnerId = randomUUID();
+    const hotelSlotAssignments = status === 'cancelled' || status === 'checked-out'
+      ? {}
+      : await claimHotelSlots({
+        checkIn,
+        checkOut,
+        slotCount: 1,
+        legacyOccupancyByDate: await legacyOccupancyByDate(checkIn, checkOut),
+        ownerId: hotelSlotOwnerId,
+        details: { roomType, checkIn, checkOut },
+      });
+    const claimedLockIds = hotelLockIdsForAssignments(hotelSlotAssignments);
     let created = false;
     let reservation;
     try {
@@ -157,13 +220,15 @@ const createReservation = async (req, res, next) => {
         capacityManaged: true,
         capacityLockIds: capacityClaim.lockIds,
         status: status || 'pending',
+        hotelSlotAssignments,
+        hotelSlotOwnerId,
         pricePerNight,
         totalPrice: quote.total,
         pricingBreakdown: quote,
       });
       created = true;
     } finally {
-      if (!created) await releaseBookingSlotsByIds(capacityClaim.createdLockIds);
+      if (!created) await releaseBookingSlotsByIds(claimedLockIds);
     }
     const full = await HotelReservation.findByPk(reservation.id, { include: includeAll });
     res.status(201).json(await addRelatedRecords(full));
@@ -178,6 +243,7 @@ const updateReservation = async (req, res, next) => {
     if (!reservation) {
       return res.status(404).json({ error: 'Reservation not found' });
     }
+    const wasAlreadyCancelled = reservation.status === 'cancelled';
     const { roomType, checkIn, checkInTime, checkOut, checkOutTime, status, notes, customerId, petId } = req.body;
     if (status && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'A valid status is required' });
@@ -212,6 +278,10 @@ const updateReservation = async (req, res, next) => {
       return res.status(400).json({ error: 'A valid roomType is required' });
     }
 
+    const nights = nightsBetween(nextCheckIn, nextCheckOut);
+    if (nights < 1) {
+      return res.status(400).json({ error: 'Check-out must be after check-in' });
+    }
     const sourcePetRooms = Array.isArray(reservation.petRooms) && reservation.petRooms.length
       ? reservation.petRooms
       : (reservation.petIds || [reservation.petId]).filter(Boolean).map((id, index) => ({
@@ -257,7 +327,27 @@ const updateReservation = async (req, res, next) => {
     });
     const pricePerNight = quote.total / nights;
     const needsAdminConfirmation = status === 'confirmed' && !reservation.confirmedAt;
-    const shouldSendTicket = status === 'confirmed' && !reservation.reservationTicketEmailSentAt;
+    const oldLockIds = reservationLockIds(reservation);
+    const oldSlotAssignments = reservation.hotelSlotAssignments || {};
+    const ownerId = reservation.hotelSlotOwnerId || String(reservation.id);
+    const isNextStatusOccupying = !['cancelled', 'checked-out'].includes(status || reservation.status);
+    const wasOccupying = !['cancelled', 'checked-out'].includes(reservation.status);
+    const shouldClaimCapacity = isNextStatusOccupying && (stayChanged || !wasOccupying);
+    let claimedNewLockIds = [];
+    let nextSlotAssignments = oldSlotAssignments;
+    if (shouldClaimCapacity) {
+      nextSlotAssignments = await claimHotelSlots({
+        checkIn: nextCheckIn,
+        checkOut: nextCheckOut,
+        slotCount: reservationPetCount({ ...reservation, petRooms: nextPetRooms }),
+        selectedSlotNumbers: Object.values(oldSlotAssignments)[0],
+        legacyOccupancyByDate: await legacyOccupancyByDate(nextCheckIn, nextCheckOut, reservation.id),
+        ownerId,
+        details: { roomType: nextRoomType, checkIn: nextCheckIn, checkOut: nextCheckOut, bookingId: String(reservation.id) },
+      });
+      claimedNewLockIds = hotelLockIdsForAssignments(nextSlotAssignments)
+        .filter((id) => !oldLockIds.includes(id));
+    }
     try {
       const updates = {
       roomType: nextRoomType,
@@ -279,48 +369,78 @@ const updateReservation = async (req, res, next) => {
       capacityManaged: true,
       capacityLockIds: capacityClaim.lockIds,
       };
+      if (shouldClaimCapacity || reservation.hotelSlotAssignments || Array.isArray(reservation.hotelSlotNumbers) || !isNextStatusOccupying) {
+        updates.hotelSlotAssignments = isNextStatusOccupying ? nextSlotAssignments : {};
+        updates.hotelSlotOwnerId = ownerId;
+      }
       if (needsAdminConfirmation) updates.confirmedAt = new Date();
       await reservation.update(updates);
     } catch (error) {
       if (capacityClaim.createdLockIds.length) await releaseBookingSlotsByIds(capacityClaim.createdLockIds);
       throw error;
     }
-    if (inactiveStatus) {
+    if (!isNextStatusOccupying && wasOccupying) {
       await releaseBookingSlotsByIds(oldLockIds);
     } else if (shouldClaimCapacity) {
-      await releaseBookingSlotsByIds(oldLockIds.filter((id) => !capacityClaim.lockIds.includes(id)));
+      const newLockIds = hotelLockIdsForAssignments(nextSlotAssignments);
+      await releaseBookingSlotsByIds(oldLockIds.filter((id) => !newLockIds.includes(id)));
     }
-    const full = await HotelReservation.findByPk(reservation.id, { include: includeAll });
-    let emailSent = false;
-    let emailError = null;
-    if (shouldSendTicket) {
+    if (status === 'cancelled' && !wasAlreadyCancelled) {
       try {
-        const [customer, pets] = await Promise.all([
-          Customer.findByPk(full.customerId),
-          Promise.all((full.petIds || (full.petId ? [full.petId] : [])).map((id) => Pet.findByPk(id))),
-        ]);
-        if (!customer || !customer.email) {
-          emailError = 'The customer record has no email address.';
-        } else {
-          emailSent = await sendReservationTicket({
-            bookingRecord: full,
+        const customer = await Customer.findByPk(reservation.customerId);
+        const customerDetails = customer || reservation.customerDetails;
+        if (customerDetails?.email) {
+          const sent = await sendBookingCancellation({
+            to: customerDetails.email,
+            customerName: customerDetails.name,
             type: 'hotel',
-            to: customer.email,
-            customer: full.customerDetails || customer,
-            pets: pets.filter(Boolean),
+            bookingId: reservation.id,
+            date: reservation.checkIn,
+            time: reservation.checkInTime,
+            service: reservation.roomType,
           });
-          if (!emailSent) {
-            emailError = getEmailDeliveryConfig().configured
-              ? 'The email provider did not send the ticket. Check Render logs and verify your sender settings.'
-              : 'Email delivery is not configured. Add RESEND_API_KEY and RESEND_FROM_EMAIL, or SMTP_USER and SMTP_PASS, in Render Environment.';
-          }
+          if (!sent) console.warn(`Cancellation notice was not sent for hotel reservation ${reservation.id}.`);
+        } else {
+          console.warn(`No customer email is available for hotel reservation ${reservation.id} cancellation notice.`);
         }
-      } catch (mailError) {
-        console.error('Hotel reservation ticket email failed:', mailError);
-        emailError = 'The email provider rejected the ticket. Check its response in Render logs, and verify the sender address/domain and provider credentials.';
+      } catch (notificationError) {
+        console.error(`Unable to send cancellation notice for hotel reservation ${reservation.id}:`, notificationError);
       }
     }
-    res.json({ ...(await addRelatedRecords(full)), emailSent, emailError });
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const sendReservationTicketEmail = async (req, res, next) => {
+  try {
+    const reservation = await HotelReservation.findByPk(req.params.id);
+    if (!reservation) return res.status(404).json({ error: 'Reservation not found' });
+    if (reservation.status !== 'confirmed' && !reservation.confirmedAt) {
+      return res.status(409).json({ error: 'Confirm the reservation before sending its ticket.' });
+    }
+
+    const [customer, pets] = await Promise.all([
+      Customer.findByPk(reservation.customerId),
+      Promise.all((reservation.petIds || (reservation.petId ? [reservation.petId] : [])).map((id) => Pet.findByPk(id))),
+    ]);
+    if (!customer) return res.status(404).json({ error: 'The customer record for this reservation was not found.' });
+
+    try {
+      const emailSent = await sendReservationTicket({
+        bookingRecord: reservation,
+        type: 'hotel',
+        to: customer.email,
+        customer: reservation.customerDetails || customer,
+        pets: pets.filter(Boolean),
+      });
+      if (!emailSent) return res.status(503).json({ error: 'The ticket email was not sent. Check the email configuration or whether a ticket was already sent.' });
+    } catch (mailError) {
+      console.error('Hotel reservation ticket email failed:', mailError);
+      return res.status(502).json({ error: 'The reservation was confirmed, but the ticket email failed. Check the server email provider logs.' });
+    }
+    return res.json({ success: true, emailSent: true });
   } catch (error) {
     next(error);
   }
@@ -367,7 +487,7 @@ const deleteReservation = async (req, res, next) => {
       return res.status(404).json({ error: 'Reservation not found' });
     }
     await reservation.destroy();
-    await releaseBookingSlotsByIds(hotelReservationLockIds(reservation));
+    await releaseBookingSlotsByIds(reservationLockIds(reservation));
     res.json({ message: 'Reservation deleted' });
   } catch (error) {
     next(error);
@@ -383,6 +503,6 @@ module.exports = {
   getReservation,
   createReservation,
   updateReservation,
-  resendReservationTicket,
+  sendReservationTicketEmail,
   deleteReservation,
 };

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Employee Accounts — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="admin-main">
+      <h1>Employee Accounts</h1>
+      <p class="page-sub">Create and manage staff access. Staff must verify their Gmail address with a code each time they sign in. Use “Set Gmail” to update existing accounts without an address.</p>
+      <section class="panel">
+        <h3>Add staff member</h3>
+        <form id="staff-create-form" class="form-grid">
+          <div class="field"><label for="staff-name">Employee name</label><input id="staff-name" name="name" maxlength="100" required /></div>
+          <div class="field"><label for="staff-username">Username</label><input id="staff-username" name="username" minlength="3" maxlength="31" pattern="[A-Za-z][A-Za-z0-9_-]{2,30}" required /></div>
+          <div class="field"><label for="staff-email">Staff Gmail</label><input id="staff-email" name="email" type="email" pattern="^[^@]+@gmail\.com$" autocomplete="email" required /></div>
+          <div class="field"><label for="staff-password">Temporary password</label><input id="staff-password" name="password" type="password" autocomplete="new-password" required /></div>
+          <div class="field full text-muted">Use at least 8 characters with uppercase, lowercase, a number, and a symbol.</div>
+          <div class="form-actions full"><button class="btn btn-primary" type="submit">Create staff account</button></div>
+        </form>
+        <p id="staff-message" aria-live="polite"></p>
+      </section>
+      <section class="panel">
+        <h3>Staff accounts</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Name</th><th>Username</th><th>Gmail</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="staff-rows"><tr><td colspan="5">Loading staff accounts…</td></tr></tbody>
+        </table></div>
+      </section>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script>
+    renderSidebar('Employees');
+    const rows = document.getElementById('staff-rows');
+    const message = document.getElementById('staff-message');
+    const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[character]));
+
+    async function loadStaff() {
+      const accounts = await apiGet('/admin/staff');
+      rows.innerHTML = accounts.length ? accounts.map((account) => `
+        <tr>
+          <td>${escape(account.name)}</td><td>${escape(account.username)}</td>
+          <td>${escape(account.email || 'Not set')}</td>
+          <td>${account.active ? 'Active' : 'Inactive'}</td>
+          <td>
+            <button class="btn btn-outline btn-sm" data-toggle-id="${escape(account.id)}" data-active="${account.active}">${account.active ? 'Deactivate' : 'Activate'}</button>
+            <button class="btn btn-outline btn-sm" data-email-id="${escape(account.id)}" data-email="${escape(account.email || '')}">Set Gmail</button>
+            <button class="btn btn-outline btn-sm" data-password-id="${escape(account.id)}">Set password</button>
+            <button class="btn btn-danger btn-sm" data-delete-id="${escape(account.id)}">Delete</button>
+          </td>
+        </tr>`).join('') : '<tr><td colspan="4">No staff accounts yet.</td></tr>';
+    }
+
+    document.getElementById('staff-create-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const submit = form.querySelector('[type="submit"]');
+      submit.disabled = true;
+      message.className = 'text-muted';
+      message.textContent = '';
+      try {
+        await apiPost('/admin/staff', Object.fromEntries(new FormData(form)));
+        form.reset();
+        message.className = 'text-success';
+        message.textContent = 'Staff account created.';
+        await loadStaff();
+      } catch (error) {
+        message.className = 'text-error';
+        message.textContent = error.message;
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    rows.addEventListener('click', async (event) => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      try {
+        if (button.dataset.toggleId) {
+          await apiPut(`/admin/staff/${encodeURIComponent(button.dataset.toggleId)}`, {
+            active: button.dataset.active !== 'true',
+          });
+        } else if (button.dataset.passwordId) {
+          const password = window.prompt('Enter the new staff password:');
+          if (password === null) return;
+          await apiPut(`/admin/staff/${encodeURIComponent(button.dataset.passwordId)}`, { password });
+        } else if (button.dataset.emailId) {
+          const email = window.prompt('Enter the staff member’s Gmail address for verification codes:', button.dataset.email);
+          if (email === null) return;
+          await apiPut(`/admin/staff/${encodeURIComponent(button.dataset.emailId)}`, { email });
+        } else if (button.dataset.deleteId) {
+          if (!window.confirm('Permanently delete this staff account?')) return;
+          await apiDelete(`/admin/staff/${encodeURIComponent(button.dataset.deleteId)}`);
+        }
+        await loadStaff();
+      } catch (error) {
+        message.className = 'text-error';
+        message.textContent = error.message;
+      }
+    });
+
+    loadStaff().catch((error) => {
+      rows.innerHTML = `<tr><td colspan="5">${escape(error.message)}</td></tr>`;
+    });
+  </script>
+</body>
+</html>

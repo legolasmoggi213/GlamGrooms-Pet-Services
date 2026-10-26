@@ -9,7 +9,7 @@ class BookingConflictError extends Error {
 }
 
 const lockCollection = firestore.collection('bookingSlots');
-const HOTEL_PET_CAPACITY = 35;
+const HOTEL_DAILY_CAPACITY = 35;
 
 const groomingLockIds = (date, time, durationMinutes = 60) => {
   const [hour, minute] = String(time || '').split(':').map(Number);
@@ -48,7 +48,7 @@ const hotelLockIds = (roomType, checkIn, checkOut) => {
 const hotelLockIdsForTypes = (roomTypes, checkIn, checkOut) => [...new Set(roomTypes.filter(Boolean))]
   .flatMap((roomType) => hotelLockIds(roomType, checkIn, checkOut));
 
-const hotelCapacityDates = (checkIn, checkOut) => {
+const hotelDateKeys = (checkIn, checkOut) => {
   const dates = [];
   for (let day = new Date(`${checkIn}T00:00:00.000Z`); day < new Date(`${checkOut}T00:00:00.000Z`); day.setUTCDate(day.getUTCDate() + 1)) {
     dates.push(day.toISOString().slice(0, 10));
@@ -56,126 +56,80 @@ const hotelCapacityDates = (checkIn, checkOut) => {
   return dates;
 };
 
-const hotelCapacitySlotIds = (date) => Array.from({ length: HOTEL_PET_CAPACITY }, (_, index) =>
-  `hotel_capacity_${date}_${String(index + 1).padStart(2, '0')}`);
+const hotelSlotLockId = (date, slotNumber) => `hotel_capacity_${date}_${slotNumber}`;
 
-const getHotelCapacityAvailability = async (checkIn, checkOut, legacyPetCounts = {}) => {
-  const dates = hotelCapacityDates(checkIn, checkOut);
-  const lockIds = dates.flatMap(hotelCapacitySlotIds);
-  const refs = lockIds.map((id) => lockCollection.doc(id));
-  const snapshots = refs.length ? await firestore.getAll(...refs) : [];
-  const snapshotById = new Map(refs.map((ref, index) => [ref.id, snapshots[index]]));
-  const daily = dates.map((date) => {
-    const occupiedByLocks = hotelCapacitySlotIds(date).filter((id) => snapshotById.get(id)?.exists).length;
-    const legacyOccupied = Math.max(0, Number(legacyPetCounts[date]) || 0);
-    return {
-      date,
-      availablePets: Math.max(0, HOTEL_PET_CAPACITY - occupiedByLocks - legacyOccupied),
-    };
-  });
-  return {
-    capacity: HOTEL_PET_CAPACITY,
-    availablePets: daily.length ? Math.min(...daily.map((item) => item.availablePets)) : HOTEL_PET_CAPACITY,
-    daily,
-  };
-};
+const hotelLockIdsForSlots = (slotNumbers, checkIn, checkOut) => hotelDateKeys(checkIn, checkOut)
+  .flatMap((date) => slotNumbers.map((slotNumber) => hotelSlotLockId(date, slotNumber)));
 
-const claimHotelCapacity = async (petCount, checkIn, checkOut, legacyPetCounts = {}) => {
-  const dates = hotelCapacityDates(checkIn, checkOut);
-  const count = Number(petCount);
-  if (!Number.isInteger(count) || count < 1 || count > HOTEL_PET_CAPACITY || !dates.length) {
-    throw new BookingConflictError('A valid pet count and stay date range are required.');
+const hotelLockIdsForAssignments = (assignments) => Object.entries(assignments || {})
+  .flatMap(([date, slotNumbers]) => slotNumbers.map((slotNumber) => hotelSlotLockId(date, slotNumber)));
+
+const claimHotelSlots = async ({ checkIn, checkOut, slotCount, selectedSlotNumbers, legacyOccupancyByDate, ownerId, details }) => {
+  const requestedSlots = selectedSlotNumbers == null ? null : [...new Set(selectedSlotNumbers)];
+  if (requestedSlots && (requestedSlots.length !== slotCount
+    || requestedSlots.some((slot) => !Number.isInteger(slot) || slot < 1 || slot > HOTEL_DAILY_CAPACITY))) {
+    throw new BookingConflictError(`Choose exactly ${slotCount} different hotel slots from 1 to ${HOTEL_DAILY_CAPACITY}.`);
   }
-  const idsByDate = dates.map((date) => hotelCapacitySlotIds(date));
-  const allIds = idsByDate.flat();
-  const refs = allIds.map((id) => lockCollection.doc(id));
-  const claimedIds = await firestore.runTransaction(async (transaction) => {
-    const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)));
-    const snapshotById = new Map(refs.map((ref, index) => [ref.id, snapshots[index]]));
-    const selectedByDate = [];
-
-    for (let index = 0; index < dates.length; index += 1) {
-      const date = dates[index];
-      const occupiedByLocks = idsByDate[index].filter((id) => snapshotById.get(id)?.exists).length;
-      const legacyOccupied = Math.max(0, Number(legacyPetCounts[date]) || 0);
-      const availableIds = idsByDate[index].filter((id) => !snapshotById.get(id)?.exists);
-      if (occupiedByLocks + legacyOccupied + count > HOTEL_PET_CAPACITY || availableIds.length < count) {
-        throw new BookingConflictError('There are not enough hotel spaces for those dates. Please choose another stay.');
-      }
-      selectedByDate.push(availableIds.slice(0, count));
+  const dates = hotelDateKeys(checkIn, checkOut);
+  const candidateIds = dates.flatMap((date) => Array.from(
+    { length: HOTEL_DAILY_CAPACITY },
+    (_, index) => hotelSlotLockId(date, index + 1),
+  ));
+  const refs = candidateIds.map((id) => lockCollection.doc(id));
+  const slots = await firestore.runTransaction(async (transaction) => {
+    const snapshots = [];
+    for (let offset = 0; offset < refs.length; offset += 100) {
+      const batch = await Promise.all(refs.slice(offset, offset + 100).map((ref) => transaction.get(ref)));
+      snapshots.push(...batch);
     }
+    const snapshotsById = new Map(candidateIds.map((id, index) => [id, snapshots[index]]));
 
-    selectedByDate.forEach((ids, index) => {
-      ids.forEach((id) => transaction.create(lockCollection.doc(id), {
-        type: 'hotel-capacity',
-        date: dates[index],
-        createdAt: new Date(),
-      }));
-    });
-    return selectedByDate.flat();
-  });
-  return claimedIds;
-};
-
-const claimReplacementHotelCapacity = async (oldLockIds, petCount, checkIn, checkOut, legacyPetCounts = {}) => {
-  const dates = hotelCapacityDates(checkIn, checkOut);
-  const count = Number(petCount);
-  if (!Number.isInteger(count) || count < 1 || count > HOTEL_PET_CAPACITY || !dates.length) {
-    throw new BookingConflictError('A valid pet count and stay date range are required.');
-  }
-  const oldIds = new Set(Array.isArray(oldLockIds) ? oldLockIds : []);
-  const idsByDate = dates.map((date) => hotelCapacitySlotIds(date));
-  const allIds = [...new Set([...oldIds, ...idsByDate.flat()])];
-  const refs = allIds.map((id) => lockCollection.doc(id));
-  const replacement = await firestore.runTransaction(async (transaction) => {
-    const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)));
-    const snapshotById = new Map(refs.map((ref, index) => [ref.id, snapshots[index]]));
-    const selectedByDate = [];
-
-    for (let index = 0; index < dates.length; index += 1) {
-      const ids = idsByDate[index];
-      const occupiedByOtherLocks = ids.filter((id) => snapshotById.get(id)?.exists && !oldIds.has(id)).length;
-      const legacyOccupied = Math.max(0, Number(legacyPetCounts[dates[index]]) || 0);
-      const availableIds = ids.filter((id) => !snapshotById.get(id)?.exists || oldIds.has(id));
-      if (occupiedByOtherLocks + legacyOccupied + count > HOTEL_PET_CAPACITY || availableIds.length < count) {
-        throw new BookingConflictError('There are not enough hotel spaces for those dates. Please choose another stay.');
-      }
-      selectedByDate.push(availableIds.slice(0, count));
-    }
-
-    const created = [];
-    selectedByDate.forEach((ids, index) => {
-      ids.forEach((id) => {
-        if (!snapshotById.get(id)?.exists) {
-          transaction.create(lockCollection.doc(id), {
-            type: 'hotel-capacity',
-            date: dates[index],
-            createdAt: new Date(),
+    const availableAcrossStay = Array.from({ length: HOTEL_DAILY_CAPACITY }, (_, index) => index + 1)
+        .filter((slotNumber) => {
+          return dates.every((date) => {
+            const legacySlots = legacyOccupancyByDate.get(date);
+            if (legacySlots instanceof Set ? legacySlots.has(slotNumber) : slotNumber <= (legacySlots || 0)) return false;
+            const snapshot = snapshotsById.get(hotelSlotLockId(date, slotNumber));
+            return !snapshot.exists || snapshot.data()?.ownerId === ownerId;
           });
-          created.push(id);
+        });
+    const slots = requestedSlots || availableAcrossStay.slice(0, slotCount);
+    if (slots.length < slotCount || slots.some((slotNumber) => !availableAcrossStay.includes(slotNumber))) {
+      throw new BookingConflictError('One or more selected hotel slots are unavailable for the full stay. Choose different slots or dates.');
+    }
+    const assignments = Object.fromEntries(dates.map((date) => [date, slots]));
+    for (const date of dates) {
+      for (const slotNumber of assignments[date]) {
+        const id = hotelSlotLockId(date, slotNumber);
+        const ref = lockCollection.doc(id);
+        const snapshot = snapshotsById.get(id);
+        if (!snapshot.exists) {
+          transaction.create(ref, { ...details, type: 'hotel-capacity', date, slotNumber, ownerId });
         }
-      });
-    });
-    return { lockIds: selectedByDate.flat(), createdLockIds: created };
+      }
+    }
+    return assignments;
   });
-  return replacement;
-};
-
-const hotelReservationLockIds = (reservation) => {
-  if (reservation?.capacityManaged) return Array.isArray(reservation.capacityLockIds) ? reservation.capacityLockIds : [];
-  const roomTypes = Array.isArray(reservation?.roomTypes) && reservation.roomTypes.length
-    ? reservation.roomTypes
-    : Array.isArray(reservation?.petRooms) && reservation.petRooms.length
-      ? reservation.petRooms.map((petRoom) => petRoom.roomType)
-      : [reservation?.roomType];
-  return hotelLockIdsForTypes(roomTypes, reservation?.checkIn, reservation?.checkOut);
+  return slots;
 };
 
 const areBookingSlotsAvailable = async (lockIds) => {
   if (!lockIds.length) return true;
-  const refs = lockIds.map((id) => lockCollection.doc(id));
-  const snapshots = await firestore.getAll(...refs);
-  return snapshots.every((snapshot) => !snapshot.exists);
+  return (await getUnavailableBookingSlotIds(lockIds)).size === 0;
+};
+
+const getUnavailableBookingSlotIds = async (lockIds) => {
+  const ids = [...new Set(lockIds)];
+  const unavailable = new Set();
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const batch = ids.slice(offset, offset + 100);
+    const refs = batch.map((id) => lockCollection.doc(id));
+    const snapshots = await firestore.getAll(...refs);
+    snapshots.forEach((snapshot, index) => {
+      if (snapshot.exists) unavailable.add(batch[index]);
+    });
+  }
+  return unavailable;
 };
 
 const claimBookingSlots = async (lockIds, details) => {
@@ -231,18 +185,17 @@ const claimReplacementBookingSlots = async (oldLockIds, newLockIds, details, old
 
 module.exports = {
   BookingConflictError,
+  HOTEL_DAILY_CAPACITY,
   groomingLockIds,
-  releaseGroomingBookingSlots,
-  releaseGroomingLockIds,
   hotelLockIds,
   hotelLockIdsForTypes,
-  HOTEL_PET_CAPACITY,
-  hotelCapacityDates,
-  getHotelCapacityAvailability,
-  claimHotelCapacity,
-  claimReplacementHotelCapacity,
-  hotelReservationLockIds,
+  hotelDateKeys,
+  hotelSlotLockId,
+  hotelLockIdsForSlots,
+  hotelLockIdsForAssignments,
+  claimHotelSlots,
   areBookingSlotsAvailable,
+  getUnavailableBookingSlotIds,
   claimBookingSlots,
   claimReplacementBookingSlots,
   releaseBookingSlots,

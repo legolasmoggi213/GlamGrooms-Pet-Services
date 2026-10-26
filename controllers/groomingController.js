@@ -1,8 +1,7 @@
 const { GroomingAppointment, Customer, Pet } = require('../models');
-const { sendReservationTicket, getEmailDeliveryConfig } = require('../util/mailer');
-const { groomingLockIds, releaseGroomingBookingSlots, releaseGroomingLockIds, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
-const { validateTime, validatePickupTime, validateAppointmentDuration } = require('../util/businessHours');
-const { groomingBookingDuration, groomingRecordDuration, timeToMinutes, validateFutureBookingTime } = require('../util/bookingCalculations');
+const { sendReservationTicket, sendBookingCancellation } = require('../util/mailer');
+const { groomingLockIds, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
+const { validateTime, validatePickupTime } = require('../util/businessHours');
 const catalog = require('../util/serviceCatalog');
 
 // Exact service menus from the Glam Grooms flyers.
@@ -47,12 +46,14 @@ const includeAll = [
 
 const addRelatedRecords = async (appointment) => {
   if (!appointment) return appointment;
-  const [customer, pet] = await Promise.all([
+  const petIds = appointment.petIds || (appointment.petId ? [appointment.petId] : []);
+  const [customer, pets] = await Promise.all([
     Customer.findByPk(appointment.customerId),
-    Pet.findByPk(appointment.petId),
+    Promise.all([...new Set(petIds.map(String))].map((id) => Pet.findByPk(id))),
   ]);
   appointment.Customer = customer;
-  appointment.Pet = pet;
+  appointment.Pets = pets.filter(Boolean);
+  appointment.Pet = appointment.Pets[0] || null;
   return appointment;
 };
 
@@ -162,6 +163,7 @@ const updateAppointment = async (req, res, next) => {
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
+    const wasAlreadyCancelled = appointment.status === 'cancelled';
     const { service, date, time, pickupTime, status, notes, customerId, petId } = req.body;
     if (status && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'A valid status is required' });
@@ -230,7 +232,6 @@ const updateAppointment = async (req, res, next) => {
       })) return res.status(409).json({ error: 'That grooming time is already booked.' });
     }
     const needsAdminConfirmation = status === 'confirmed' && !appointment.confirmedAt;
-    const shouldSendTicket = status === 'confirmed' && !appointment.reservationTicketEmailSentAt;
     if (needsAdminConfirmation) updates.confirmedAt = new Date();
     const oldDate = appointment.date;
     const oldTime = appointment.time;
@@ -256,37 +257,62 @@ const updateAppointment = async (req, res, next) => {
     } else if (scheduleChanged) {
       await releaseGroomingLockIds(oldLockIds.filter((id) => !newLockIds.includes(id)), oldDate, oldTime);
     }
-    const full = await GroomingAppointment.findByPk(appointment.id, { include: includeAll });
-    let emailSent = false;
-    let emailError = null;
-    if (shouldSendTicket) {
+    if (updates.status === 'cancelled' && !wasAlreadyCancelled) {
       try {
-        const [customer, pets] = await Promise.all([
-          Customer.findByPk(full.customerId),
-          Promise.all((full.petIds || (full.petId ? [full.petId] : [])).map((id) => Pet.findByPk(id))),
-        ]);
-        if (!customer || !customer.email) {
-          emailError = 'The customer record has no email address.';
-        } else {
-          emailSent = await sendReservationTicket({
-            bookingRecord: full,
+        const customer = await Customer.findByPk(updates.customerId);
+        const customerDetails = customer || appointment.customerDetails;
+        if (customerDetails?.email) {
+          const sent = await sendBookingCancellation({
+            to: customerDetails.email,
+            customerName: customerDetails.name,
             type: 'grooming',
-            to: customer.email,
-            customer: full.customerDetails || customer,
-            pets: pets.filter(Boolean),
+            bookingId: appointment.id,
+            date: updates.date,
+            time: updates.time,
+            service: updates.service || appointment.service,
           });
-          if (!emailSent) {
-            emailError = getEmailDeliveryConfig().configured
-              ? 'The email provider did not send the ticket. Check Render logs and verify your sender settings.'
-              : 'Email delivery is not configured. Add RESEND_API_KEY and RESEND_FROM_EMAIL, or SMTP_USER and SMTP_PASS, in Render Environment.';
-          }
+          if (!sent) console.warn(`Cancellation notice was not sent for grooming appointment ${appointment.id}.`);
+        } else {
+          console.warn(`No customer email is available for grooming appointment ${appointment.id} cancellation notice.`);
         }
-      } catch (mailError) {
-        console.error('Grooming reservation ticket email failed:', mailError);
-        emailError = 'The email provider rejected the ticket. Check its response in Render logs, and verify the sender address/domain and provider credentials.';
+      } catch (notificationError) {
+        console.error(`Unable to send cancellation notice for grooming appointment ${appointment.id}:`, notificationError);
       }
     }
-    res.json({ ...(await addRelatedRecords(full)), emailSent, emailError });
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const sendAppointmentTicket = async (req, res, next) => {
+  try {
+    const appointment = await GroomingAppointment.findByPk(req.params.id);
+    if (!appointment) return res.status(404).json({ error: 'Appointment not found' });
+    if (appointment.status !== 'confirmed' && !appointment.confirmedAt) {
+      return res.status(409).json({ error: 'Confirm the appointment before sending its ticket.' });
+    }
+
+    const [customer, pets] = await Promise.all([
+      Customer.findByPk(appointment.customerId),
+      Promise.all((appointment.petIds || (appointment.petId ? [appointment.petId] : [])).map((id) => Pet.findByPk(id))),
+    ]);
+    if (!customer) return res.status(404).json({ error: 'The customer record for this appointment was not found.' });
+
+    try {
+      const emailSent = await sendReservationTicket({
+        bookingRecord: appointment,
+        type: 'grooming',
+        to: customer.email,
+        customer: appointment.customerDetails || customer,
+        pets: pets.filter(Boolean),
+      });
+      if (!emailSent) return res.status(503).json({ error: 'The ticket email was not sent. Check the email configuration or whether a ticket was already sent.' });
+    } catch (mailError) {
+      console.error('Grooming reservation ticket email failed:', mailError);
+      return res.status(502).json({ error: 'The appointment was confirmed, but the ticket email failed. Check the server email provider logs.' });
+    }
+    return res.json({ success: true, emailSent: true });
   } catch (error) {
     next(error);
   }
@@ -347,6 +373,6 @@ module.exports = {
   getAppointment,
   createAppointment,
   updateAppointment,
-  resendAppointmentTicket,
+  sendAppointmentTicket,
   deleteAppointment,
 };

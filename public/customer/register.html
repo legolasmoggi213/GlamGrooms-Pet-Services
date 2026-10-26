@@ -31,7 +31,7 @@
           <button type="button" class="toggle-password" data-target="password" aria-label="Show password">👁</button>
         </div>
       </div>
-      <div class="field"><label for="phone">Phone *</label><input id="phone" name="phone" type="tel" inputmode="numeric" pattern="[0-9]*" data-numeric-only="integer" required placeholder="09175550123" /></div>
+      <div class="field"><label for="phone">Phone *</label><input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number pattern="[0-9]{11}" title="Enter exactly 11 digits." required placeholder="09175550123" /></div>
       <div class="field"><label for="address">Address *</label><input id="address" name="address" required placeholder="Street, City" /></div>
       <div class="field terms">
         <button class="terms-link" id="toggle-privacy-terms" type="button" aria-expanded="false" aria-controls="privacy-terms-panel">Review privacy terms and conditions</button>
@@ -110,6 +110,7 @@
       setPrivacyPanelOpen(true);
     };
   </script>
+  <script src="/js/mobile-number.js"></script>
   <script src="/js/password-strength.js"></script>
   <script src="/js/customer-auth.js"></script>
   <script src="/js/password-toggle.js"></script>

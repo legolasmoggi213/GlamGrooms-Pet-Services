@@ -43,9 +43,15 @@
 
     const rowsEl = document.getElementById('rows');
     let customersCache = [];
+    let canManageRecords = true;
 
     async function loadPets() {
-      const pets = await apiGet('/pets');
+      const [pets, session] = await Promise.all([
+        apiGet('/pets'),
+        fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json()),
+      ]);
+      canManageRecords = session.role === 'ADMIN';
+      document.getElementById('add-btn').hidden = !canManageRecords;
       if (!pets.length) {
         rowsEl.innerHTML = '<tr><td colspan="7" class="empty">No pets registered yet.</td></tr>';
         return;
@@ -54,20 +60,42 @@
         .map(
           (p) => `
         <tr>
-          <td>${p.id}</td>
+            <td><button class="record-id" type="button" onclick='viewPet(${escapeHtml(JSON.stringify(p.id))})' aria-label="View pet ${escapeHtml(p.id)}">${escapeHtml(p.id)}</button></td>
           <td><strong>${escapeHtml(p.name)}</strong></td>
-          <td>${capitalize(p.species)}</td>
+            <td>${escapeHtml(capitalize(p.species))}</td>
           <td>${escapeHtml(p.breed || '—')}</td>
           <td>${p.age != null ? p.age : '—'}</td>
           <td>${escapeHtml((p.Customer && p.Customer.name) || (customersCache.find((c) => String(c.id) === String(p.customerId)) || {}).name || '—')}</td>
           <td>
-            <button class="btn btn-outline btn-sm" onclick='editPet(${escapeHtml(JSON.stringify(p.id))})'>Edit</button>
-            <button class="btn btn-danger btn-sm" onclick='removePet(${escapeHtml(JSON.stringify(p.id))}, ${escapeHtml(JSON.stringify(p.name))})'>Delete</button>
+              ${canManageRecords ? `<button class="btn btn-outline btn-sm" onclick='editPet(${escapeHtml(JSON.stringify(p.id))})'>Edit</button>
+              <button class="btn btn-danger btn-sm" onclick='removePet(${escapeHtml(JSON.stringify(p.id))}, ${escapeHtml(JSON.stringify(p.name))})'>Delete</button>` : '<span class="text-muted">Read-only</span>'}
           </td>
         </tr>`
         )
         .join('');
     }
+
+    window.viewPet = async (id) => {
+      const p = await apiGet(`/pets/${id}`);
+      const owner = p.Customer || customersCache.find((customer) => String(customer.id) === String(p.customerId));
+      openModal('Pet Details', `
+          <div class="form-grid">
+            <div class="field"><label>Pet ID</label><input type="text" readonly value="${escapeHtml(p.id)}" /></div>
+            <div class="field"><label>Name</label><input type="text" readonly value="${escapeHtml(p.name || '—')}" /></div>
+            <div class="field"><label>Species</label><input type="text" readonly value="${escapeHtml(capitalize(p.species) || '—')}" /></div>
+            <div class="field"><label>Breed</label><input type="text" readonly value="${escapeHtml(p.breed || '—')}" /></div>
+            <div class="field"><label>Age</label><input type="text" readonly value="${escapeHtml(p.age != null ? p.age : '—')}" /></div>
+            <div class="field"><label>Size</label><input type="text" readonly value="${escapeHtml(p.size || '—')}" /></div>
+            <div class="field"><label>Owner ID</label><input type="text" readonly value="${escapeHtml(p.customerId || '—')}" /></div>
+            <div class="field"><label>Owner Name</label><input type="text" readonly value="${escapeHtml(owner?.name || '—')}" /></div>
+            <div class="field"><label>Owner Email</label><input type="text" readonly value="${escapeHtml(owner?.email || '—')}" /></div>
+            <div class="field"><label>Owner Phone</label><input type="text" readonly value="${escapeHtml(owner?.phone || '—')}" /></div>
+            <div class="field full"><label>Care Notes</label><textarea rows="3" readonly>${escapeHtml(p.notes || 'No care notes.')}</textarea></div>
+            <div class="field"><label>Created At</label><input type="text" readonly value="${escapeHtml(p.createdAt ? fmtDateTime(p.createdAt) : '—')}" /></div>
+            <div class="field"><label>Updated At</label><input type="text" readonly value="${escapeHtml(p.updatedAt ? fmtDateTime(p.updatedAt) : '—')}" /></div>
+          </div>
+      `);
+    };
 
     function petForm(p = {}) {
       const options = customersCache

@@ -1,5 +1,5 @@
 const { Customer, Pet, GroomingAppointment, HotelReservation } = require('../models');
-const { isOptionalPhoneNumber } = require('../util/numericValidation');
+const { isValidMobileNumber } = require('../util/mobileNumber');
 
 const attachPet = async (booking) => {
   if (!booking || !booking.petId) return booking;
@@ -62,7 +62,9 @@ const getCustomer = async (req, res, next) => {
 const createCustomer = async (req, res, next) => {
   try {
     const { name, email, phone, address } = req.body;
-    if (!isOptionalPhoneNumber(phone)) return res.status(400).json({ error: 'Phone number must contain digits only.' });
+    if (!isValidMobileNumber(phone)) {
+      return res.status(400).json({ error: 'Phone number must contain exactly 11 digits.' });
+    }
     const customer = await Customer.create({ name, email, phone, address });
     res.status(201).json(customer);
   } catch (error) {
@@ -77,7 +79,9 @@ const updateCustomer = async (req, res, next) => {
       return res.status(404).json({ error: 'Customer not found' });
     }
     const { name, email, phone, address } = req.body;
-    if (!isOptionalPhoneNumber(phone)) return res.status(400).json({ error: 'Phone number must contain digits only.' });
+    if (!isValidMobileNumber(phone)) {
+      return res.status(400).json({ error: 'Phone number must contain exactly 11 digits.' });
+    }
     await customer.update({ name, email, phone, address });
     res.json(customer);
   } catch (error) {

@@ -37,7 +37,7 @@
           </div>
           <div class="field">
             <label for="c-phone">Phone *</label>
-            <input id="c-phone" name="phone" type="tel" inputmode="numeric" pattern="[0-9]*" required />
+            <input id="c-phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number pattern="[0-9]{11}" title="Enter exactly 11 digits." required />
           </div>
           <div class="field full">
             <label for="c-email">Email *</label>
@@ -161,8 +161,9 @@
 
   <footer class="footer"><div class="footer-brand">Glam Grooms Pet Spa & Hotel</div><p>Address: # Unit 1, PR1MO Building, Gloria Diaz Street, BF Resort Village, Las Piñas 1747</p><p>Phone: <a href="tel:+639608672330">0960 867 2330</a></p><p>Business Hours: Friday 9 AM-5 PM | Saturday 9 AM-5 PM | Sunday 6 AM-5 PM | Monday 9 AM-5 PM | Tuesday 9 AM-5 PM | Wednesday 9 AM-5 PM | Thursday 9 AM-5 PM</p></footer>
 
-  <script src="/js/api.js?v=3"></script>
-  <script src="/js/grooming.js?v=3"></script>
+  <script src="/js/mobile-number.js"></script>
+  <script src="/js/api.js?v=2"></script>
+  <script src="/js/grooming.js?v=5"></script>
 <script>
     // Show "My Account" if the customer is logged in, otherwise "Login".
     // Verified against the server via the httpOnly token — no stale cookie issues.

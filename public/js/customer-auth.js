@@ -25,8 +25,6 @@ const isGmailOnly = (email) => {
           ? 'Email/password sign-in is disabled in Firebase Authentication settings.'
         : error.code === 'auth/too-many-requests'
           ? 'Too many attempts. Please wait a moment and try again.'
-        : error.code === 'auth/email-not-verified'
-          ? 'Please verify your email before signing in. Check your inbox.'
           : error.message;
   };
 
@@ -48,26 +46,13 @@ const isGmailOnly = (email) => {
     }
   };
 
-  const showVerificationMessage = (user) => {
-    const form = document.querySelector('form');
-    if (!form) return;
-    let message = form.querySelector('.text-success');
-    if (!message) {
-      message = document.createElement('p');
-      message.className = 'text-success';
-      form.appendChild(message);
-    }
-    message.textContent = 'Please verify your email before signing in. Check your inbox.';
-    message.hidden = false;
-  };
-
-const createSession = async (user, profile) => {
+const createSession = async (user, profile, challengeId, verificationCode) => {
   const idToken = await user.getIdToken();
   const response = await fetch('/customer/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ idToken, profile }),
+    body: JSON.stringify({ idToken, profile, challengeId, verificationCode }),
   });
   if (!response.ok) {
     const result = await response.json().catch(() => ({}));
@@ -78,6 +63,38 @@ const createSession = async (user, profile) => {
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.querySelector('form');
     if (!form) return;
+
+  const credentialFields = document.getElementById('credential-fields');
+  const codeStep = document.getElementById('customer-code-step');
+  const codeInput = document.getElementById('verification-code');
+  const resendCodeButton = document.getElementById('resend-code-button');
+  const backButton = document.getElementById('back-to-login-button');
+  let pendingUser = null;
+  let pendingProfile = null;
+  let challengeId = null;
+
+  const requestLoginCode = async (user) => {
+    const response = await fetch('/customer/login/send-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ idToken: await user.getIdToken() }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Unable to send a verification code.');
+    return result.challengeId;
+  };
+
+  const returnToCredentials = async () => {
+    pendingUser = null;
+    pendingProfile = null;
+    challengeId = null;
+    codeInput.value = '';
+    codeInput.required = false;
+    codeStep.hidden = true;
+    credentialFields.hidden = false;
+    await firebaseAuth.signOut();
+  };
 
   const forgotPassword = document.getElementById('forgot-password');
   const resetMessage = document.getElementById('reset-message');
@@ -113,6 +130,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
 form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (pendingUser) {
+      const verificationCode = codeInput.value.trim();
+      if (!/^[0-9]{6}$/.test(verificationCode)) {
+        showAuthStatus('error', '<span style="color:#9c3a2e; font-weight:700;">Enter the 6-digit code from your Gmail.</span>');
+        codeInput.focus();
+        return;
+      }
+      const verifyButton = document.getElementById('verify-code-button');
+      verifyButton.disabled = true;
+      try {
+        await createSession(pendingUser, pendingProfile, challengeId, verificationCode);
+        await firebaseAuth.signOut();
+        showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">✓ Successfully verified. Redirecting...</span>');
+        window.location.href = pendingProfile.return && pendingProfile.return !== '/'
+          ? pendingProfile.return
+          : '/customer/account.html';
+      } catch (error) {
+        showAuthStatus('error', `<span style="color:#9c3a2e; font-weight:700;">✗ ${error.message}</span>`);
+      } finally {
+        verifyButton.disabled = false;
+      }
+      return;
+    }
     const data = Object.fromEntries(new FormData(form));
     // Mark empty required fields as invalid (red) before any other checks
     let hasEmptyRequired = false;
@@ -125,6 +165,20 @@ form.addEventListener('submit', async (event) => {
       const firstInvalid = form.querySelector('.is-invalid');
       if (firstInvalid) firstInvalid.focus();
       return;
+    }
+    const isRegistration = form.action.endsWith('/customer/register');
+    const continueButton = credentialFields && credentialFields.querySelector('button[type="submit"]');
+    if (!isRegistration) {
+      const verifyButton = document.getElementById('verify-code-button');
+      credentialFields.hidden = true;
+      codeStep.hidden = false;
+      codeInput.required = true;
+      codeInput.disabled = true;
+      verifyButton.disabled = true;
+      resendCodeButton.disabled = true;
+      backButton.disabled = true;
+      continueButton.disabled = true;
+      showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">Checking your credentials...</span>');
     }
     if (form.action.endsWith('/customer/register')) {
       const phoneInput = form.elements.phone;
@@ -201,7 +255,6 @@ form.addEventListener('submit', async (event) => {
         });
         const profileResult = await profileResponse.json().catch(() => ({}));
         if (!profileResponse.ok) throw new Error(profileResult.error || 'Unable to save your profile details. Please try registering again.');
-        await user.sendEmailVerification();
         await firebaseAuth.signOut();
         const baseUrl = data.return && data.return !== '/' ? data.return : '/';
         window.location.href = `/customer/login.html?registered=1&return=${encodeURIComponent(baseUrl)}`;
@@ -209,32 +262,72 @@ form.addEventListener('submit', async (event) => {
       } else {
         const result = await firebaseAuth.signInWithEmailAndPassword(data.email, data.password);
         user = result.user;
-        await user.reload();
-        if (!user.emailVerified) {
-          await user.sendEmailVerification();
-          showVerificationMessage(user);
-          await firebaseAuth.signOut();
-          return;
+        pendingUser = user;
+        pendingProfile = { ...data };
+        delete pendingProfile.password;
+        const verifyButton = document.getElementById('verify-code-button');
+        showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">Credentials accepted. Sending a verification code to your Gmail...</span>');
+        try {
+          challengeId = await requestLoginCode(user);
+          codeInput.disabled = false;
+          codeInput.focus();
+          showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">A verification code was sent to your Gmail. Enter it to finish signing in.</span>');
+        } catch (error) {
+          showAuthStatus('error', `<span style="color:#9c3a2e; font-weight:700;">✗ ${error.message}</span>`);
+        } finally {
+          verifyButton.disabled = !challengeId;
+          resendCodeButton.disabled = false;
+          backButton.disabled = false;
+          continueButton.disabled = false;
         }
-        showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">✓ Successfully logged in.</span> Redirecting...');
+        return;
       }
-      await createSession(user, data);
-      window.location.href = data.return && data.return !== '/' ? data.return : '/customer/account.html';
     } catch (error) {
+      if (!pendingUser && firebaseAuth.currentUser) {
+        await firebaseAuth.signOut().catch((signOutError) => {
+          console.error('Unable to clear unfinished customer sign-in:', signOutError);
+        });
+      }
+      if (!pendingUser && !form.action.endsWith('/customer/register')) {
+        credentialFields.hidden = false;
+        codeStep.hidden = true;
+        codeInput.required = false;
+        codeInput.disabled = false;
+        document.getElementById('verify-code-button').disabled = false;
+        resendCodeButton.disabled = false;
+        backButton.disabled = false;
+        credentialFields.querySelector('button[type="submit"]').disabled = false;
+      }
       const code = error.code || '';
-      const authMessages = {
-        'auth/invalid-credential': 'The email or password is incorrect.',
-        'auth/email-already-in-use': 'An account already uses this email. Check the address, or sign in and use Forgot password if this is your account.',
-        'auth/operation-not-allowed': 'Email/password sign-in is disabled in Firebase Authentication settings.',
-        'auth/too-many-requests': 'Too many attempts. Please wait a moment and try again.',
-        'auth/email-not-verified': 'Please verify your email before signing in. Check your inbox.',
-      };
-      const msg = code === 'auth/account-already-verified'
-        ? error.message
-        : code === 'auth/registration-password-mismatch'
-          ? `${error.message} <a href="${error.resetUrl}">Open customer login</a>.`
-          : (authMessages[code] || error.message);
+      const msg = code === 'auth/invalid-credential'
+        ? 'The email or password is incorrect.'
+        : code === 'auth/email-already-in-use'
+          ? 'That email is already registered.'
+          : code === 'auth/operation-not-allowed'
+            ? 'Email/password sign-in is disabled in Firebase Authentication settings.'
+          : code === 'auth/too-many-requests'
+            ? 'Too many attempts. Please wait a moment and try again.'
+          : error.message;
 showAuthStatus('error', `<span style="color:#9c3a2e; font-weight:700;">✗ ${msg}</span>`);
     }
   });
+
+  resendCodeButton.addEventListener('click', async () => {
+    if (!pendingUser) return;
+    resendCodeButton.disabled = true;
+    try {
+      challengeId = await requestLoginCode(pendingUser);
+      codeInput.disabled = false;
+      document.getElementById('verify-code-button').disabled = false;
+      codeInput.focus();
+      showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">A new verification code was sent to your Gmail.</span>');
+    } catch (error) {
+      showAuthStatus('error', `<span style="color:#9c3a2e; font-weight:700;">✗ ${error.message}</span>`);
+    } finally {
+      resendCodeButton.disabled = false;
+    }
+  });
+  backButton.addEventListener('click', () => returnToCredentials().catch((error) => {
+    console.error('Unable to reset customer sign-in:', error);
+  }));
 });

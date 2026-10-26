@@ -16,9 +16,9 @@
   </header>
 
   <div class="customer-login-card">
-    <h2>Admin Login</h2>
-    <p id="admin-login-message" class="text-error" hidden>Use the ADMIN credentials or your staff email and password.</p>
-    <form method="POST" action="/admin/login">
+    <h2>Admin / Staff Login</h2>
+    <p id="login-message" class="text-error" aria-live="polite" hidden></p>
+    <form id="credentials-form" method="POST" action="/admin/login">
       <div class="field">
         <label for="username">Admin username or staff email</label>
         <input id="username" name="username" type="text" placeholder="Enter ADMIN or your staff email" autocomplete="username" required />
@@ -28,20 +28,43 @@
         <input id="password" name="password" type="password" autocomplete="current-password" required />
       </div>
       <div class="field login-actions">
-        <button class="btn btn-primary" type="submit">Sign in</button>
+        <button class="btn btn-primary" type="submit">Continue</button>
         <a href="/customer/login.html" style="margin-left:1rem;">← Back to customer login</a>
       </div>
     </form>
+    <form id="verification-form" method="POST" action="/admin/login/verify-code" hidden>
+      <p class="text-muted">A 6-digit sign-in code was sent to the Gmail address on the staff account. Enter it to continue.</p>
+      <div class="field">
+        <label for="verification-code">Verification code</label>
+        <input id="verification-code" name="verificationCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required />
+      </div>
+      <div class="field login-actions">
+        <button class="btn btn-primary" type="submit">Verify and sign in</button>
+        <a href="/admin/login.html">Back</a>
+      </div>
+    </form>
   </div>
-
   <script>
     const params = new URLSearchParams(location.search);
-    const message = document.getElementById('admin-login-message');
-    if (params.get('error') === '1') {
+    const verifying = params.get('verify') === '1';
+    document.getElementById('credentials-form').hidden = verifying;
+    document.getElementById('verification-form').hidden = !verifying;
+    const message = document.getElementById('login-message');
+    const messages = {
+      '1': 'Username or password is incorrect.',
+      email: 'Could not send a code. Check that the staff account has a Gmail address and email delivery is configured.',
+      wait: 'A code was sent recently. Wait one minute before trying again.',
+      code: 'The code is incorrect or expired. You may try again or return to sign in.',
+      limit: 'Too many incorrect codes. Return to sign in and request a new code.',
+      expired: 'The verification session expired. Sign in again to request a new code.',
+      server: 'Unable to verify the code right now. Please try again.',
+    };
+    const error = params.get('error');
+    if (error && messages[error]) {
+      message.textContent = messages[error];
       message.hidden = false;
-      message.textContent = 'Invalid username or password. Use ADMIN credentials or your staff account.';
     }
+    if (verifying) document.getElementById('verification-code').focus();
   </script>
-
 </body>
 </html>

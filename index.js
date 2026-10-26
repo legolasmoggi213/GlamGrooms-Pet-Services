@@ -29,34 +29,102 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true }));
 
 const bcrypt = require('bcryptjs');
-const { createToken, parseToken } = require('./util/adminAuth');
+const { createToken, parseToken, isStaffRole, isActiveStaffRole } = require('./util/adminAuth');
 const { createToken: createCustomerToken, parseToken: parseCustomerToken } = require('./util/customerAuth');
 const { isStrongPassword } = require('./util/passwordPolicy');
-const { releaseGroomingBookingSlots, hotelReservationLockIds, releaseBookingSlotsByIds } = require('./util/bookingLocks');
-const { groomingRecordDuration } = require('./util/bookingCalculations');
-const customerBookingController = require('./controllers/customerBookingController');
+const { isValidMobileNumber } = require('./util/mobileNumber');
+const {
+  createVerificationChallenge,
+  verifyChallenge,
+  verifyChallengeById,
+  VerificationError,
+} = require('./util/emailVerification');
+const {
+  groomingLockIds,
+  hotelLockIdsForTypes,
+  hotelLockIdsForSlots,
+  hotelLockIdsForAssignments,
+  releaseBookingSlotsByIds,
+} = require('./util/bookingLocks');
 const ADMIN_USERNAME = 'ADMIN';
+const STAFF_USERNAME = String(process.env.STAFF_USERNAME || 'STAFF').trim().toUpperCase();
 const safeReturnPath = (value, fallback) => {
   const target = String(value || '');
   return target.startsWith('/') && !target.startsWith('//') ? target : fallback;
 };
+const customerFromRequest = async (req) => {
+  const raw = req.headers.cookie || '';
+  const cookie = raw.split(';').map((part) => part.trim()).find((part) => part.startsWith('customer_token='));
+  const token = cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : null;
+  const email = parseCustomerToken(token);
+  return email ? db.Customer.findOne({ where: { email } }) : null;
+};
+const validatePetProfile = (body = {}) => {
+  const name = String(body.name || '').trim();
+  const species = String(body.species || '').trim().toLowerCase();
+  const breed = String(body.breed || '').trim();
+  const age = Number(body.age);
+  if (!name || name.length > 80 || !['dog', 'cat'].includes(species)
+    || !breed || breed.length > 100 || !Number.isInteger(age) || age < 0 || age > 100) {
+    return { error: 'Enter a pet name, dog or cat species, breed, and a whole-number age from 0 to 100.' };
+  }
+  return {
+    value: {
+      name,
+      species,
+      breed,
+      age,
+      size: String(body.size || '').trim().slice(0, 40) || null,
+      notes: String(body.notes || '').trim().slice(0, 1000) || null,
+    },
+  };
+};
+
+app.post('/customer/login/send-code', async (req, res) => {
+  try {
+    const { idToken } = req.body || {};
+    if (!idToken) return res.status(400).json({ error: 'Sign in with your email and password first.' });
+    let decoded;
+    try {
+      decoded = await auth.verifyIdToken(idToken);
+    } catch (error) {
+      return res.status(401).json({ error: 'Your sign-in expired. Enter your email and password again.' });
+    }
+    const email = String(decoded.email || '').trim().toLowerCase();
+    if (!/^[^@\s]+@gmail\.com$/.test(email)) {
+      return res.status(400).json({ error: 'Sign-in verification is available for Gmail accounts only.' });
+    }
+    const customer = await db.Customer.findOne({ where: { email } });
+    if (!customer) return res.status(403).json({ error: 'No customer profile is registered for this Gmail address.' });
+
+    const { challengeId } = await createVerificationChallenge({ email, purpose: 'customer' });
+    return res.json({ success: true, challengeId, email: email.replace(/^(.).+(@.*)$/, '$1••••$2') });
+  } catch (error) {
+    if (error instanceof VerificationError) return res.status(error.status).json({ error: error.message });
+    console.error('Customer sign-in verification email failed:', error);
+    return res.status(503).json({ error: 'Could not send the verification code. Please try again later.' });
+  }
+});
 
 app.post('/customer/session', async (req, res) => {
   try {
-    const { idToken, profile = {} } = req.body || {};
+    const { idToken, profile = {}, verificationCode, challengeId } = req.body || {};
     
     if (!idToken) {
       return res.status(400).json({ error: 'Missing ID token' });
     }
     
-    console.log('Attempting to verify Firebase ID token...');
     const decoded = await auth.verifyIdToken(idToken);
-    console.log('Token verified successfully for:', decoded.email);
     
     const email = decoded.email;
     if (!email) return res.status(400).json({ error: 'Firebase account has no email address' });
-    if (!decoded.email_verified) {
-      return res.status(403).json({ error: 'Please verify your email before signing in' });
+    if (!/^[^@\s]+@gmail\.com$/i.test(email)) {
+      return res.status(403).json({ error: 'Sign-in verification is available for Gmail accounts only.' });
+    }
+    await verifyChallenge({ email, purpose: 'customer', challengeId, code: verificationCode });
+    if (!decoded.email_verified) await auth.updateUser(decoded.uid, { emailVerified: true });
+    if (profile.phone && !isValidMobileNumber(profile.phone)) {
+      return res.status(400).json({ error: 'Phone number must contain exactly 11 digits.' });
     }
 
     let customer = await db.Customer.findOne({ where: { email } });
@@ -76,8 +144,9 @@ app.post('/customer/session', async (req, res) => {
     res.cookie('customer_logged_in', '1', { path: '/', httpOnly: false, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
     return res.json({ success: true });
   } catch (error) {
+    if (error instanceof VerificationError) return res.status(error.status).json({ error: error.message });
     console.error('Session creation error:', error);
-    return res.status(401).json({ error: 'Invalid Firebase authentication token' });
+    return res.status(401).json({ error: 'Invalid or incomplete sign-in verification.' });
   }
 });
 
@@ -90,11 +159,11 @@ app.post('/customer/register-profile', async (req, res) => {
     const email = String(decoded.email || '').trim().toLowerCase();
     const profileEmail = String(profile.email || '').trim().toLowerCase();
     const name = String(profile.name || '').trim();
-    const phone = String(profile.phone || '').trim();
+    const phone = String(profile.phone || '');
     const address = String(profile.address || '').trim();
     if (!email || email !== profileEmail) return res.status(403).json({ error: 'Registration email does not match the Firebase account' });
     if (!name || !phone || !address) return res.status(400).json({ error: 'Name, phone, and address are required' });
-    if (!isOptionalPhoneNumber(phone)) return res.status(400).json({ error: 'Phone number must contain digits only.' });
+    if (!isValidMobileNumber(phone)) return res.status(400).json({ error: 'Phone number must contain exactly 11 digits.' });
 
     let customer = await db.Customer.findOne({ where: { email } });
     const customerProfile = { name, email, phone, address, uid: decoded.uid };
@@ -169,8 +238,16 @@ app.post('/customer/delete-account', async (req, res) => {
 
     // Keep capacity locked until the associated records have been removed.
     await Promise.all([
-      ...groomingBookings.map((booking) => releaseGroomingBookingSlots(booking.date, booking.time, groomingRecordDuration(booking))),
-      ...hotelBookings.map((booking) => releaseBookingSlotsByIds(hotelReservationLockIds(booking))),
+      ...groomingBookings.map((booking) => releaseBookingSlotsByIds(groomingLockIds(booking.date, booking.time))),
+      ...hotelBookings.map((booking) => releaseBookingSlotsByIds(booking.hotelSlotAssignments
+        ? hotelLockIdsForAssignments(booking.hotelSlotAssignments)
+        : Array.isArray(booking.hotelSlotNumbers)
+          ? hotelLockIdsForSlots(booking.hotelSlotNumbers, booking.checkIn, booking.checkOut)
+          : hotelLockIdsForTypes(
+            booking.roomTypes || booking.petRooms?.map((petRoom) => petRoom.roomType) || [booking.roomType],
+            booking.checkIn,
+            booking.checkOut,
+          ))),
     ]);
 
     res.clearCookie('customer_token', { path: '/' });
@@ -184,7 +261,7 @@ app.post('/customer/delete-account', async (req, res) => {
 
 // Protect customer pages that require login.
   app.use('/customer', (req, res, next) => {
-    const allowed = ['/login', '/login.html', '/register', '/register.html', '/logout', '/nav-status'];
+    const allowed = ['/login', '/login.html', '/register', '/register.html', '/logout', '/nav-status', '/profile'];
     if (allowed.includes(req.path)) return next();
 
   const raw = req.headers.cookie || '';
@@ -266,11 +343,14 @@ app.put('/customer/profile', async (req, res) => {
     const { name, phone, address } = req.body || {};
     const cleanName = String(name || '').trim();
     if (!cleanName) return res.status(400).json({ error: 'Name is required' });
-    if (!isOptionalPhoneNumber(phone)) return res.status(400).json({ error: 'Phone number must contain digits only.' });
+    const cleanPhone = String(phone || '');
+    if (cleanPhone && !isValidMobileNumber(cleanPhone)) {
+      return res.status(400).json({ error: 'Phone number must contain exactly 11 digits.' });
+    }
 
     await customer.update({
       name: cleanName,
-      phone: phone && String(phone).trim() ? String(phone).trim() : null,
+      phone: cleanPhone || null,
       address: address && String(address).trim() ? String(address).trim() : null,
     });
     return res.json({ customer });
@@ -280,11 +360,66 @@ app.put('/customer/profile', async (req, res) => {
   }
 });
 
-app.post('/customer/bookings/:type/:id/cancel', customerBookingController.cancelBooking);
-app.post('/customer/bookings/:type/:id/reschedule', customerBookingController.rescheduleBooking);
+app.post('/customer/pets', async (req, res) => {
+  try {
+    const customer = await customerFromRequest(req);
+    if (!customer) return res.status(401).json({ error: 'Not authenticated' });
+    const validated = validatePetProfile(req.body);
+    if (validated.error) return res.status(400).json({ error: validated.error });
+    const pet = await db.Pet.create({ ...validated.value, customerId: customer.id });
+    return res.status(201).json({ pet });
+  } catch (error) {
+    console.error('Customer pet creation failed:', error);
+    return res.status(500).json({ error: 'Unable to save the pet profile.' });
+  }
+});
+
+app.put('/customer/pets/:id', async (req, res) => {
+  try {
+    const customer = await customerFromRequest(req);
+    if (!customer) return res.status(401).json({ error: 'Not authenticated' });
+    const pet = await db.Pet.findByPk(req.params.id);
+    if (!pet || String(pet.customerId) !== String(customer.id)) {
+      return res.status(404).json({ error: 'Pet not found' });
+    }
+    const validated = validatePetProfile(req.body);
+    if (validated.error) return res.status(400).json({ error: validated.error });
+    await pet.update(validated.value);
+    return res.json({ pet });
+  } catch (error) {
+    console.error('Customer pet update failed:', error);
+    return res.status(500).json({ error: 'Unable to update the pet profile.' });
+  }
+});
+
+app.delete('/customer/pets/:id', async (req, res) => {
+  try {
+    const customer = await customerFromRequest(req);
+    if (!customer) return res.status(401).json({ error: 'Not authenticated' });
+    const pet = await db.Pet.findByPk(req.params.id);
+    if (!pet || String(pet.customerId) !== String(customer.id)) {
+      return res.status(404).json({ error: 'Pet not found' });
+    }
+    const [grooming, hotel] = await Promise.all([
+      db.GroomingAppointment.findAll({ where: { customerId: customer.id } }),
+      db.HotelReservation.findAll({ where: { customerId: customer.id } }),
+    ]);
+    const isBooked = [...grooming, ...hotel].some((booking) =>
+      (booking.petIds || [booking.petId]).filter(Boolean).some((petId) => String(petId) === String(pet.id)));
+    if (isBooked) {
+      return res.status(409).json({ error: 'This pet is linked to booking history and cannot be deleted. You can still update its details.' });
+    }
+    await pet.destroy();
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Customer pet deletion failed:', error);
+    return res.status(500).json({ error: 'Unable to delete the pet profile.' });
+  }
+});
 
 const findAdminAccount = async () => {
   if (!db.Admin) return null;
+
   try {
     let admin = await db.Admin.findOne({ where: { username: ADMIN_USERNAME } });
     if (!admin) {
@@ -296,8 +431,11 @@ const findAdminAccount = async () => {
     }
     return admin;
   } catch (error) {
-    console.warn('Admin account lookup unavailable; using environment-based admin credentials only.', error.message || error);
-    return null;
+    if (Number(error.code) === 8 || error.code === 'RESOURCE_EXHAUSTED') {
+      console.warn('Firestore is unavailable; falling back to the environment-based admin login.');
+      return null;
+    }
+    throw error;
   }
 };
 
@@ -310,42 +448,108 @@ const getAdminFromRequest = async (req) => {
 };
 
 // Admin login handler (placed before admin protection)
-app.post('/admin/login', (req, res) => {
-  (async () => {
-    const rawPassword = String(req.body && req.body.password || '');
-    const normalizedPassword = rawPassword.replace(/\s+/g, '');
-    const identifier = String(req.body && req.body.username || '').trim();
-    const normalizedIdentifier = identifier.toLowerCase();
-    const adminUsername = identifier.toUpperCase();
-    if (!identifier || !rawPassword) return res.redirect('/admin/login.html?error=1');
-    try {
-      if (adminUsername === ADMIN_USERNAME) {
-        const admin = await findAdminAccount();
-        const envPass = process.env.ADMIN_PASS ? String(process.env.ADMIN_PASS).replace(/\s+/g, '') : '';
-        const dbMatch = admin && admin.passwordHash && bcrypt.compareSync(normalizedPassword, admin.passwordHash);
-        const envMatch = Boolean(envPass && normalizedPassword === envPass);
-        if (dbMatch || envMatch) {
-          const token = createToken(ADMIN_USERNAME);
-          res.cookie('admin_token', token, { path: '/', httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
-          return res.redirect('/admin/index.html');
-        }
-      } else {
-        const employee = await db.Employee.findOne({ where: { email: normalizedIdentifier } })
-          || await db.Employee.findOne({ where: { email: identifier } })
-          || (await db.Employee.findAll()).find((entry) => String(entry.email || '').trim().toLowerCase() === normalizedIdentifier);
+app.post('/admin/login', async (req, res) => {
+    const password = String(req.body && req.body.password || '');
+    const username = String(req.body && req.body.username || '').trim().toUpperCase();
 
-        if (employee && employee.status === 'active' && employee.passwordHash
-          && bcrypt.compareSync(rawPassword, employee.passwordHash)) {
-          const token = createToken(`STAFF:${employee.id}`);
-          res.cookie('admin_token', token, { path: '/', httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
-          return res.redirect('/admin/index.html');
+    if (!password) return res.redirect('/admin/login.html?error=1');
+    try {
+      let role = null;
+      let staffEmail = '';
+      if (username === ADMIN_USERNAME) {
+        const admin = await findAdminAccount();
+        const envPass = String(process.env.ADMIN_PASS || '');
+        const dbMatch = admin && admin.passwordHash && bcrypt.compareSync(password, admin.passwordHash);
+        const envMatch = Boolean(envPass && password === envPass);
+        if (dbMatch || envMatch) role = ADMIN_USERNAME;
+      } else {
+        const staff = await db.StaffAccount.findOne({ where: { username } });
+        if (staff && staff.active === true && bcrypt.compareSync(password, staff.passwordHash || '')) {
+          role = `STAFF:${staff.id}`;
+          staffEmail = String(staff.email || '').trim().toLowerCase();
+        } else if (STAFF_USERNAME && username === STAFF_USERNAME
+          && process.env.STAFF_PASS && password === process.env.STAFF_PASS) {
+          role = 'STAFF';
+          staffEmail = String(process.env.STAFF_EMAIL || '').trim().toLowerCase();
         }
       }
-    } catch (e) {
-      console.error(e);
+
+      if (role) {
+        if (isStaffRole(role)) {
+          if (!/^[^@\s]+@gmail\.com$/.test(staffEmail)) {
+            console.warn(`Staff sign-in blocked because no valid Gmail address is configured for ${username}.`);
+            return res.redirect('/admin/login.html?error=email');
+          }
+          const { challengeId } = await createVerificationChallenge({
+            email: staffEmail,
+            purpose: 'staff',
+            metadata: { role, email: staffEmail },
+          });
+          res.cookie('staff_login_challenge', challengeId, {
+            path: '/admin/login',
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 10 * 60 * 1000,
+          });
+          return res.redirect('/admin/login.html?verify=1');
+        }
+        const token = createToken(role);
+        res.cookie('admin_token', token, { path: '/', httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+        return res.redirect(isStaffRole(role) ? '/admin/grooming.html' : '/admin/index.html');
+      }
+    } catch (error) {
+      if (error instanceof VerificationError) {
+        return res.redirect(`/admin/login.html?error=${error.status === 429 ? 'wait' : 'email'}`);
+      }
+      console.error('Staff/admin sign-in failed:', error);
     }
     return res.redirect('/admin/login.html?error=1');
-  })();
+});
+
+app.post('/admin/login/verify-code', async (req, res) => {
+  const challengeId = String(req.headers.cookie || '').split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith('staff_login_challenge='))
+    ?.split('=').slice(1).join('=');
+  if (!challengeId) return res.redirect('/admin/login.html?error=expired');
+
+  try {
+    const metadata = await verifyChallengeById({
+      purpose: 'staff',
+      challengeId: decodeURIComponent(challengeId),
+      code: req.body?.verificationCode,
+    });
+    const role = metadata.role;
+    const email = String(metadata.email || '').toLowerCase();
+    if (!isStaffRole(role) || !/^[^@\s]+@gmail\.com$/.test(email)) {
+      return res.redirect('/admin/login.html?error=expired');
+    }
+    if (role === 'STAFF') {
+      if (email !== String(process.env.STAFF_EMAIL || '').trim().toLowerCase()) {
+        return res.redirect('/admin/login.html?error=expired');
+      }
+    } else {
+      const staff = await db.StaffAccount.findByPk(role.slice('STAFF:'.length));
+      if (!staff || staff.active !== true || String(staff.email || '').trim().toLowerCase() !== email) {
+        return res.redirect('/admin/login.html?error=expired');
+      }
+    }
+    res.clearCookie('staff_login_challenge', { path: '/admin/login' });
+    res.cookie('admin_token', createToken(role), {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    });
+    return res.redirect('/admin/grooming.html');
+  } catch (error) {
+    if (error instanceof VerificationError) {
+      return res.redirect(`/admin/login.html?verify=1&error=${error.status === 429 ? 'limit' : 'code'}`);
+    }
+    console.error('Staff verification code check failed:', error);
+    return res.redirect('/admin/login.html?verify=1&error=server');
+  }
 });
 
 app.get('/admin/logout', (req, res) => {
@@ -357,17 +561,10 @@ app.get('/admin/nav-status', async (req, res) => {
   const raw = req.headers.cookie || '';
   const cookie = raw.split(';').map((part) => part.trim()).find((part) => part.startsWith('admin_token='));
   const token = cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : null;
-  const identity = parseToken(token);
-  if (identity === ADMIN_USERNAME) return res.json({ authenticated: true, role: 'admin' });
-  if (typeof identity === 'string' && identity.startsWith('STAFF:')) {
-    try {
-      const employee = await db.Employee.findByPk(identity.slice('STAFF:'.length));
-      if (employee && employee.status === 'active') return res.json({ authenticated: true, role: 'staff', name: employee.name });
-    } catch (error) {
-      console.error('Staff session lookup failed:', error);
-    }
-  }
-  return res.json({ authenticated: false, role: null });
+  const role = parseToken(token);
+  const isStaff = isStaffRole(role) && await isActiveStaffRole(role);
+  const isAdmin = role === ADMIN_USERNAME;
+  res.json({ authenticated: isAdmin || isStaff, role: isAdmin ? 'ADMIN' : isStaff ? 'STAFF' : null });
 });
 
 app.post('/admin/change-password', (req, res) => {
@@ -432,30 +629,11 @@ app.use('/admin', async (req, res, next) => {
   };
   const token = getCookie('admin_token');
   const user = parseToken(token);
-  if (user === ADMIN_USERNAME) return next();
-  if (typeof user === 'string' && user.startsWith('STAFF:')) {
-    try {
-      const employee = await db.Employee.findByPk(user.slice('STAFF:'.length));
-      if (employee && employee.status === 'active') {
-        const staffPages = new Set([
-          '/',
-          '/index.html',
-          '/grooming.html',
-          '/hotel.html',
-          '/inventory.html',
-          '/customers.html',
-          '/pets.html',
-          '/pos.html',
-          '/change-password.html',
-        ]);
-        if (!staffPages.has(req.path)) return res.status(403).send('Admin access required.');
-        return next();
-      }
-    } catch (error) {
-      console.error('Staff page access check failed:', error);
-    }
-  }
-  return res.redirect('/admin/login.html');
+  const isStaff = isStaffRole(user) && await isActiveStaffRole(user);
+  const staffPages = ['/grooming.html', '/hotel.html', '/customers.html', '/pets.html', '/reports.html', '/inventory.html', '/notifications.html'];
+  const hasAccess = user === ADMIN_USERNAME || (isStaff && staffPages.includes(req.path));
+  if (!hasAccess) return res.redirect('/admin/login.html');
+  next();
 }, express.static(path.join(__dirname, 'public', 'admin')));
 
 // Serve the frontend (public site) as static files.

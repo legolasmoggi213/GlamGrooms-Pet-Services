@@ -1,5 +1,5 @@
 const nodemailer = require('nodemailer');
-const EMAIL_DELIVERY_TIMEOUT_MS = 15000;
+const MAIL_TIMEOUT_MS = 15000;
 
 const isPlaceholder = (value) => !value || value.includes('yourgmail.com') || value.includes('your_16_character');
 const senderAddress = (value) => {
@@ -22,16 +22,16 @@ if (hasResendApiKey && !isValidSender(process.env.RESEND_FROM_EMAIL)) {
 }
 
 if (!hasMailConfig && !hasResendConfig) {
-  console.warn('Booking emails disabled: configure RESEND_API_KEY + RESEND_FROM_EMAIL or SMTP_USER + SMTP_PASS in .env / Render environment variables.');
+  console.warn('Email delivery disabled: customer/staff sign-in verification and booking emails require Resend or SMTP configuration.');
 }
 
 const transporter = hasMailConfig
   ? nodemailer.createTransport({
       service: process.env.SMTP_SERVICE || 'gmail',
       family: 4,
-      connectionTimeout: EMAIL_DELIVERY_TIMEOUT_MS,
-      greetingTimeout: EMAIL_DELIVERY_TIMEOUT_MS,
-      socketTimeout: EMAIL_DELIVERY_TIMEOUT_MS,
+      connectionTimeout: MAIL_TIMEOUT_MS,
+      greetingTimeout: MAIL_TIMEOUT_MS,
+      socketTimeout: MAIL_TIMEOUT_MS,
       auth: {
         user: process.env.SMTP_USER,
         pass: smtpPassword,
@@ -44,7 +44,7 @@ const sendWithResend = async ({ to, subject, text, html, from }) => {
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    signal: AbortSignal.timeout(EMAIL_DELIVERY_TIMEOUT_MS),
+    signal: AbortSignal.timeout(MAIL_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       'Content-Type': 'application/json',
@@ -88,6 +88,18 @@ const sendEmail = async ({ to, subject, text, html, from }) => {
     html,
   });
   return true;
+};
+
+const sendLoginVerificationCode = ({ to, code, purpose }) => {
+  const subject = 'Your Glam Grooms sign-in verification code';
+  const audience = purpose === 'staff' ? 'staff' : 'customer';
+  return sendEmail({
+    to,
+    subject,
+    text: `Your ${audience} sign-in verification code is ${code}.\n\nIt expires in 10 minutes. If you did not try to sign in, you can ignore this email.\n\nGlam Grooms Pet Spa & Hotel`,
+    html: `<div style="font-family:Arial,sans-serif;color:#111827"><h2>Glam Grooms sign-in code</h2><p>Enter this code to finish signing in to your ${audience} account:</p><p style="font-size:28px;font-weight:700;letter-spacing:8px">${code}</p><p>This code expires in 10 minutes. If you did not try to sign in, you can ignore this email.</p></div>`,
+    from: process.env.RESEND_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER,
+  });
 };
 
 const sendBookingConfirmation = async ({ to, customerName, type, service, date, time, pickupTime, petName }) => {
@@ -318,4 +330,22 @@ const sendServiceReminder = async ({ to, customerName, type, service, date, time
   });
 };
 
-module.exports = { sendBookingConfirmation, sendPayMongoReceipt, sendReservationTicket, sendServiceReminder, getEmailDeliveryConfig };
+const sendBookingCancellation = async ({ to, customerName, type, bookingId, date, time, service }) => {
+  const serviceLabel = type === 'grooming' ? 'grooming appointment' : 'hotel reservation';
+  const text = `Hello ${customerName || 'Customer'},\n\nYour Glam Grooms ${serviceLabel} #${bookingId} has been cancelled.\n\n${service ? `Service or room: ${service}\n` : ''}${date ? `Date: ${date}${time ? ` at ${time}` : ''}\n` : ''}\nPlease contact us if you have questions.\n\nGlam Grooms Pet Spa & Hotel`;
+  return sendEmail({
+    to,
+    subject: `Booking cancelled #${bookingId} - Glam Grooms`,
+    text,
+    from: process.env.RESEND_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER,
+  });
+};
+
+module.exports = {
+  sendLoginVerificationCode,
+  sendBookingConfirmation,
+  sendPayMongoReceipt,
+  sendReservationTicket,
+  sendServiceReminder,
+  sendBookingCancellation,
+};

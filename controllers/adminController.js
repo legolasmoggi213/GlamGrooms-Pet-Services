@@ -1,8 +1,8 @@
 const { Customer, Pet, GroomingAppointment, HotelReservation, CashTransaction } = require('../models');
 const { firestore } = require('../config/firebase');
-const { isDecimalNumber, isDigitsOnly, isOptionalPhoneNumber } = require('../util/numericValidation');
-const { SERVICE_PRICES } = require('./groomingController');
-const { ROOM_PRICES } = require('./hotelController');
+const { createQrPhCheckout, getPayMongoKey } = require('../util/paymongo');
+const { isValidMobileNumber } = require('../util/mobileNumber');
+const { forecastTrend } = require('../util/trendForecast');
 
 const ACTIVE_GROOMING_STATUSES = ['scheduled', 'in-progress'];
 const ACTIVE_HOTEL_STATUSES = ['pending', 'reserved', 'confirmed', 'checked-in'];
@@ -79,6 +79,10 @@ const aggregateRevenue = (records, amountField, period, buckets) => {
   }
   return buckets.map(({ key, label }) => ({ label, ...values.get(key) }));
 };
+const dataPoints = (buckets, field) => buckets.map((bucket) => Number(bucket[field]) || 0);
+const isPaidWalkInTransaction = (transaction) => transaction.paymentStatus
+  ? transaction.paymentStatus === 'paid'
+  : transaction.paymentMethod !== 'qrph';
 
 const revenuePeriodKey = (dateKey, period) => {
   if (period === 'weekly') {
@@ -225,16 +229,9 @@ const getStats = async (req, res, next) => {
       .reduce((total, record) => total + Number(record.price || 0), 0);
     const hotelRevenue = hotelRecords
       .reduce((total, record) => total + Number(record.totalPrice || 0), 0);
-    const overTheCounterRevenue = cashTransactions.reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
-    const productSalesRevenue = cashTransactions.reduce((total, transaction) => {
-      const productItems = Array.isArray(transaction.items)
-        ? transaction.items.filter((item) => item.inventoryId)
-        : [];
-      return total + productItems.reduce((subtotal, item) => {
-        const lineTotal = Number(item.lineTotal);
-        return subtotal + (Number.isFinite(lineTotal) ? lineTotal : Number(item.unitPrice || 0) * Number(item.quantity || 0));
-      }, 0);
-    }, 0);
+    const overTheCounterRevenue = cashTransactions
+      .filter(isPaidWalkInTransaction)
+      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
     res.json({
       customers,
       pets,
@@ -319,13 +316,24 @@ const getRecentActivity = async (req, res, next) => {
   }
 };
 
-// GET /api/v1/admin/occupancy — hotel occupancy for the next 14 days.
+// GET /api/v1/admin/occupancy — hotel occupancy for the current month.
 const getOccupancy = async (req, res, next) => {
   try {
-    const start = businessDateKey();
-    const today = new Date(`${start}T00:00:00.000Z`);
-    const endDate = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000);
-    const end = endDate.toISOString().slice(0, 10);
+    const today = new Date();
+    const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+    const endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    const start = new Intl.DateTimeFormat('en-CA', {
+      timeZone: BUSINESS_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(startDate);
+    const end = new Intl.DateTimeFormat('en-CA', {
+      timeZone: BUSINESS_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(endDate);
 
     const [reservations, customers, pets] = await Promise.all([
       HotelReservation.findAll({
@@ -342,8 +350,13 @@ const getOccupancy = async (req, res, next) => {
     const petMap = Object.fromEntries(pets.map((pet) => [String(pet.id), pet]));
 
     const days = [];
-    for (let d = new Date(today); d <= endDate; d = new Date(d.getTime() + 24 * 60 * 60 * 1000)) {
-      const day = d.toISOString().slice(0, 10);
+    for (let d = new Date(startDate); d <= endDate; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+      const day = new Intl.DateTimeFormat('en-CA', {
+        timeZone: BUSINESS_TIME_ZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(d);
       const bookings = reservations
         .filter((reservation) => reservation.checkIn <= day && reservation.checkOut > day)
         .map((reservation) => {
@@ -414,6 +427,9 @@ const getRevenueAnalytics = async (req, res, next) => {
     );
     const groomingRevenue = groomingBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
     const hotelRevenue = hotelBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
+    const periodLabels = { daily: 'tomorrow', weekly: 'next week', monthly: 'next month' };
+    const groomingForecast = forecastTrend(dataPoints(groomingBuckets, 'revenue'));
+    const hotelForecast = forecastTrend(dataPoints(hotelBuckets, 'revenue'));
 
     res.json({
       period,
@@ -425,6 +441,14 @@ const getRevenueAnalytics = async (req, res, next) => {
         grooming: groomingRevenue,
         hotel: hotelRevenue,
         combined: groomingRevenue + hotelRevenue,
+      },
+      forecast: {
+        periodLabel: periodLabels[period],
+        method: 'Linear trend estimate from the displayed historical periods; not a guarantee.',
+        groomingRevenue: groomingForecast,
+        hotelRevenue: hotelForecast,
+        groomingBookings: forecastTrend(dataPoints(groomingBuckets, 'count')),
+        hotelBookings: forecastTrend(dataPoints(hotelBuckets, 'count')),
       },
     });
   } catch (error) {
@@ -449,7 +473,8 @@ const getRevenueBreakdown = async (req, res, next) => {
       return groups;
     }, {}));
 
-    const walkInTransactions = await CashTransaction.findAll({ where: { type: 'walk-in' } });
+    const walkInTransactions = (await CashTransaction.findAll({ where: { type: 'walk-in' } }))
+      .filter(isPaidWalkInTransaction);
     const overTheCounter = Object.values(walkInTransactions.reduce((groups, transaction) => {
       const label = transaction.description || 'Walk-in sale';
       const group = groups[label] || { label, count: 0, revenue: 0 };
@@ -469,6 +494,108 @@ const getRevenueBreakdown = async (req, res, next) => {
   }
 };
 
+const csvCell = (value) => {
+  let text = String(value == null ? '' : value);
+  if (/^[\s]*[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
+const sendCsv = (res, filename, headers, rows) => {
+  const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.send(`\uFEFF${csv}`);
+};
+
+const getOperationalReport = async (req, res, next) => {
+  try {
+    const type = String(req.query.type || '');
+    if (!['bookings', 'payments', 'customers'].includes(type)) {
+      return res.status(400).json({ error: 'Choose bookings, payments, or customers as the report type.' });
+    }
+
+    if (type === 'bookings') {
+      const [grooming, hotel, customers] = await Promise.all([
+        GroomingAppointment.findAll({ order: [['createdAt', 'DESC']] }),
+        HotelReservation.findAll({ order: [['createdAt', 'DESC']] }),
+        Customer.findAll(),
+      ]);
+      const customerMap = Object.fromEntries(customers.map((customer) => [String(customer.id), customer]));
+      const rows = [
+        ...grooming.map((booking) => [
+          'Grooming', booking.id, (customerMap[String(booking.customerId)] || {}).name,
+          (booking.petNames || []).join('; ') || booking.service, booking.service,
+          booking.date, booking.time, '', '', booking.status, booking.paymentMethod,
+          booking.paymentStatus || 'unpaid', booking.price, booking.createdAt,
+        ]),
+        ...hotel.map((booking) => [
+          'Hotel', booking.id, (customerMap[String(booking.customerId)] || {}).name,
+          (booking.petNames || []).join('; '), booking.roomType,
+          booking.checkIn, booking.checkInTime, booking.checkOut, booking.checkOutTime,
+          booking.status, booking.paymentMethod, booking.paymentStatus || 'unpaid',
+          booking.totalPrice, booking.createdAt,
+        ]),
+      ];
+      return sendCsv(res, 'bookings-report.csv', [
+        'Type', 'Booking ID', 'Customer', 'Pets', 'Service or room', 'Start date', 'Start time',
+        'End date', 'End time', 'Status', 'Payment method', 'Payment status', 'Amount', 'Created at',
+      ], rows);
+    }
+
+    if (type === 'payments') {
+      const [grooming, hotel, transactions] = await Promise.all([
+        GroomingAppointment.findAll(),
+        HotelReservation.findAll(),
+        CashTransaction.findAll({ order: [['createdAt', 'DESC']] }),
+      ]);
+      const rows = [
+        ...grooming.map((booking) => [
+          'Grooming booking', booking.id, booking.customerDetails?.name || booking.customerId,
+          booking.paymentMethod || 'cash', booking.paymentStatus || 'unpaid',
+          booking.paymentReference || '', booking.price, booking.paymentPaidAt || booking.createdAt,
+        ]),
+        ...hotel.map((booking) => [
+          'Hotel booking', booking.id, booking.customerDetails?.name || booking.customerId,
+          booking.paymentMethod || 'cash', booking.paymentStatus || 'unpaid',
+          booking.paymentReference || '', booking.totalPrice, booking.paymentPaidAt || booking.createdAt,
+        ]),
+        ...transactions.map((transaction) => [
+          transaction.type || 'POS', transaction.id, transaction.customerName,
+          transaction.paymentMethod || 'cash',
+          transaction.paymentStatus || (transaction.paymentMethod === 'qrph' ? 'pending' : 'paid'),
+          transaction.paymentReference || '', transaction.amount,
+          transaction.paidAt || (transaction.paymentMethod === 'qrph' ? '' : transaction.createdAt),
+        ]),
+      ];
+      return sendCsv(res, 'payments-report.csv', [
+        'Transaction type', 'Reference', 'Customer', 'Payment method', 'Payment status',
+        'Payment reference', 'Amount', 'Paid or created at',
+      ], rows);
+    }
+
+    const [customers, pets, grooming, hotel] = await Promise.all([
+      Customer.findAll({ order: [['createdAt', 'DESC']] }),
+      Pet.findAll(),
+      GroomingAppointment.findAll(),
+      HotelReservation.findAll(),
+    ]);
+    const rows = customers.map((customer) => [
+      customer.id, customer.name, customer.email, customer.phone, customer.address,
+      pets.filter((pet) => String(pet.customerId) === String(customer.id)).length,
+      grooming.filter((booking) => String(booking.customerId) === String(customer.id)).length,
+      hotel.filter((booking) => String(booking.customerId) === String(customer.id)).length,
+      customer.createdAt,
+    ]);
+    return sendCsv(res, 'customers-report.csv', [
+      'Customer ID', 'Name', 'Email', 'Phone', 'Address', 'Pet count',
+      'Grooming bookings', 'Hotel reservations', 'Joined at',
+    ], rows);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const listCashTransactions = async (req, res, next) => {
   try {
     const records = await CashTransaction.findAll({ order: [['createdAt', 'DESC']], limit: 100 });
@@ -481,6 +608,7 @@ const listCashTransactions = async (req, res, next) => {
       description: record.description,
       amount: Number(record.amount || 0),
       paymentMethod: record.paymentMethod,
+      paymentStatus: record.paymentStatus || (record.paymentMethod === 'qrph' ? 'pending' : 'paid'),
       bookingType: record.bookingType || null,
       bookingId: record.bookingId || null,
       items: Array.isArray(record.items) ? record.items : [],
@@ -512,8 +640,11 @@ const createCashTransaction = async (req, res, next) => {
     const body = req.body || {};
     if (body.type === 'walk-in') {
       const customerName = String(body.customerName || 'Walk-in customer').trim();
-      const petName = String(body.petName || '').trim().slice(0, 120);
+      const contact = body.contact == null ? '' : body.contact;
       const paymentMethod = String(body.paymentMethod || 'cash').trim().toLowerCase();
+      if (contact !== '' && !isValidMobileNumber(contact)) {
+        return res.status(400).json({ error: 'Contact number must contain exactly 11 digits.' });
+      }
       const hasItems = Array.isArray(body.items);
       if (!isOptionalPhoneNumber(body.contact)) {
         return res.status(400).json({ error: 'Contact number must contain digits only.' });
@@ -554,8 +685,11 @@ const createCashTransaction = async (req, res, next) => {
       if (!customerName || !description || !Number.isFinite(amount) || amount <= 0 || amount > 10000000) {
         return res.status(400).json({ error: 'Customer name, item or service, and a valid positive amount are required.' });
       }
-      if (!['cash', 'gcash', 'card'].includes(paymentMethod)) {
-        return res.status(400).json({ error: 'Choose cash, GCash, or card as the payment method.' });
+      if (!['cash', 'qrph'].includes(paymentMethod)) {
+        return res.status(400).json({ error: 'Choose cash or QR (PayMongo) as the payment method.' });
+      }
+      if (paymentMethod === 'qrph' && !getPayMongoKey()) {
+        return res.status(503).json({ error: 'PayMongo is not configured. Add PAYMONGO_SECRET_KEY to .env.' });
       }
       if (items.some((item) => item.inventoryId)) {
         const transactionRef = firestore.collection('cashTransactions').doc();
@@ -667,26 +801,22 @@ const createCashTransaction = async (req, res, next) => {
       const tenderedAmount = paymentMethod === 'cash'
         ? Number(body.tenderedAmount == null ? amount : body.tenderedAmount)
         : amount;
-      if (paymentMethod === 'cash' && body.tenderedAmount != null && !isDecimalNumber(body.tenderedAmount)) {
-        return res.status(400).json({ error: 'Cash received must contain numbers only.' });
-      }
-      if (!Number.isFinite(tenderedAmount) || tenderedAmount < amount || tenderedAmount > 10000000) {
+      if (paymentMethod === 'cash' && (!Number.isFinite(tenderedAmount) || tenderedAmount < amount || tenderedAmount > 10000000)) {
         return res.status(400).json({ error: 'Cash received must cover the sale total.' });
       }
-      const changeDue = Math.round((tenderedAmount - amount) * 100) / 100;
-      const paidAt = new Date();
+      const changeDue = paymentMethod === 'cash' ? Math.round((tenderedAmount - amount) * 100) / 100 : 0;
       const transaction = await CashTransaction.create({
         type: 'walk-in',
         customerName,
-        petName: petName || null,
-        contact: String(body.contact || '').trim() || null,
+        contact: contact || null,
         description,
         amount,
         items: hasItems ? items : [],
         paymentMethod,
+        paymentStatus: paymentMethod === 'cash' ? 'paid' : 'pending',
         tenderedAmount,
         changeDue,
-        paidAt,
+        paidAt: paymentMethod === 'cash' ? new Date() : null,
         recordedBy: 'ADMIN',
         notes: String(body.notes || '').trim(),
         receipt: {
@@ -703,20 +833,39 @@ const createCashTransaction = async (req, res, next) => {
           description,
         },
       });
-      const printableReceipt = {
-        ...transaction.receipt,
-        receiptNumber: transaction.id,
-      };
-      await transaction.update({ receipt: printableReceipt });
-      const responseTransaction = {
-        id: transaction.id,
-        amount,
-        tenderedAmount,
-        changeDue,
-        paidAt,
-        receipt: printableReceipt,
-      };
-      return res.status(201).json({ success: true, transaction: responseTransaction });
+
+      if (paymentMethod === 'qrph') {
+        const appUrl = process.env.APP_URL || 'http://localhost:3000';
+        let checkout;
+        try {
+          checkout = await createQrPhCheckout({
+            amount,
+            description,
+            metadata: {
+              type: 'walk-in',
+              customerName,
+              contact,
+              transactionId: String(transaction.id),
+            },
+            successUrl: `${appUrl}/admin/pos.html?payment=success&transaction_id=${encodeURIComponent(transaction.id)}`,
+            cancelUrl: `${appUrl}/admin/pos.html?payment=cancelled&transaction_id=${encodeURIComponent(transaction.id)}`,
+          });
+          if (!checkout.id || !checkout.checkoutUrl) {
+            throw new Error('PayMongo did not return a checkout session and payment URL.');
+          }
+          await transaction.update({ paymentReference: checkout.id });
+        } catch (error) {
+          await transaction.update({ paymentStatus: 'failed' });
+          throw error;
+        }
+        return res.status(201).json({
+          success: true,
+          transaction: { id: transaction.id, amount, tenderedAmount, changeDue, paidAt: transaction.paidAt },
+          checkoutUrl: checkout.checkoutUrl,
+        });
+      }
+
+      return res.status(201).json({ success: true, transaction: { id: transaction.id, amount, tenderedAmount, changeDue, paidAt: transaction.paidAt } });
     }
 
     if (body.type !== 'booking-payment' || !['grooming', 'hotel'].includes(body.bookingType) || !body.bookingId) {
@@ -794,7 +943,7 @@ module.exports = {
   getOccupancy,
   getRevenueBreakdown,
   getRevenueAnalytics,
-  getWalkInSalesAnalytics,
+  getOperationalReport,
   listCashTransactions,
   createCashTransaction,
 };

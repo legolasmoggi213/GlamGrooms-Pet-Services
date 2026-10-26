@@ -1,41 +1,73 @@
 // Shared admin helpers: sidebar injection + modal utilities.
 
 const ADMIN_PAGES = [
-  { href: '/admin/index.html', label: 'Dashboard' },
-  { href: '/admin/index.html#revenue', label: 'Reports' },
   { href: '/admin/grooming.html', label: 'Grooming' },
   { href: '/admin/hotel.html', label: 'Hotel' },
+  { href: '/admin/notifications.html', label: 'Notifications' },
+  { href: '/admin/reports.html', label: 'Reports' },
   { href: '/admin/inventory.html', label: 'Inventory' },
+  { href: '/admin/index.html', label: 'Dashboard' },
   { href: '/admin/customers.html', label: 'Customers' },
   { href: '/admin/pets.html', label: 'Pets' },
   { href: '/admin/pos.html', label: 'Point of Sale' },
-  { href: '/admin/employees.html', label: 'Employees' },
+  { href: '/admin/staff.html', label: 'Employees' },
   { href: '/admin/change-password.html', label: 'Change Password' },
 ];
 
-async function renderSidebar(activeLabel) {
-  let role = null;
-  try {
-    const response = await fetch('/admin/nav-status', { credentials: 'include' });
-    const status = await response.json();
-    if (!status.authenticated) return window.location.assign('/admin/login.html');
-    role = status.role;
-  } catch (error) {
-    console.error('Unable to load account role:', error);
-  }
-  document.body.dataset.adminRole = role || '';
-  const pages = role === 'admin'
-    ? ADMIN_PAGES
-    : ADMIN_PAGES.filter((page) => page.label !== 'Employees');
-  const links = pages.map(
-    (page) => `<a href="${page.href}" class="${page.label === activeLabel ? 'active' : ''}">${page.label}</a>`
-  ).join('');
-  document.getElementById('sidebar').innerHTML = `
-    <a class="brand" href="/admin/index.html">Glam Grooms Pet Spa & Hotel</a>
-    ${links}
-    <a href="/" style="margin-top:1rem;">← Back to site</a>
-    <a href="/admin/logout" data-confirm-logout style="margin-top:0.6rem;color:var(--danger);">Logout</a>
-  `;
+function renderSidebar(activeLabel) {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.innerHTML = '<div class="loading">Loading navigation…</div>';
+  fetch('/admin/nav-status', { credentials: 'include', cache: 'no-store' })
+    .then((response) => {
+      if (!response.ok) throw new Error(`Navigation authorization failed (${response.status}).`);
+      return response.json();
+    })
+    .then(({ authenticated, role }) => {
+      if (!authenticated) {
+        window.location.href = '/admin/login.html';
+        return;
+      }
+      const pages = role === 'STAFF'
+        ? ADMIN_PAGES.filter((page) => ['Grooming', 'Hotel', 'Customers', 'Pets', 'Notifications', 'Reports', 'Inventory'].includes(page.label))
+        : ADMIN_PAGES;
+      const home = role === 'STAFF' ? '/admin/grooming.html' : '/admin/index.html';
+      const links = pages.map((page) =>
+        `<a href="${page.href}" class="${page.label === activeLabel ? 'active' : ''}">${page.label === 'Notifications' ? 'Notifications <span class="admin-notification-count" data-notification-count hidden></span>' : page.label}</a>`
+      ).join('');
+      sidebar.innerHTML = `
+        <a class="brand" href="${home}">Glam Grooms Pet Spa & Hotel</a>
+        ${links}
+        <a href="/" style="margin-top:1rem;">← Back to site</a>
+        <a href="/admin/logout" style="margin-top:0.6rem;color:var(--danger);">Logout</a>
+      `;
+      if (pages.some((page) => page.label === 'Notifications')) {
+        const refreshNotificationCount = async () => {
+          try {
+            const notifications = await apiGet('/notifications');
+            const unreadCount = notifications.filter((notification) => !notification.read).length;
+            const badge = sidebar.querySelector('[data-notification-count]');
+            if (!badge) return;
+            badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+            badge.hidden = unreadCount === 0;
+          } catch (error) {
+            console.warn('Unable to refresh notification count:', error);
+          }
+        };
+        refreshNotificationCount();
+        if (!window.adminNotificationRefreshTimer) {
+          window.adminNotificationRefreshTimer = window.setInterval(() => {
+            if (!document.hidden) refreshNotificationCount();
+          }, 10000);
+          document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) refreshNotificationCount();
+          });
+        }
+      }
+    })
+    .catch((error) => {
+      console.error('Unable to load role-based navigation:', error);
+      sidebar.innerHTML = '<div class="alert alert-error show">Unable to load navigation. Please sign in again.</div>';
+    });
 }
 
 function showAdminNotice(message, type = 'success') {

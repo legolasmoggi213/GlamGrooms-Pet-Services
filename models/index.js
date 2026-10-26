@@ -7,7 +7,8 @@ module.exports = {
   HotelReservation: new FirebaseModel('hotelReservations'),
   CashTransaction: new FirebaseModel('cashTransactions'),
   Admin: new FirebaseModel('admins'),
-  Employee: new FirebaseModel('employees'),
+  StaffAccount: new FirebaseModel('staffAccounts'),
   InventoryItem: new FirebaseModel('inventoryItems'),
   StockRequest: new FirebaseModel('stockRequests'),
+  StaffNotification: new FirebaseModel('staffNotifications'),
 };

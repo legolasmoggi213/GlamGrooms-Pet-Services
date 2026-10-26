@@ -24,7 +24,7 @@
 
       <div class="panel-grid">
         <div class="panel">
-          <h3>Hotel Occupancy — Next 14 Days</h3>
+          <h3>Hotel Occupancy — This Month</h3>
           <div id="occupancy"><div class="loading">Loading…</div></div>
         </div>
         <div class="panel">
@@ -90,6 +90,22 @@
             <thead><tr><th>Date</th><th>Type</th><th>Customer</th><th>Service / Room</th><th>Status</th><th>Amount</th></tr></thead>
             <tbody id="booking-report-rows"><tr><td colspan="6" class="empty">Choose a date range or generate a report for all bookings.</td></tr></tbody>
           </table>
+        </div>
+      </section>
+
+      <section class="panel" aria-label="Revenue forecast">
+        <h3>Revenue Forecast</h3>
+        <p class="text-muted">A linear estimate based on the periods selected above; actual results may vary.</p>
+        <div id="revenue-forecast" aria-live="polite">Loading forecast…</div>
+      </section>
+
+      <section class="panel" aria-label="Operational reports">
+        <h3>Operational Reports</h3>
+        <p class="text-muted">Download current bookings, payment statuses, or customer records as CSV.</p>
+        <div class="button-row">
+          <a class="btn btn-outline" href="/api/v1/admin/reports?type=bookings">Bookings CSV</a>
+          <a class="btn btn-outline" href="/api/v1/admin/reports?type=payments">Payments CSV</a>
+          <a class="btn btn-outline" href="/api/v1/admin/reports?type=customers">Customers CSV</a>
         </div>
       </section>
 
@@ -297,33 +313,34 @@
         document.getElementById('revenue-period-label').textContent = periods[data.period];
         document.getElementById('revenue-combined').textContent = `Combined revenue: ${fmtMoney(data.totals.combined)}`;
 
-        const renderChart = (buckets, countLabel = 'bookings') => {
+        const formatBucketLabel = (label) => {
+          const daily = label.match(/^([A-Za-z]{3}),\s+([A-Za-z]{3})\s+(\d{1,2})$/);
+          if (daily) return [daily[1], `${daily[2]} ${daily[3]}`];
+          const weekly = label.match(/^([A-Za-z]{3})\s+(\d{1,2})–([A-Za-z]{3})\s+(\d{1,2})$/);
+          if (weekly) {
+            return weekly[1] === weekly[3]
+              ? [weekly[1], `${weekly[2]}–${weekly[4]}`]
+              : [`${weekly[1]} ${weekly[2]}–`, `${weekly[3]} ${weekly[4]}`];
+          }
+          const monthly = label.match(/^([A-Za-z]{3})\s+(\d{4})$/);
+          if (monthly) return [monthly[1], monthly[2]];
+          return [label];
+        };
+
+        const renderChart = (buckets) => {
           const maximum = Math.max(0, ...buckets.map((bucket) => Number(bucket.revenue) || 0));
           return buckets.map((bucket) => {
             const value = Number(bucket.revenue) || 0;
             const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
+            const dateLabel = formatBucketLabel(bucket.label)
+              .map((part) => `<span>${escapeHtml(part)}</span>`)
+              .join('');
             return `
               <div class="revenue-bar-column" title="${escapeHtml(`${bucket.label}: ${fmtMoney(value)}, ${bucket.count} ${countLabel}`)}">
                 <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
                 <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
-                <span class="revenue-bar-label">${escapeHtml(bucket.label)}</span>
-                <span class="revenue-bar-count">${bucket.count} ${countLabel}</span>
-              </div>`;
-          }).join('');
-        };
-
-        const renderCategoryChart = (items, countLabel) => {
-          if (!items.length) return '<div class="empty">No sales recorded for this period.</div>';
-          const maximum = Math.max(0, ...items.map((item) => Number(item.revenue) || 0));
-          return items.map((item) => {
-            const value = Number(item.revenue) || 0;
-            const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
-            return `
-              <div class="revenue-bar-column" title="${escapeHtml(`${item.label}: ${fmtMoney(value)}, ${item.count} ${countLabel}`)}">
-                <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
-                <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
-                <span class="revenue-bar-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
-                <span class="revenue-bar-count">${item.count} ${item.count === 1 ? countLabel : `${countLabel}s`}</span>
+                <span class="revenue-bar-label">${dateLabel}</span>
+                <span class="revenue-bar-count">${bucket.count}</span>
               </div>`;
           }).join('');
         };
@@ -334,80 +351,20 @@
         document.getElementById('hotel-revenue-total').textContent = fmtMoney(hotelTotal);
         document.getElementById('grooming-revenue-chart').innerHTML = renderChart(data.grooming);
         document.getElementById('hotel-revenue-chart').innerHTML = renderChart(data.hotel);
-        const groomingServiceTotal = (data.groomingServices || []).reduce((total, item) => total + Number(item.revenue || 0), 0);
-        const hotelServiceTotal = (data.hotelServices || []).reduce((total, item) => total + Number(item.revenue || 0), 0);
-        document.getElementById('grooming-service-total').textContent = fmtMoney(groomingServiceTotal);
-        document.getElementById('hotel-service-total').textContent = fmtMoney(hotelServiceTotal);
-        document.getElementById('grooming-service-chart').innerHTML = renderCategoryChart(data.groomingServices || [], 'service');
-        document.getElementById('hotel-service-chart').innerHTML = renderCategoryChart(data.hotelServices || [], 'stay');
-      }
-
-      const formatReceiptAmount = (amount) => `PHP ${Number(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-      let currentBookingReport = [];
-      async function generateBookingReport() {
-        const start = document.getElementById('report-start').value;
-        const end = document.getElementById('report-end').value;
-        const rows = document.getElementById('booking-report-rows');
-        if (start && end && start > end) throw new Error('The start date must be on or before the end date.');
-        rows.innerHTML = '<tr><td colspan="6" class="loading">Generating report…</td></tr>';
-        const [grooming, hotel] = await Promise.all([apiGet('/grooming'), apiGet('/hotel')]);
-        const inRange = (date) => (!start || date >= start) && (!end || date <= end);
-        currentBookingReport = [
-          ...grooming.filter((booking) => inRange(String(booking.date || ''))).map((booking) => ({
-            date: booking.date,
-            type: 'Grooming',
-            customer: booking.Customer?.name || 'Customer',
-            service: Array.isArray(booking.petServices) && booking.petServices.length
-              ? booking.petServices.map((item) => `${item.petName || 'Pet'}: ${item.service}`).join(', ')
-              : booking.service || 'Grooming',
-            status: booking.status || 'pending',
-            amount: Number(booking.price || 0),
-          })),
-          ...hotel.filter((booking) => inRange(String(booking.checkIn || ''))).map((booking) => ({
-            date: booking.checkIn,
-            type: 'Hotel',
-            customer: booking.Customer?.name || 'Customer',
-            service: Array.isArray(booking.petRooms) && booking.petRooms.length
-              ? booking.petRooms.map((item) => `${item.petName || 'Pet'}: ${item.roomType}`).join(', ')
-              : booking.roomType || 'Hotel stay',
-            status: booking.status || 'pending',
-            amount: Number(booking.totalPrice || 0),
-          })),
-        ].sort((left, right) => String(left.date).localeCompare(String(right.date)));
-        rows.innerHTML = currentBookingReport.length ? currentBookingReport.map((booking) => `<tr>
-          <td>${fmtDate(booking.date)}</td><td>${escapeHtml(booking.type)}</td><td>${escapeHtml(booking.customer)}</td>
-          <td>${escapeHtml(booking.service)}</td><td>${statusBadge(booking.status)}</td><td>${formatReceiptAmount(booking.amount)}</td>
-        </tr>`).join('') : '<tr><td colspan="6" class="empty">No bookings match this date range.</td></tr>';
-        document.getElementById('export-booking-report').disabled = !currentBookingReport.length;
-      }
-
-      function exportBookingReportPdf() {
-        if (!currentBookingReport.length || !window.jspdf) return;
-        const pdf = new window.jspdf.jsPDF('l', 'mm', 'a4');
-        const start = document.getElementById('report-start').value || 'All';
-        const end = document.getElementById('report-end').value || 'dates';
-        pdf.setFontSize(16);
-        pdf.text('Glam Grooms Booking Report', 14, 16);
-        pdf.setFontSize(10);
-        pdf.text(`Date range: ${start} to ${end}`, 14, 23);
-        pdf.text('Date', 14, 32);
-        pdf.text('Type', 43, 32);
-        pdf.text('Customer', 69, 32);
-        pdf.text('Service / Room', 112, 32);
-        pdf.text('Status', 220, 32);
-        pdf.text('Amount', 252, 32);
-        let y = 39;
-        for (const booking of currentBookingReport) {
-          if (y > 185) { pdf.addPage(); y = 18; }
-          pdf.text(fmtDate(booking.date), 14, y, { maxWidth: 27 });
-          pdf.text(booking.type, 43, y, { maxWidth: 24 });
-          pdf.text(String(booking.customer), 69, y, { maxWidth: 40 });
-          pdf.text(String(booking.service), 112, y, { maxWidth: 104 });
-          pdf.text(String(booking.status), 220, y, { maxWidth: 30 });
-          pdf.text(formatReceiptAmount(booking.amount), 252, y, { maxWidth: 30 });
-          y += 8;
-        }
-        pdf.save(`booking-report-${start}-${end}.pdf`);
+        const forecast = data.forecast;
+        const forecastValue = (metric, format) => metric.available
+          ? format(metric.predicted)
+          : 'Insufficient historical data';
+        const bookingForecast = (metric) => metric.available
+          ? `${metric.predicted} bookings`
+          : 'Insufficient historical data';
+        document.getElementById('revenue-forecast').innerHTML = `
+          <p><strong>${escapeHtml(forecast.periodLabel)}:</strong>
+            Grooming ${escapeHtml(forecastValue(forecast.groomingRevenue, fmtMoney))} revenue
+            (${escapeHtml(bookingForecast(forecast.groomingBookings))}),
+            Hotel ${escapeHtml(forecastValue(forecast.hotelRevenue, fmtMoney))} revenue
+            (${escapeHtml(bookingForecast(forecast.hotelBookings))}).</p>
+          <p class="text-muted">${escapeHtml(forecast.method)}</p>`;
       }
 
       async function loadServiceCatalog() {

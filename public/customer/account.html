@@ -39,6 +39,18 @@
     </div>
   </div>
 
+  <dialog id="booking-dialog" aria-labelledby="booking-dialog-title">
+    <form id="booking-edit-form" class="form-grid">
+      <h3 id="booking-dialog-title" class="field full">Edit booking</h3>
+      <div id="booking-edit-fields" class="form-grid full"></div>
+      <p id="booking-edit-message" class="field full text-error" aria-live="polite"></p>
+      <div class="profile-actions field full">
+        <button class="btn btn-primary btn-sm" type="submit">Save changes</button>
+        <button class="btn btn-outline btn-sm" id="close-booking-dialog" type="button">Close</button>
+      </div>
+    </form>
+  </dialog>
+
   <main class="page-shell">
     <div class="account-header">
       <h1>My Account</h1>
@@ -53,30 +65,18 @@
       <section class="card">
         <div class="section-title">Your Pets</div>
         <div id="pets">Loading pets…</div>
+        <div id="pet-editor" class="profile-edit"></div>
+        <p id="pet-message" class="text-muted" aria-live="polite"></p>
       </section>
     </div>
 
     <section class="card">
-      <div class="section-title">Recent & Ongoing Transactions</div>
+      <div class="section-title">Your Bookings</div>
       <div id="bookings">Loading bookings…</div>
     </section>
   </main>
 
-  <dialog id="payment-summary-dialog" class="payment-summary-dialog" aria-labelledby="payment-summary-title">
-    <div class="payment-summary-heading">
-      <h2 id="payment-summary-title">Payment confirmed</h2>
-      <button id="close-payment-summary" class="btn btn-outline btn-sm" type="button">Close</button>
-    </div>
-    <div id="payment-summary-content"></div>
-  </dialog>
-  <dialog id="booking-action-dialog" class="payment-summary-dialog" aria-labelledby="booking-action-title">
-    <div class="payment-summary-heading">
-      <h2 id="booking-action-title">Reschedule booking</h2>
-      <button id="close-booking-action" class="btn btn-outline btn-sm" type="button">Close</button>
-    </div>
-    <form id="booking-action-form" class="form-grid"></form>
-  </dialog>
-
+  <script src="/js/mobile-number.js"></script>
   <script>
     const params = new URLSearchParams(location.search);
     const showSuccessToast = params.get('justRegistered') === '1';
@@ -96,20 +96,9 @@
     const deleteModal = document.getElementById('confirm-delete');
     const cancelDelete = document.getElementById('cancel-delete');
     const confirmDelete = document.getElementById('confirm-delete-btn');
-    const paymentSummaryDialog = document.getElementById('payment-summary-dialog');
-    const bookingActionDialog = document.getElementById('booking-action-dialog');
-    const bookingActionForm = document.getElementById('booking-action-form');
-    const paymentRetryPanel = document.getElementById('payment-retry-panel');
-    const paymentRetryMessage = document.getElementById('payment-retry-message');
-    const retryPaymentButton = document.getElementById('retry-payment-verification');
-    let paymentRetryStarted = false;
-    let autoRefresh = null;
-
-    const bookingCreatedAt = (item) => {
-      const timestamp = item.createdAt || item.date || item.checkIn;
-      const time = timestamp instanceof Date ? timestamp.getTime() : new Date(timestamp).getTime();
-      return Number.isNaN(time) ? 0 : time;
-    };
+    const bookingDialog = document.getElementById('booking-dialog');
+    const bookingEditForm = document.getElementById('booking-edit-form');
+    let activeBooking = null;
 
     if (showSuccessToast) {
       const toast = document.getElementById('toast');
@@ -144,6 +133,103 @@
         alert('Failed to delete account. Please try again.');
       }
     });
+    document.getElementById('close-booking-dialog').addEventListener('click', () => bookingDialog.close());
+
+    const bookingCanChange = (item, type) => {
+      if (String(item.status || '').toLowerCase() !== 'pending'
+        || item.paymentStatus === 'paid'
+        || item.paymentMethod === 'qrph') return false;
+      const date = type === 'hotel' ? item.checkIn : item.date;
+      const time = type === 'hotel' ? item.checkInTime : item.time || '00:00';
+      return Boolean(date && new Date(`${date}T${time || '00:00'}:00`) > new Date());
+    };
+
+    const bookingActions = (item, type) => {
+      if (String(item.status || '').toLowerCase() !== 'pending') return '';
+      if (item.paymentStatus === 'paid' || item.paymentMethod === 'qrph') {
+        return '<div class="transaction-meta">Editing is unavailable while online payment is processing.</div>';
+      }
+      if (!bookingCanChange(item, type)) return '';
+      return `
+        <div class="profile-actions">
+          <button class="btn btn-outline btn-sm" type="button" data-reschedule-type="${type}" data-reschedule-id="${escapeHtml(item.id)}">Edit booking</button>
+          <button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}">Cancel booking</button>
+        </div>
+      `;
+    };
+
+    document.getElementById('bookings').addEventListener('click', async (event) => {
+      const cancelButton = event.target.closest('[data-cancel-type]');
+      if (cancelButton) {
+        const { cancelType: type, cancelId: id } = cancelButton.dataset;
+        if (!window.confirm('Cancel this upcoming unpaid booking?')) return;
+        cancelButton.disabled = true;
+        try {
+          const response = await fetch(`/api/v1/bookings/customer/${type}/${encodeURIComponent(id)}/cancel`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || 'Unable to cancel booking.');
+          if (result.notificationSent === false) {
+            alert('Your booking was canceled, but staff could not be notified automatically. Please contact the team.');
+          }
+          await loadProfile();
+        } catch (error) {
+          alert(error.message);
+          cancelButton.disabled = false;
+        }
+        return;
+      }
+
+      const rescheduleButton = event.target.closest('[data-reschedule-type]');
+      if (!rescheduleButton) return;
+      const { rescheduleType: type, rescheduleId: id } = rescheduleButton.dataset;
+      const data = await fetch('/customer/profile', { credentials: 'include' }).then((response) => response.json());
+      const item = [...(data.grooming || []), ...(data.hotel || [])].find((booking) => String(booking.id) === String(id));
+      if (!item) return alert('Booking not found. Refresh the page and try again.');
+      activeBooking = { type, id, item };
+      document.getElementById('booking-dialog-title').textContent = `Edit ${type} booking`;
+      const minDate = new Date().toLocaleDateString('en-CA');
+      const fields = type === 'grooming'
+        ? `<label class="field">Appointment date<input name="date" type="date" min="${minDate}" required value="${escapeHtml(item.date)}"></label>
+           <label class="field">Appointment time<input name="time" type="time" step="3600" required value="${escapeHtml(item.time || '')}"></label>
+           <label class="field">Pickup time<input name="pickupTime" type="time" step="3600" required value="${escapeHtml(item.pickupTime || '')}"></label>`
+        : `<label class="field">Check-in<input name="checkIn" type="date" min="${minDate}" required value="${escapeHtml(item.checkIn)}"></label>
+           <label class="field">Check-in time<input name="checkInTime" type="time" step="3600" required value="${escapeHtml(item.checkInTime || '')}"></label>
+           <label class="field">Check-out<input name="checkOut" type="date" min="${minDate}" required value="${escapeHtml(item.checkOut)}"></label>
+           <label class="field">Check-out time<input name="checkOutTime" type="time" step="3600" required value="${escapeHtml(item.checkOutTime || '')}"></label>`;
+      document.getElementById('booking-edit-fields').innerHTML = `${fields}
+        <label class="field full">Special care notes<textarea name="notes" maxlength="1000" rows="3">${escapeHtml(item.notes || '')}</textarea></label>`;
+      document.getElementById('booking-edit-message').textContent = '';
+      bookingDialog.showModal();
+    });
+
+    bookingEditForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!activeBooking || !bookingEditForm.reportValidity()) return;
+      const body = Object.fromEntries(new FormData(bookingEditForm));
+      const saveButton = bookingEditForm.querySelector('[type="submit"]');
+      saveButton.disabled = true;
+      document.getElementById('booking-edit-message').textContent = '';
+      try {
+        const response = await fetch(`/api/v1/bookings/customer/${activeBooking.type}/${encodeURIComponent(activeBooking.id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(body),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Unable to reschedule booking.');
+        bookingDialog.close();
+        activeBooking = null;
+        await loadProfile();
+      } catch (error) {
+        document.getElementById('booking-edit-message').textContent = error.message;
+      } finally {
+        saveButton.disabled = false;
+      }
+    });
 
     document.getElementById('close-booking-action').addEventListener('click', () => bookingActionDialog.close());
     bookingActionDialog.addEventListener('close', () => {
@@ -153,7 +239,13 @@
     async function loadProfile() {
       try {
         const r = await fetch('/customer/profile', { credentials: 'include' });
-        if (r.status === 401) return location.href = '/customer/login.html?return=' + encodeURIComponent(location.pathname);
+        const contentType = r.headers.get('content-type') || '';
+        if (r.status === 401 || r.redirected) {
+          location.href = '/customer/login.html?return=' + encodeURIComponent(location.pathname);
+          return;
+        }
+        if (!r.ok) throw new Error(`Profile request failed (${r.status}).`);
+        if (!contentType.includes('application/json')) throw new Error('Profile response was not JSON.');
         const data = await r.json();
         const p = data.customer || {};
 
@@ -169,7 +261,7 @@
           <div class="profile-actions"><button id="edit-profile-btn" class="btn btn-primary btn-sm" type="button">Edit Profile</button></div>
           <form id="profile-edit" class="profile-edit">
             <label>Full name<input name="name" required value="${escapeHtml(p.name || '')}"></label>
-            <label>Phone<input name="phone" value="${escapeHtml(p.phone || '')}"></label>
+            <label>Phone<input name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number pattern="[0-9]{11}" title="Leave blank or enter exactly 11 digits." value="${escapeHtml(p.phone || '')}"></label>
             <label>Address<input name="address" value="${escapeHtml(p.address || '')}"></label>
             <div class="profile-actions"><button class="btn btn-primary btn-sm" type="submit">Save Changes</button><button id="cancel-profile-btn" class="btn btn-outline btn-sm" type="button">Cancel</button></div>
           </form>
@@ -212,17 +304,92 @@
               <li>
                 <div>
                   <strong>${escapeHtml(pt.name || 'Pet')}</strong><br>
-                  <span class="transaction-meta">${escapeHtml(pt.species || 'Unknown')} • ${escapeHtml(pt.breed || 'Mixed')} • ${escapeHtml(pt.age != null ? pt.age + ' yrs' : 'Age not set')}</span>
-                  ${pt.medicalHistory ? `<div class="transaction-meta"><strong>Medical history:</strong> ${escapeHtml(pt.medicalHistory)}</div>` : ''}
+                  <span class="transaction-meta">${escapeHtml(pt.species || 'Unknown')} • ${escapeHtml(pt.breed || 'Mixed')} • ${escapeHtml(pt.age != null ? pt.age + ' yrs' : 'Age not set')}${pt.size ? ` • ${escapeHtml(pt.size)}` : ''}</span><br>
+                  <span class="transaction-meta">${escapeHtml(pt.notes || '')}</span>
                 </div>
-                <span class="status-pill secondary">${escapeHtml(pt.status || 'Active')}</span>
+                <div class="profile-actions">
+                  <button class="btn btn-outline btn-sm" type="button" data-edit-pet="${escapeHtml(pt.id)}">Edit</button>
+                  <button class="btn btn-danger btn-sm" type="button" data-delete-pet="${escapeHtml(pt.id)}">Delete</button>
+                </div>
               </li>
             `).join('')}</ul>`
           : '<div class="empty-state">No pets registered yet.</div>';
 
-        const groomingBookings = [...(data.grooming || [])].sort((a, b) => bookingCreatedAt(b) - bookingCreatedAt(a));
-        const hotelBookings = [...(data.hotel || [])].sort((a, b) => bookingCreatedAt(b) - bookingCreatedAt(a));
-        const grooming = groomingBookings.map(item => {
+        const petEditor = document.getElementById('pet-editor');
+        const petMessage = document.getElementById('pet-message');
+        const closePetEditor = () => {
+          petEditor.classList.remove('open');
+          petEditor.innerHTML = '';
+          petMessage.textContent = '';
+        };
+        const editPet = (pet) => {
+          if (!pet) return;
+          petMessage.textContent = '';
+          petEditor.innerHTML = `
+            <form id="pet-edit-form">
+              <label>Pet name<input name="name" required maxlength="80" value="${escapeHtml(pet?.name || '')}"></label>
+              <label>Species<select name="species" required>
+                <option value="dog"${pet?.species === 'dog' ? ' selected' : ''}>Dog</option>
+                <option value="cat"${pet?.species === 'cat' ? ' selected' : ''}>Cat</option>
+              </select></label>
+              <label>Breed<input name="breed" required maxlength="100" value="${escapeHtml(pet?.breed || '')}"></label>
+              <label>Age in years<input name="age" type="number" min="0" max="100" step="1" required value="${escapeHtml(pet?.age ?? '')}"></label>
+              <label>Size<input name="size" maxlength="40" value="${escapeHtml(pet?.size || '')}" placeholder="Optional"></label>
+              <label>Care notes<textarea name="notes" maxlength="1000" rows="2">${escapeHtml(pet?.notes || '')}</textarea></label>
+              <div class="profile-actions">
+                <button class="btn btn-primary btn-sm" type="submit">Save Pet</button>
+                <button class="btn btn-outline btn-sm" type="button" id="cancel-pet-edit">Cancel</button>
+              </div>
+            </form>`;
+          petEditor.classList.add('open');
+          petEditor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          petEditor.querySelector('input[name="name"]')?.focus({ preventScroll: true });
+          document.getElementById('cancel-pet-edit').addEventListener('click', closePetEditor);
+          document.getElementById('pet-edit-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!event.currentTarget.reportValidity()) return;
+            const body = Object.fromEntries(new FormData(event.currentTarget));
+            body.age = Number(body.age);
+            const endpoint = `/customer/pets/${encodeURIComponent(pet.id)}`;
+            try {
+              const response = await fetch(endpoint, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(body),
+              });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(result.error || 'Unable to save pet details.');
+              closePetEditor();
+              await loadProfile();
+            } catch (error) {
+              petMessage.className = 'text-error';
+              petMessage.textContent = error.message;
+            }
+          });
+        };
+        document.querySelectorAll('[data-edit-pet]').forEach((button) => {
+          button.addEventListener('click', () => editPet(pets.find((pet) => String(pet.id) === button.dataset.editPet)));
+        });
+        document.querySelectorAll('[data-delete-pet]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            if (!confirm('Delete this pet profile?')) return;
+            try {
+              const response = await fetch(`/customer/pets/${encodeURIComponent(button.dataset.deletePet)}`, {
+                method: 'DELETE',
+                credentials: 'include',
+              });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(result.error || 'Unable to delete pet profile.');
+              await loadProfile();
+            } catch (error) {
+              petMessage.className = 'text-error';
+              petMessage.textContent = error.message;
+            }
+          });
+        });
+
+        const grooming = (data.grooming || []).map(item => {
           const statusClass = item.status === 'completed' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
           const serviceSummary = Array.isArray(item.petServices) && item.petServices.length
             ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ')
@@ -234,7 +401,7 @@
                 <div class="transaction-meta">${formatDate(item.date)} • ${escapeHtml(item.time || 'Time TBA')}${item.pickupTime ? ` • Pickup ${escapeHtml(item.pickupTime)}` : ''} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.price)}</div>
                 ${paymentReceiptMarkup(item, 'grooming', p)}
                 ${reservationTicketMarkup(item, 'grooming', pets, p)}
-                ${bookingActionsMarkup(item, 'grooming')}
+                ${bookingActions(item, 'grooming')}
               </div>
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
@@ -253,7 +420,7 @@
                 <div class="transaction-meta">Check-in: ${formatDate(item.checkIn)} at ${escapeHtml(item.checkInTime || 'Time TBA')} • Check-out: ${formatDate(item.checkOut)} at ${escapeHtml(item.checkOutTime || 'Time TBA')} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.totalPrice)}</div>
                 ${paymentReceiptMarkup(item, 'hotel', p)}
                 ${reservationTicketMarkup(item, 'hotel', pets, p)}
-                ${bookingActionsMarkup(item, 'hotel')}
+                ${bookingActions(item, 'hotel')}
               </div>
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
@@ -635,12 +802,12 @@
 
     // Stop auto-refresh while editing profile so the form stays intact
     document.addEventListener('focusin', (e) => {
-      if (e.target.closest('#profile-edit') || e.target.closest('.profile-edit')) {
+      if (e.target.closest('#profile-edit') || e.target.closest('.profile-edit') || e.target.closest('#pet-editor')) {
         clearInterval(autoRefresh);
       }
     });
     document.addEventListener('focusout', (e) => {
-      if (e.target.closest('#profile-edit') || e.target.closest('.profile-edit')) {
+      if (e.target.closest('#profile-edit') || e.target.closest('.profile-edit') || e.target.closest('#pet-editor')) {
         autoRefresh = setInterval(loadProfile, 5000);
       }
     });

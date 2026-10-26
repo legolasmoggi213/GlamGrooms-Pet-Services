@@ -28,7 +28,7 @@ const {
 } = require('../util/bookingCalculations');
 const { sendPayMongoReceipt } = require('../util/mailer');
 const { isValidMobileNumber } = require('../util/mobileNumber');
-const { isOptionalPhoneNumber } = require('../util/numericValidation');
+const { isDigitsOnly, isOptionalPhoneNumber } = require('../util/numericValidation');
 const { notifyStaffOfBooking, notifyStaffOfCancellation } = require('../util/staffNotifications');
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;

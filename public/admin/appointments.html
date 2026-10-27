@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Appointments — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css?v=appointments-manage-20261028" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="admin-main">
+      <div class="flex-between">
+        <div>
+          <h1>Appointments</h1>
+          <p class="page-sub">Manage grooming appointments and pet hotel stays.</p>
+        </div>
+        <div class="appointments-header-actions">
+          <button class="btn btn-primary" id="new-grooming-appointment" type="button">New Grooming Appointment</button>
+          <button class="btn btn-outline" id="refresh-appointments" type="button">Refresh</button>
+        </div>
+      </div>
+      <p id="appointments-message" class="text-muted" role="status" aria-live="polite"></p>
+      <div class="appointments-columns" id="appointments-columns">
+        <section class="appointments-section" aria-labelledby="grooming-appointments-heading">
+          <h2 id="grooming-appointments-heading">Grooming</h2>
+          <div class="table-wrap">
+            <table class="appointments-table">
+              <thead>
+                <tr><th>Customer</th><th>Pet &amp; Service</th><th>Schedule</th><th>Status</th><th>Actions</th></tr>
+              </thead>
+              <tbody id="grooming-appointment-rows">
+                <tr><td colspan="5" class="loading">Loading grooming appointments…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section class="appointments-section" aria-labelledby="hotel-appointments-heading">
+          <h2 id="hotel-appointments-heading">Pet Hotel</h2>
+          <div class="table-wrap">
+            <table class="appointments-table">
+              <thead>
+                <tr><th>Customer</th><th>Pet &amp; Room</th><th>Stay</th><th>Status</th><th>Actions</th></tr>
+              </thead>
+              <tbody id="hotel-appointment-rows">
+                <tr><td colspan="5" class="loading">Loading pet hotel reservations…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js?v=appointments-manage-20261028"></script>
+  <script src="/js/appointments.js?v=appointments-manage-20261028"></script>
+</body>
+</html>

@@ -4,29 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Account — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=customer-password-change-20261027" />
+  <link rel="stylesheet" href="/css/style.css?v=customer-dashboard-20261028" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 </head>
 <body>
-  <header class="navbar">
-    <a class="brand" href="/">Glam Grooms Pet Spa & Hotel</a>
-    <nav>
-      <a href="/">Home</a>
-      <a href="/grooming.html">Grooming</a>
-      <a href="/hotel.html">Pet Hotel</a>
-      <a href="/customer/account.html" class="active">My Account</a>
-      <a href="/customer/logout" data-confirm-logout>Logout</a>
-    </nav>
-  </header>
-
   <div id="toast" class="toast" aria-live="polite">Account created successfully.</div>
-  <section id="payment-retry-panel" class="payment-retry-panel" hidden role="status" aria-live="polite">
-    <p id="payment-retry-message">We are still confirming your PayMongo payment. Your booking is being kept.</p>
-    <button id="retry-payment-verification" class="btn btn-primary btn-sm" type="button">Check payment again</button>
-  </section>
   <dialog id="payment-summary-dialog" aria-labelledby="payment-summary-title">
     <div class="panel">
       <h2 id="payment-summary-title">Payment confirmed</h2>
@@ -58,30 +43,78 @@
     </form>
   </dialog>
 
-  <main class="page-shell">
-    <div class="account-header">
-      <h1>My Account</h1>
-    </div>
+  <div class="customer-account-layout">
+    <aside class="customer-account-sidebar">
+      <a class="customer-account-brand" href="/">Glam Grooms <span>Pet Spa &amp; Hotel</span></a>
+      <nav class="customer-account-nav" aria-label="Customer account">
+        <a class="active" href="#dashboard" aria-current="page">Dashboard</a>
+        <a href="#grooming-section">Grooming</a>
+        <a href="#hotel-section">Pet Hotel</a>
+        <a href="#transactions-section">Transactions</a>
+        <a href="#pets-section">Pets</a>
+        <a href="#profile-section">Profile</a>
+        <a href="/customer/logout" data-confirm-logout>Logout</a>
+      </nav>
+    </aside>
 
-    <div style="display:flex; justify-content:flex-end; margin-bottom:1rem;">
-      <button id="delete-account-btn" class="btn btn-danger btn-sm" type="button">Delete Account</button>
-    </div>
+    <main class="customer-account-main">
+      <div class="customer-account-content">
+        <section id="dashboard" class="customer-dashboard-overview">
+          <div class="customer-account-heading">
+            <div>
+              <p class="customer-eyebrow">Customer portal</p>
+              <h1 id="customer-greeting">My Dashboard</h1>
+              <p class="customer-dashboard-subtitle">Your pets, appointments, and stays in one place.</p>
+            </div>
+          </div>
+          <div class="customer-summary-grid" aria-label="Account summary">
+            <div class="customer-summary-item"><span>Pets</span><strong id="summary-pets">—</strong></div>
+            <div class="customer-summary-item"><span>Grooming</span><strong id="summary-grooming">—</strong></div>
+            <div class="customer-summary-item"><span>Pet hotel</span><strong id="summary-hotel">—</strong></div>
+            <div class="customer-summary-item"><span>Transactions</span><strong id="summary-transactions">—</strong></div>
+          </div>
+        </section>
 
-    <div class="account-grid" id="content">
-      <section class="card profile-card" id="profile">Loading profile…</section>
-      <section class="card">
-        <div class="section-title">Your Pets</div>
-        <div id="pets">Loading pets…</div>
-        <div id="pet-editor" class="profile-edit"></div>
-        <p id="pet-message" class="text-muted" aria-live="polite"></p>
-      </section>
-    </div>
+        <section id="payment-retry-panel" class="payment-retry-panel" hidden role="status" aria-live="polite">
+          <p id="payment-retry-message">We are still confirming your PayMongo payment. Your booking is being kept.</p>
+          <button id="retry-payment-verification" class="btn btn-primary btn-sm" type="button">Check payment again</button>
+        </section>
 
-    <section class="card">
-      <div class="section-title">Your Bookings</div>
-      <div id="bookings">Loading bookings…</div>
-    </section>
-  </main>
+        <section id="grooming-section" class="customer-account-section">
+          <h2>Grooming</h2>
+          <div id="grooming-bookings">Loading grooming appointments…</div>
+        </section>
+
+        <section id="hotel-section" class="customer-account-section">
+          <h2>Pet Hotel</h2>
+          <div id="hotel-bookings">Loading pet hotel stays…</div>
+        </section>
+
+        <section id="transactions-section" class="customer-account-section">
+          <h2>Transactions</h2>
+          <div id="recent-transactions">Loading transactions…</div>
+        </section>
+
+        <section id="pets-section" class="customer-account-section">
+          <h2>Your Pets</h2>
+          <div class="account-card">
+            <div id="pets">Loading pets…</div>
+            <div id="pet-editor" class="profile-edit"></div>
+            <p id="pet-message" class="text-muted" aria-live="polite"></p>
+          </div>
+        </section>
+
+        <section id="profile-section" class="customer-account-section">
+          <div class="customer-section-heading">
+            <h2>Profile</h2>
+            <button id="delete-account-btn" class="btn btn-danger btn-sm" type="button">Delete Account</button>
+          </div>
+          <section class="account-card profile-card" id="profile">Loading profile…</section>
+        </section>
+
+      </div>
+    </main>
+  </div>
 
   <script src="/js/mobile-number.js"></script>
   <script>
@@ -98,6 +131,22 @@
     const paymentRetryMessage = document.getElementById('payment-retry-message');
     const paymentSummaryDialog = document.getElementById('payment-summary-dialog');
     let paymentRetryStarted = false;
+    const customerNav = document.querySelector('.customer-account-nav');
+    const customerNavLinks = [...customerNav.querySelectorAll('a[href^="#"]')];
+    const updateCustomerNav = (hash = location.hash || '#dashboard') => {
+      customerNavLinks.forEach((link) => {
+        const isActive = link.getAttribute('href') === hash;
+        link.classList.toggle('active', isActive);
+        if (isActive) link.setAttribute('aria-current', 'location');
+        else link.removeAttribute('aria-current');
+      });
+    };
+    customerNav.addEventListener('click', (event) => {
+      const link = event.target.closest('a[href^="#"]');
+      if (link) updateCustomerNav(link.getAttribute('href'));
+    });
+    window.addEventListener('hashchange', () => updateCustomerNav());
+    updateCustomerNav();
     document.addEventListener('click', (event) => {
       const logoutLink = event.target.closest('[data-confirm-logout]');
       if (logoutLink && !window.confirm('Are you sure you want to log out?')) {
@@ -172,7 +221,7 @@
       `;
     };
 
-    document.getElementById('bookings').addEventListener('click', async (event) => {
+    document.querySelector('.customer-account-content').addEventListener('click', async (event) => {
       const cancelButton = event.target.closest('[data-cancel-type]');
       if (cancelButton) {
         const { cancelType: type, cancelId: id } = cancelButton.dataset;
@@ -266,6 +315,7 @@
         const p = data.customer || {};
         const groomingBookings = data.grooming || [];
         const hotelBookings = data.hotel || [];
+        document.getElementById('customer-greeting').textContent = p.name ? `Welcome back, ${p.name}` : 'My Dashboard';
 
         document.getElementById('profile').innerHTML = `
           <div class="profile-title">Profile details</div>
@@ -404,6 +454,10 @@
         });
 
         const pets = (data.pets || []);
+        document.getElementById('summary-pets').textContent = String(pets.length);
+        document.getElementById('summary-grooming').textContent = String(groomingBookings.length);
+        document.getElementById('summary-hotel').textContent = String(hotelBookings.length);
+        document.getElementById('summary-transactions').textContent = String(groomingBookings.length + hotelBookings.length);
         document.getElementById('pets').innerHTML = pets.length
           ? `<ul class="pet-list">${pets.map(pt => `
               <li>
@@ -543,22 +597,9 @@
             }).join('')}</ul>`
           : '<div class="empty-state">No recent transactions yet.</div>';
 
-        document.getElementById('bookings').innerHTML = `
-          <div style="display:grid; gap:1rem;">
-            <div>
-              <div class="section-title" style="margin-bottom:0.7rem;">Recent Transactions</div>
-              ${recentHtml}
-            </div>
-            <div>
-              <div class="section-title" style="margin-bottom:0.7rem;">Grooming</div>
-              <ul class="transaction-list">${grooming}</ul>
-            </div>
-            <div>
-              <div class="section-title" style="margin-bottom:0.7rem;">Hotel</div>
-              <ul class="transaction-list">${hotel}</ul>
-            </div>
-          </div>
-        `;
+        document.getElementById('recent-transactions').innerHTML = recentHtml;
+        document.getElementById('grooming-bookings').innerHTML = `<ul class="transaction-list">${grooming}</ul>`;
+        document.getElementById('hotel-bookings').innerHTML = `<ul class="transaction-list">${hotel}</ul>`;
 
         if (paymentSuccess) openLatestPaymentSummary();
         if (paymentPending && (paymentSessionId || paymentBookingId)) {
@@ -572,7 +613,7 @@
         const message = e.name === 'AbortError'
           ? 'Loading your account timed out. Check your connection and try again.'
           : (e.message || 'Unable to load your account. Please try again.');
-        ['profile', 'pets', 'bookings'].forEach((id) => {
+        ['profile', 'pets', 'recent-transactions', 'grooming-bookings', 'hotel-bookings'].forEach((id) => {
           const container = document.getElementById(id);
           container.replaceChildren();
           const error = document.createElement('p');

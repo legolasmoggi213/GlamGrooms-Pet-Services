@@ -26,10 +26,10 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>ID</th><th>Name</th><th>Species</th><th>Breed</th><th>Age</th><th>Owner</th><th>Actions</th></tr>
+            <tr><th>ID</th><th>Name</th><th>Species</th><th>Breed</th><th>Age</th><th>Owner</th><th>Created</th><th>Actions</th></tr>
           </thead>
           <tbody id="rows">
-            <tr><td colspan="7" class="loading">Loading…</td></tr>
+            <tr><td colspan="8" class="loading">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -53,10 +53,10 @@
       canManageRecords = session.role === 'ADMIN';
       document.getElementById('add-btn').hidden = !canManageRecords;
       if (!pets.length) {
-        rowsEl.innerHTML = '<tr><td colspan="7" class="empty">No pets registered yet.</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="8" class="empty">No pets registered yet.</td></tr>';
         return;
       }
-      rowsEl.innerHTML = pets
+      rowsEl.innerHTML = sortByNewestDate(pets, 'createdAt')
         .map(
           (p) => `
         <tr>
@@ -66,6 +66,7 @@
           <td>${escapeHtml(p.breed || '—')}</td>
           <td>${p.age != null ? p.age : '—'}</td>
           <td>${escapeHtml((p.Customer && p.Customer.name) || (customersCache.find((c) => String(c.id) === String(p.customerId)) || {}).name || '—')}</td>
+          <td>${escapeHtml(fmtDateTime(p.createdAt))}</td>
           <td>
               ${canManageRecords ? `<button class="btn btn-outline btn-sm" onclick='editPet(${escapeHtml(JSON.stringify(p.id))})'>Edit</button>
               <button class="btn btn-danger btn-sm" onclick='removePet(${escapeHtml(JSON.stringify(p.id))}, ${escapeHtml(JSON.stringify(p.name))})'>Delete</button>` : '<span class="text-muted">Read-only</span>'}
@@ -172,7 +173,7 @@
         customersCache = await apiGet('/customers');
         await loadPets();
       } catch (e) {
-        rowsEl.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(e.message)}</td></tr>`;
+        rowsEl.innerHTML = `<tr><td colspan="8" class="empty">${escapeHtml(e.message)}</td></tr>`;
       }
     })();
   </script>

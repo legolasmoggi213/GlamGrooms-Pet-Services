@@ -43,10 +43,14 @@
       : escapeHtml(capitalize(reservation.roomType));
 
     async function loadReservations() {
-      const items = await apiGet('/hotel');
+      const items = sortByNewestDate(
+        (await apiGet('/hotel')).filter((reservation) => reservation.status !== 'checked-out'),
+        'checkIn',
+        'checkInTime',
+      );
       const session = await fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json());
       if (!items.length) {
-        rowsEl.innerHTML = '<tr><td colspan="9" class="empty">No reservations yet.</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="9" class="empty">No active reservations.</td></tr>';
         return;
       }
       rowsEl.innerHTML = items

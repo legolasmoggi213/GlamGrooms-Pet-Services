@@ -126,6 +126,15 @@ const apiDelete = (path) => api(path, { method: 'DELETE' });
 const fmtDate = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—');
 const fmtMoney = (n) => `PHP ${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtDateTime = (d) => (d ? new Date(d).toLocaleString() : '—');
+const sortByNewestDate = (records, dateField, timeField) => [...records].sort((left, right) => {
+  const leftDate = Date.parse(left[dateField] || '');
+  const rightDate = Date.parse(right[dateField] || '');
+  const leftHasDate = Number.isFinite(leftDate);
+  const rightHasDate = Number.isFinite(rightDate);
+  if (leftHasDate !== rightHasDate) return leftHasDate ? -1 : 1;
+  if (leftHasDate && leftDate !== rightDate) return rightDate - leftDate;
+  return timeField ? String(right[timeField] || '').localeCompare(String(left[timeField] || '')) : 0;
+});
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
 
 const escapeHtml = (str) =>

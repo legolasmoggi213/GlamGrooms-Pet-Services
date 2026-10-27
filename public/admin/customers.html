@@ -26,10 +26,10 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>ID</th><th>Name</th><th>Email</th><th>Phone</th><th>Pets</th><th>Actions</th></tr>
+            <tr><th>ID</th><th>Name</th><th>Email</th><th>Phone</th><th>Pets</th><th>Created</th><th>Actions</th></tr>
           </thead>
           <tbody id="rows">
-            <tr><td colspan="6" class="loading">Loading…</td></tr>
+            <tr><td colspan="7" class="loading">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -53,10 +53,10 @@
       canManageRecords = session.role === 'ADMIN';
       document.getElementById('add-btn').hidden = !canManageRecords;
       if (!customers.length) {
-        rowsEl.innerHTML = '<tr><td colspan="6" class="empty">No customers yet.</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="7" class="empty">No customers yet.</td></tr>';
         return;
       }
-      rowsEl.innerHTML = customers
+      rowsEl.innerHTML = sortByNewestDate(customers, 'createdAt')
         .map(
           (c) => `
         <tr>
@@ -65,6 +65,7 @@
             <td>${escapeHtml(c.email || '—')}</td>
             <td>${escapeHtml(c.phone || '—')}</td>
           <td>${(c.Pets || []).map((p) => escapeHtml(p.name)).join(', ') || '—'}</td>
+            <td>${escapeHtml(fmtDateTime(c.createdAt))}</td>
           <td>
               ${canManageRecords ? `<button class="btn btn-outline btn-sm" onclick='editCustomer(${escapeHtml(JSON.stringify(c.id))})'>Edit</button>
               <button class="btn btn-danger btn-sm" onclick='removeCustomer(${escapeHtml(JSON.stringify(c.id))}, ${escapeHtml(JSON.stringify(c.name))})'>Delete</button>` : '<span class="text-muted">Read-only</span>'}
@@ -156,7 +157,7 @@
       });
 
     loadCustomers().catch((e) => {
-      rowsEl.innerHTML = `<tr><td colspan="6" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      rowsEl.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(e.message)}</td></tr>`;
     });
   </script>
 </body>

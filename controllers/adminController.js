@@ -270,8 +270,8 @@ const getStats = async (req, res, next) => {
 const getRecentActivity = async (req, res, next) => {
   try {
     const [grooming, hotel, customers, pets] = await Promise.all([
-      GroomingAppointment.findAll({ order: [['createdAt', 'DESC']], limit: 5 }),
-      HotelReservation.findAll({ order: [['createdAt', 'DESC']], limit: 5 }),
+      GroomingAppointment.findAll({ order: [['createdAt', 'DESC']] }),
+      HotelReservation.findAll({ order: [['createdAt', 'DESC']] }),
       Customer.findAll(),
       Pet.findAll(),
     ]);
@@ -280,7 +280,7 @@ const getRecentActivity = async (req, res, next) => {
     const petMap = Object.fromEntries(pets.map((p) => [String(p.id), p]));
 
     const activity = [
-      ...grooming.map((a) => {
+      ...grooming.filter((a) => a.status !== 'completed').map((a) => {
         const pet = petMap[String(a.petId)];
         const customer = customerMap[String(a.customerId)];
         const serviceSummary = Array.isArray(a.petServices) && a.petServices.length
@@ -298,7 +298,7 @@ const getRecentActivity = async (req, res, next) => {
             : summary,
         };
       }),
-      ...hotel.map((r) => {
+      ...hotel.filter((r) => r.status !== 'checked-out').map((r) => {
         const pet = petMap[String(r.petId)];
         const customer = customerMap[String(r.customerId)];
         const roomSummary = Array.isArray(r.petRooms) && r.petRooms.length
@@ -539,116 +539,128 @@ const formatReportLabel = (value) => String(value || '')
   })
   .join(' ');
 
-const formatReportAmount = (value) => {
-  if (value == null || value === '') return '';
-  const amount = Number(value);
-  return Number.isFinite(amount) ? amount.toFixed(2) : '';
-};
-
-const csvCell = (value) => {
-  let text = value == null ? '' : String(value);
-  if (typeof value !== 'number' && /^[\s]*[=+\-@]/.test(text)) text = `'${text}`;
-  return `"${text.replace(/"/g, '""')}"`;
-};
-
-const sendCsv = (res, filename, headers, rows) => {
-  const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.setHeader('Cache-Control', 'no-store');
-  return res.send(`\uFEFF${csv}`);
-};
-
 const getOperationalReport = async (req, res, next) => {
   try {
     const type = String(req.query.type || '');
-    if (!['bookings', 'payments', 'customers'].includes(type)) {
-      return res.status(400).json({ error: 'Choose bookings, payments, or customers as the report type.' });
+    const paymentFilter = String(req.query.paymentMethod || 'all').toLowerCase();
+    if (!['grooming', 'hotel', 'walkin'].includes(type)) {
+      return res.status(400).json({ error: 'Choose grooming, hotel, or walk-in as the report type.' });
+    }
+    if (!['all', 'cash', 'gcash'].includes(paymentFilter)) {
+      return res.status(400).json({ error: 'Choose all payment methods, cash, or GCash.' });
     }
 
-    if (type === 'bookings') {
-      const [grooming, hotel, customers] = await Promise.all([
+    const paymentMethodLabel = (method) => String(method || 'cash').toLowerCase() === 'qrph' ? 'GCash' : 'Cash';
+    const includePaymentMethod = (method) => paymentFilter === 'all'
+      || (paymentFilter === 'gcash' ? paymentMethodLabel(method) === 'GCash' : paymentMethodLabel(method) === 'Cash');
+    const formatAmount = (value) => {
+      const amount = Number(value || 0);
+      return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+    };
+    const bookingPetNames = (booking, petMap, assignments = []) => {
+      const savedNames = Array.isArray(booking.petNames) ? booking.petNames.filter(Boolean) : [];
+      if (savedNames.length) return savedNames;
+      const assignedNames = assignments.map((assignment) => assignment.petName).filter(Boolean);
+      if (assignedNames.length) return assignedNames;
+      return (booking.petIds || (booking.petId ? [booking.petId] : []))
+        .map((id) => petMap[String(id)]?.name)
+        .filter(Boolean);
+    };
+
+    if (type === 'grooming') {
+      const [appointments, customers, pets] = await Promise.all([
         GroomingAppointment.findAll({ order: [['createdAt', 'DESC']] }),
-        HotelReservation.findAll({ order: [['createdAt', 'DESC']] }),
         Customer.findAll(),
+        Pet.findAll(),
       ]);
       const customerMap = Object.fromEntries(customers.map((customer) => [String(customer.id), customer]));
-      const rows = [
-        ...grooming.map((booking) => [
-          'Grooming', booking.id, (customerMap[String(booking.customerId)] || {}).name,
-          (booking.petNames || []).join('; ') || formatReportLabel(booking.service),
-          formatReportLabel(booking.service), formatReportDate(booking.date), booking.time, '', '',
-          formatReportLabel(booking.status), formatReportLabel(booking.paymentMethod),
-          formatReportLabel(booking.paymentStatus || 'unpaid'), formatReportAmount(booking.price),
-          formatReportDate(booking.createdAt),
-        ]),
-        ...hotel.map((booking) => [
-          'Hotel', booking.id, (customerMap[String(booking.customerId)] || {}).name,
-          (booking.petNames || []).join('; '), formatReportLabel(booking.roomType),
-          formatReportDate(booking.checkIn), booking.checkInTime, formatReportDate(booking.checkOut),
-          booking.checkOutTime, formatReportLabel(booking.status),
-          formatReportLabel(booking.paymentMethod), formatReportLabel(booking.paymentStatus || 'unpaid'),
-          formatReportAmount(booking.totalPrice), formatReportDate(booking.createdAt),
-        ]),
-      ];
-      return sendCsv(res, 'bookings-report.csv', [
-        'Type', 'Booking ID', 'Customer', 'Pets', 'Service or room', 'Start date', 'Start time',
-        'End date', 'End time', 'Status', 'Payment method', 'Payment status', 'Amount (PHP)', 'Created at',
-      ], rows);
+      const petMap = Object.fromEntries(pets.map((pet) => [String(pet.id), pet]));
+      const rows = appointments
+        .filter((booking) => includePaymentMethod(booking.paymentMethod))
+        .map((booking) => {
+          const petNames = bookingPetNames(booking, petMap, booking.petServices);
+          const services = Array.isArray(booking.petServices) && booking.petServices.length
+            ? booking.petServices.map((service) => `${service.petName || 'Pet'}: ${formatReportLabel(service.service)}`).join('; ')
+            : formatReportLabel(booking.service);
+          return [
+            booking.id,
+            (customerMap[String(booking.customerId)] || {}).name || booking.customerDetails?.name || '—',
+            Array.isArray(petNames) && petNames.length ? petNames.join(', ') : '—',
+            services,
+            `${formatReportDate(booking.date)}${booking.time ? ` ${booking.time}` : ''}`,
+            formatReportLabel(booking.status),
+            paymentMethodLabel(booking.paymentMethod),
+            formatReportLabel(booking.paymentStatus || 'unpaid'),
+            formatAmount(booking.price),
+          ];
+        });
+      return res.json({
+        title: 'Grooming Report',
+        headers: ['Appointment ID', 'Customer', 'Pet(s)', 'Grooming service(s)', 'Appointment', 'Status', 'Payment', 'Payment status', 'Amount (PHP)'],
+        rows,
+      });
     }
 
-    if (type === 'payments') {
-      const [grooming, hotel, transactions] = await Promise.all([
-        GroomingAppointment.findAll(),
-        HotelReservation.findAll(),
-        CashTransaction.findAll({ order: [['createdAt', 'DESC']] }),
+    if (type === 'hotel') {
+      const [reservations, customers, pets] = await Promise.all([
+        HotelReservation.findAll({ order: [['createdAt', 'DESC']] }),
+        Customer.findAll(),
+        Pet.findAll(),
       ]);
-      const rows = [
-        ...grooming.map((booking) => [
-          'Grooming booking', booking.id, booking.customerDetails?.name || booking.customerId,
-          formatReportLabel(booking.paymentMethod || 'cash'),
-          formatReportLabel(booking.paymentStatus || 'unpaid'),
-          booking.paymentReference || '', formatReportAmount(booking.price),
-          formatReportDate(booking.paymentPaidAt || booking.createdAt),
-        ]),
-        ...hotel.map((booking) => [
-          'Hotel booking', booking.id, booking.customerDetails?.name || booking.customerId,
-          formatReportLabel(booking.paymentMethod || 'cash'),
-          formatReportLabel(booking.paymentStatus || 'unpaid'),
-          booking.paymentReference || '', formatReportAmount(booking.totalPrice),
-          formatReportDate(booking.paymentPaidAt || booking.createdAt),
-        ]),
-        ...transactions.map((transaction) => [
-          formatReportLabel(transaction.type || 'POS'), transaction.id, transaction.customerName,
-          formatReportLabel(transaction.paymentMethod || 'cash'),
-          formatReportLabel(transaction.paymentStatus || (transaction.paymentMethod === 'qrph' ? 'pending' : 'paid')),
-          transaction.paymentReference || '', formatReportAmount(transaction.amount),
-          formatReportDate(transaction.paidAt || (transaction.paymentMethod === 'qrph' ? '' : transaction.createdAt)),
-        ]),
-      ];
-      return sendCsv(res, 'payments-report.csv', [
-        'Transaction type', 'Reference', 'Customer', 'Payment method', 'Payment status',
-        'Payment reference', 'Amount (PHP)', 'Paid or created at',
-      ], rows);
+      const customerMap = Object.fromEntries(customers.map((customer) => [String(customer.id), customer]));
+      const petMap = Object.fromEntries(pets.map((pet) => [String(pet.id), pet]));
+      const rows = reservations
+        .filter((booking) => includePaymentMethod(booking.paymentMethod))
+        .map((booking) => {
+          const petNames = bookingPetNames(booking, petMap, booking.petRooms);
+          const rooms = Array.isArray(booking.petRooms) && booking.petRooms.length
+            ? booking.petRooms.map((room) => `${room.petName || 'Pet'}: ${formatReportLabel(room.roomType)}`).join('; ')
+            : formatReportLabel(booking.roomType);
+          return [
+            booking.id,
+            (customerMap[String(booking.customerId)] || {}).name || booking.customerDetails?.name || '—',
+            Array.isArray(petNames) && petNames.length ? petNames.join(', ') : '—',
+            rooms,
+            `${formatReportDate(booking.checkIn)}${booking.checkInTime ? ` ${booking.checkInTime}` : ''}`,
+            `${formatReportDate(booking.checkOut)}${booking.checkOutTime ? ` ${booking.checkOutTime}` : ''}`,
+            formatReportLabel(booking.status),
+            paymentMethodLabel(booking.paymentMethod),
+            formatReportLabel(booking.paymentStatus || 'unpaid'),
+            formatAmount(booking.totalPrice),
+          ];
+        });
+      return res.json({
+        title: 'Hotel Report',
+        headers: ['Reservation ID', 'Customer', 'Pet(s)', 'Room(s)', 'Check-in', 'Check-out', 'Status', 'Payment', 'Payment status', 'Amount (PHP)'],
+        rows,
+      });
     }
 
-    const [customers, pets, grooming, hotel] = await Promise.all([
-      Customer.findAll({ order: [['createdAt', 'DESC']] }),
-      Pet.findAll(),
-      GroomingAppointment.findAll(),
-      HotelReservation.findAll(),
-    ]);
-    const rows = customers.map((customer) => [
-      customer.id, customer.name, customer.email, customer.phone, customer.address,
-      pets.filter((pet) => String(pet.customerId) === String(customer.id)).length,
-      grooming.filter((booking) => String(booking.customerId) === String(customer.id)).length,
-      hotel.filter((booking) => String(booking.customerId) === String(customer.id)).length,
-      formatReportDate(customer.createdAt),
-    ]);
-    return sendCsv(res, 'customers-report.csv', [
-      'Customer ID', 'Name', 'Email', 'Phone', 'Address', 'Pet count',
-      'Grooming bookings', 'Hotel reservations', 'Joined at',
-    ], rows);
+    const transactions = await CashTransaction.findAll({
+      where: { type: 'walk-in' },
+      order: [['createdAt', 'DESC']],
+    });
+    const rows = transactions
+      .filter((transaction) => includePaymentMethod(transaction.paymentMethod))
+      .map((transaction) => [
+        transaction.id,
+        transaction.customerName || 'Walk-in customer',
+        transaction.petName || '—',
+        transaction.description
+          || (Array.isArray(transaction.items) ? transaction.items.map((item) => `${item.quantity}x ${item.name}`).join('; ') : '')
+          || '—',
+        paymentMethodLabel(transaction.paymentMethod),
+        formatReportLabel(transaction.paymentStatus || (transaction.paymentMethod === 'qrph' ? 'pending' : 'paid')),
+        formatAmount(transaction.amount),
+        transaction.paymentMethod === 'qrph' ? '—' : formatAmount(transaction.tenderedAmount ?? transaction.amount),
+        transaction.paymentMethod === 'qrph' ? '—' : formatAmount(transaction.changeDue),
+        formatReportDate(transaction.paidAt || transaction.createdAt),
+      ]);
+    return res.json({
+      title: 'Walk-in Report',
+      headers: ['Transaction ID', 'Customer', 'Pet', 'Sale/items', 'Payment', 'Payment status', 'Amount (PHP)', 'Cash tendered', 'Change', 'Date'],
+      rows,
+    });
   } catch (error) {
     next(error);
   }

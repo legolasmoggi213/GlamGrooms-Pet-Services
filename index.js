@@ -585,7 +585,7 @@ app.post('/admin/login', async (req, res) => {
         }
         const token = createToken(role);
         res.cookie('admin_token', token, { path: '/', httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
-        return res.redirect(isStaffRole(role) ? '/admin/grooming.html' : '/admin/index.html');
+        return res.redirect(isStaffRole(role) ? '/admin/staff-dashboard.html' : '/admin/index.html');
       }
     } catch (error) {
       if (error instanceof VerificationError) {
@@ -631,7 +631,7 @@ app.post('/admin/login/verify-code', async (req, res) => {
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
     });
-    return res.redirect('/admin/grooming.html');
+    return res.redirect('/admin/staff-dashboard.html');
   } catch (error) {
     if (error instanceof VerificationError) {
       return res.redirect(`/admin/login.html?verify=1&error=${error.status === 429 ? 'limit' : 'code'}`);
@@ -722,7 +722,7 @@ app.use('/admin', async (req, res, next) => {
   if (user === ADMIN_USERNAME && req.path === '/employees.html') {
     return res.redirect('/admin/staff.html');
   }
-  const staffPages = ['/grooming.html', '/hotel.html', '/customers.html', '/pets.html', '/reports.html', '/inventory.html', '/notifications.html'];
+  const staffPages = ['/staff-dashboard.html', '/appointments.html', '/grooming.html', '/hotel.html', '/customers.html', '/pets.html', '/reports.html', '/notifications.html'];
   const hasAccess = user === ADMIN_USERNAME || (isStaff && staffPages.includes(req.path));
   if (!hasAccess) return res.redirect('/admin/login.html');
   next();

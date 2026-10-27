@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Staff Dashboard — Glam Grooms</title>
+  <link rel="stylesheet" href="/css/style.css?v=staff-dashboard-20261027" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="admin-main">
+      <div class="flex-between">
+        <div>
+          <h1>Staff Dashboard</h1>
+          <p class="page-sub">Today’s grooming schedule and hotel guests.</p>
+        </div>
+        <a class="btn btn-primary" href="/admin/appointments.html">Manage Appointments</a>
+      </div>
+      <div class="stat-grid" id="staff-stats">
+        <div class="loading">Loading schedule…</div>
+      </div>
+      <div class="panel-grid">
+        <section class="panel">
+          <h3>Upcoming Grooming</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Time</th><th>Customer</th><th>Pet(s)</th><th>Service</th></tr></thead>
+              <tbody id="staff-grooming-rows"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="panel">
+          <h3>Hotel Check-ins &amp; Guests</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Check-in</th><th>Check-out</th><th>Customer</th><th>Pet(s)</th><th>Status</th></tr></thead>
+              <tbody id="staff-hotel-rows"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      <p id="staff-dashboard-message" class="text-muted" role="status" aria-live="polite"></p>
+    </main>
+  </div>
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script src="/js/staff-dashboard.js"></script>
+</body>
+</html>

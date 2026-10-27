@@ -1,17 +1,21 @@
 // Shared admin helpers: sidebar injection + modal utilities.
 
 const ADMIN_PAGES = [
-  { href: '/admin/grooming.html', label: 'Grooming' },
-  { href: '/admin/hotel.html', label: 'Hotel' },
+  { href: '/admin/appointments.html', label: 'Appointments' },
   { href: '/admin/notifications.html', label: 'Notifications' },
   { href: '/admin/reports.html', label: 'Reports' },
-  { href: '/admin/inventory.html', label: 'Inventory' },
   { href: '/admin/index.html', label: 'Dashboard' },
   { href: '/admin/customers.html', label: 'Customers' },
   { href: '/admin/pets.html', label: 'Pets' },
   { href: '/admin/pos.html', label: 'Point of Sale' },
   { href: '/admin/staff.html', label: 'Employees' },
   { href: '/admin/change-password.html', label: 'Change Password' },
+];
+
+const STAFF_PAGES = [
+  { href: '/admin/staff-dashboard.html', label: 'Dashboard' },
+  { href: '/admin/appointments.html', label: 'Appointments' },
+  ...ADMIN_PAGES.filter((page) => ['Customers', 'Pets', 'Notifications', 'Reports'].includes(page.label)),
 ];
 
 function renderSidebar(activeLabel) {
@@ -27,10 +31,8 @@ function renderSidebar(activeLabel) {
         window.location.href = '/admin/login.html';
         return;
       }
-      const pages = role === 'STAFF'
-        ? ADMIN_PAGES.filter((page) => ['Grooming', 'Hotel', 'Customers', 'Pets', 'Notifications', 'Reports', 'Inventory'].includes(page.label))
-        : ADMIN_PAGES;
-      const home = role === 'STAFF' ? '/admin/grooming.html' : '/admin/index.html';
+      const pages = role === 'STAFF' ? STAFF_PAGES : ADMIN_PAGES;
+      const home = role === 'STAFF' ? '/admin/staff-dashboard.html' : '/admin/index.html';
       const links = pages.map((page) =>
         `<a href="${page.href}" class="${page.label === activeLabel ? 'active' : ''}">${page.label === 'Notifications' ? 'Notifications <span class="admin-notification-count" data-notification-count hidden></span>' : page.label}</a>`
       ).join('');

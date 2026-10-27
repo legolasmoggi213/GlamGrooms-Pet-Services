@@ -50,10 +50,14 @@
       : escapeHtml(serviceLabel(appointment.service));
 
     async function loadAppointments() {
-      const items = await apiGet('/grooming');
+      const items = sortByNewestDate(
+        (await apiGet('/grooming')).filter((appointment) => appointment.status !== 'completed'),
+        'date',
+        'time',
+      );
       const session = await fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json());
       if (!items.length) {
-        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">No appointments yet.</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">No active appointments.</td></tr>';
         return;
       }
       rowsEl.innerHTML = items

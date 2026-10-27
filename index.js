@@ -726,6 +726,12 @@ app.use('/admin', async (req, res, next) => {
   const hasAccess = user === ADMIN_USERNAME || (isStaff && staffPages.includes(req.path));
   if (!hasAccess) return res.redirect('/admin/login.html');
   next();
+}, (req, res, next) => {
+  if (req.path === '/reports.html') {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+  }
+  next();
 }, express.static(path.join(__dirname, 'public', 'admin')));
 
 // Serve the frontend (public site) as static files.

@@ -347,6 +347,10 @@ const cleanupAbandonedPayMongoBookings = async () => {
     if (paymentMethod === 'qrph' && !getPayMongoKey()) {
       return res.status(503).json({ error: 'Online GCash payment is not configured. Please choose counter cash or contact the administrator.' });
     }
+    const durationMinutes = groomingBookingDuration(petServiceKeys);
+    if (!durationMinutes) return res.status(400).json({ error: 'A valid grooming service is required.' });
+    const durationCheck = validateAppointmentDuration(date, time, durationMinutes);
+    if (!durationCheck.ok) return res.status(400).json({ error: durationCheck.error });
     const timeCheck = validateFutureBookingTime(date, time, 'Appointment');
     if (!timeCheck.ok) return res.status(400).json({ error: timeCheck.error });
     if (!isFutureBooking({ date, time }, 'grooming')) {

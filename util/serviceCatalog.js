@@ -41,7 +41,8 @@ const AYURVEDA_PACKAGES = {
 
 const HOTEL = {
   'Staycation': {
-    Standard: { weekday: 500, weekend: 700 },
+    // Temporary testing rate; restore the production weekday/weekend rates before launch.
+    Standard: { weekday: 1, weekend: 1 },
     Deluxe: { weekday: 800, weekend: 1000 },
   },
 };

@@ -1,12 +1,12 @@
 // Hotel reservation page logic
 (() => {
 const ROOM_PRICES = {
-  'staycation-standard': 500,
+  'staycation-standard': 1,
   'staycation-deluxe': 800,
 };
 
   const ROOM_DETAILS = {
-    'staycation-standard': { category: 'Staycation', size: 'Medium', occupancy: 2, amenities: ['WiFi', 'Air Conditioning', 'TV', 'Bathroom'], description: 'Standard overnight stay — weekday ₱500 / weekend ₱700 per night' },
+    'staycation-standard': { category: 'Staycation', size: 'Medium', occupancy: 2, amenities: ['WiFi', 'Air Conditioning', 'TV', 'Bathroom'], description: 'Temporary testing rate — ₱1 per night' },
     'staycation-deluxe': { category: 'Staycation', size: 'Large', occupancy: 2, amenities: ['WiFi', 'Air Conditioning', 'TV', 'Bathroom', 'Mini Fridge', 'Balcony'], description: 'Deluxe overnight stay — weekday ₱800 / weekend ₱1000 per night' },
   };
   

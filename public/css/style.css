@@ -2657,6 +2657,15 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
   font-size: 0.78rem;
   font-weight: 700;
 }
+.reports-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(220px, 1.25fr);
+  align-items: end;
+  gap: 1rem;
+  max-width: 860px;
+  margin-bottom: 1rem;
+}
+.reports-filters .field { margin: 0; }
 .reports-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2726,6 +2735,7 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
 }
 @media (max-width: 600px) {
   .reports-heading { align-items: flex-start; flex-direction: column; gap: 0.85rem; }
+  .reports-filters { grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
   .reports-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media print {

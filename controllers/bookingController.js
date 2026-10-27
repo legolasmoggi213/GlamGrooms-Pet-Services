@@ -853,7 +853,7 @@ const updateCustomerBooking = async (req, res, next) => {
     }
     const context = await customerBookingContext(req, res, bookingType);
     if (!context) return;
-    const { booking } = context;
+    const { customer, booking } = context;
     if (!ensureCustomerCanChangeBooking(booking, bookingType, res)) return;
     const body = req.body || {};
     const notes = body.notes === undefined ? booking.notes : String(body.notes).trim().slice(0, 1000) || null;

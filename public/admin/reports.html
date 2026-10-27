@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Reports — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=reports-pdf-20261027" />
+  <link rel="stylesheet" href="/css/style.css?v=reports-date-range-20261028" />
 </head>
 <body>
   <div class="admin-layout">
@@ -18,13 +18,23 @@
         </div>
         <span class="reports-format">PDF reports</span>
       </div>
-      <div class="field">
-        <label for="report-payment-method">Payment method</label>
-        <select id="report-payment-method">
-          <option value="all">All payment methods</option>
-          <option value="cash">Cash only</option>
-          <option value="gcash">GCash only</option>
-        </select>
+      <div class="reports-filters" aria-label="Report filters">
+        <div class="field">
+          <label for="report-start-date">From</label>
+          <input id="report-start-date" type="date" />
+        </div>
+        <div class="field">
+          <label for="report-end-date">To</label>
+          <input id="report-end-date" type="date" />
+        </div>
+        <div class="field">
+          <label for="report-payment-method">Payment method</label>
+          <select id="report-payment-method">
+            <option value="all">All payment methods</option>
+            <option value="cash">Cash only</option>
+            <option value="gcash">GCash only</option>
+          </select>
+        </div>
       </div>
       <p id="report-message" class="reports-note" role="status" aria-live="polite"></p>
       <section class="reports-grid" aria-label="Available reports">
@@ -47,13 +57,13 @@
           <button class="btn btn-primary" type="button" data-report-type="walkin">Download walk-in PDF <span aria-hidden="true">↓</span></button>
         </article>
       </section>
-      <p class="reports-note">Choose All payment methods, Cash, or GCash before downloading. Every report lists the payment method and payment status for each record.</p>
+      <p class="reports-note">Choose a date range and payment method before downloading. The selected dates are inclusive; leave them blank to include all dates.</p>
     </main>
   </div>
   <script src="/js/api.js"></script>
   <script src="/js/admin.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="/js/reports.js"></script>
+  <script src="/js/reports.js?v=reports-date-range-v2-20261028"></script>
   <script>renderSidebar('Reports');</script>
 </body>
 </html>

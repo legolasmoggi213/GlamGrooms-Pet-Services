@@ -543,16 +543,36 @@ const getOperationalReport = async (req, res, next) => {
   try {
     const type = String(req.query.type || '');
     const paymentFilter = String(req.query.paymentMethod || 'all').toLowerCase();
+    const startDate = String(req.query.startDate || '').trim();
+    const endDate = String(req.query.endDate || '').trim();
     if (!['grooming', 'hotel', 'walkin'].includes(type)) {
       return res.status(400).json({ error: 'Choose grooming, hotel, or walk-in as the report type.' });
     }
     if (!['all', 'cash', 'gcash'].includes(paymentFilter)) {
       return res.status(400).json({ error: 'Choose all payment methods, cash, or GCash.' });
     }
+    const isValidDate = (value) => {
+      if (!value) return true;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const date = new Date(`${value}T00:00:00.000Z`);
+      return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+    };
+    if (!isValidDate(startDate) || !isValidDate(endDate)) {
+      return res.status(400).json({ error: 'Enter valid From and To dates.' });
+    }
+    if (startDate && endDate && startDate > endDate) {
+      return res.status(400).json({ error: 'The From date must be on or before the To date.' });
+    }
 
     const paymentMethodLabel = (method) => String(method || 'cash').toLowerCase() === 'qrph' ? 'GCash' : 'Cash';
     const includePaymentMethod = (method) => paymentFilter === 'all'
       || (paymentFilter === 'gcash' ? paymentMethodLabel(method) === 'GCash' : paymentMethodLabel(method) === 'Cash');
+    const includeDateRange = (value) => {
+      if (!startDate && !endDate) return true;
+      const date = formatReportDate(value).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+      return (!startDate || date >= startDate) && (!endDate || date <= endDate);
+    };
     const formatAmount = (value) => {
       const amount = Number(value || 0);
       return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
@@ -576,7 +596,7 @@ const getOperationalReport = async (req, res, next) => {
       const customerMap = Object.fromEntries(customers.map((customer) => [String(customer.id), customer]));
       const petMap = Object.fromEntries(pets.map((pet) => [String(pet.id), pet]));
       const rows = appointments
-        .filter((booking) => includePaymentMethod(booking.paymentMethod))
+        .filter((booking) => includePaymentMethod(booking.paymentMethod) && includeDateRange(booking.date))
         .map((booking) => {
           const petNames = bookingPetNames(booking, petMap, booking.petServices);
           const services = Array.isArray(booking.petServices) && booking.petServices.length
@@ -610,7 +630,7 @@ const getOperationalReport = async (req, res, next) => {
       const customerMap = Object.fromEntries(customers.map((customer) => [String(customer.id), customer]));
       const petMap = Object.fromEntries(pets.map((pet) => [String(pet.id), pet]));
       const rows = reservations
-        .filter((booking) => includePaymentMethod(booking.paymentMethod))
+        .filter((booking) => includePaymentMethod(booking.paymentMethod) && includeDateRange(booking.checkIn))
         .map((booking) => {
           const petNames = bookingPetNames(booking, petMap, booking.petRooms);
           const rooms = Array.isArray(booking.petRooms) && booking.petRooms.length
@@ -641,7 +661,7 @@ const getOperationalReport = async (req, res, next) => {
       order: [['createdAt', 'DESC']],
     });
     const rows = transactions
-      .filter((transaction) => includePaymentMethod(transaction.paymentMethod))
+      .filter((transaction) => includePaymentMethod(transaction.paymentMethod) && includeDateRange(transaction.paidAt || transaction.createdAt))
       .map((transaction) => [
         transaction.id,
         transaction.customerName || 'Walk-in customer',

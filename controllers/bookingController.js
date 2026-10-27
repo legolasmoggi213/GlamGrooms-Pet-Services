@@ -27,6 +27,7 @@ const {
   validateFutureBookingTime,
   timeToMinutes,
   getStayNights,
+  quoteHotelStay,
   groomingBookingDuration,
   groomingRecordDuration,
 } = require('../util/bookingCalculations');
@@ -483,7 +484,11 @@ const bookHotel = async (req, res, next) => {
     if (checkIn < businessDateKeyToday()) {
       return res.status(400).json({ error: 'Choose today or a future hotel check-in date.' });
     }
-    const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / MS_PER_DAY);
+    const quote = quoteHotelStay({ petRoomTypes, checkIn, checkOut });
+    if (!quote.ok) {
+      return res.status(400).json({ error: quote.error });
+    }
+    const nights = quote.nights;
     if (nights < 1) {
       return res.status(400).json({ error: 'Check-out must be after check-in' });
     }

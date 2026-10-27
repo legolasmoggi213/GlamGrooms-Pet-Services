@@ -85,7 +85,7 @@ const claimHotelSlots = async ({ checkIn, checkOut, slotCount, selectedSlotNumbe
     (_, index) => hotelSlotLockId(date, index + 1),
   ));
   const refs = candidateIds.map((id) => lockCollection.doc(id));
-  const slots = await firestore.runTransaction(async (transaction) => {
+  const assignments = await firestore.runTransaction(async (transaction) => {
     const snapshots = [];
     for (let offset = 0; offset < refs.length; offset += 100) {
       const batch = await Promise.all(refs.slice(offset, offset + 100).map((ref) => transaction.get(ref)));
@@ -106,9 +106,9 @@ const claimHotelSlots = async ({ checkIn, checkOut, slotCount, selectedSlotNumbe
     if (slots.length < slotCount || slots.some((slotNumber) => !availableAcrossStay.includes(slotNumber))) {
       throw new BookingConflictError('One or more selected hotel slots are unavailable for the full stay. Choose different slots or dates.');
     }
-    const assignments = Object.fromEntries(dates.map((date) => [date, slots]));
+    const assignmentMap = Object.fromEntries(dates.map((date) => [date, slots]));
     for (const date of dates) {
-      for (const slotNumber of assignments[date]) {
+      for (const slotNumber of assignmentMap[date]) {
         const id = hotelSlotLockId(date, slotNumber);
         const ref = lockCollection.doc(id);
         const snapshot = snapshotsById.get(id);
@@ -117,9 +117,9 @@ const claimHotelSlots = async ({ checkIn, checkOut, slotCount, selectedSlotNumbe
         }
       }
     }
-    return assignments;
+    return assignmentMap;
   });
-  return slots;
+  return assignments;
 };
 
 const areBookingSlotsAvailable = async (lockIds) => {

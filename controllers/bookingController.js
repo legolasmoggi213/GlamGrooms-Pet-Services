@@ -559,7 +559,7 @@ const bookHotel = async (req, res, next) => {
         petNames: pets.map((pet) => pet.name),
         petTypes: pets.map((pet) => pet.type || 'adult'), // Include pet type in the record
         capacityManaged: true,
-        capacityLockIds,
+        capacityLockIds: hotelLockIds,
         status: 'pending',
         hotelSlotAssignments,
         hotelSlotOwnerId,

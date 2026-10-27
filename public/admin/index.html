@@ -645,14 +645,18 @@
           ? format(metric.predicted)
           : 'Insufficient historical data';
         const bookingForecast = (metric) => metric.available
-          ? `${metric.predicted} bookings`
+          ? `${metric.predicted.toFixed(0)} bookings`
           : 'Insufficient historical data';
+        const forecastSummary = (metric, label) => {
+          if (!metric.available) return `${label}: Insufficient historical data for a forecast.`;
+          const directionText = metric.direction === 'up' ? 'rising' : metric.direction === 'down' ? 'falling' : 'steady';
+          return `${label}: ${fmtMoney(metric.predicted)} revenue (${directionText} ${Math.abs(metric.changePercent).toFixed(1)}% vs. recent history, ${metric.confidence} confidence). ${metric.summary}`;
+        };
         document.getElementById('revenue-forecast').innerHTML = `
           <p><strong>${escapeHtml(forecast.periodLabel)}:</strong>
-            Grooming ${escapeHtml(forecastValue(forecast.groomingRevenue, fmtMoney))} revenue
-            (${escapeHtml(bookingForecast(forecast.groomingBookings))}),
-            Hotel ${escapeHtml(forecastValue(forecast.hotelRevenue, fmtMoney))} revenue
-            (${escapeHtml(bookingForecast(forecast.hotelBookings))}).</p>
+            ${escapeHtml(forecastSummary(forecast.groomingRevenue, 'Grooming'))}
+            ${escapeHtml(forecastSummary(forecast.hotelRevenue, 'Hotel'))}</p>
+          <p class="text-muted">Bookings forecast: ${escapeHtml(bookingForecast(forecast.groomingBookings))} and ${escapeHtml(bookingForecast(forecast.hotelBookings))}.</p>
           <p class="text-muted">${escapeHtml(forecast.method)}</p>`;
       }
 

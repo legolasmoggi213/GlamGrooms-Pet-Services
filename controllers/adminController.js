@@ -438,8 +438,8 @@ const getRevenueAnalytics = async (req, res, next) => {
     const groomingRevenue = groomingBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
     const hotelRevenue = hotelBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
     const periodLabels = { daily: 'tomorrow', weekly: 'next week', monthly: 'next month' };
-    const groomingForecast = forecastTrend(dataPoints(groomingBuckets, 'revenue'));
-    const hotelForecast = forecastTrend(dataPoints(hotelBuckets, 'revenue'));
+    const groomingForecast = forecastTrend(dataPoints(groomingBuckets, 'revenue'), { period });
+    const hotelForecast = forecastTrend(dataPoints(hotelBuckets, 'revenue'), { period });
 
     res.json({
       period,
@@ -454,11 +454,11 @@ const getRevenueAnalytics = async (req, res, next) => {
       },
       forecast: {
         periodLabel: periodLabels[period],
-        method: 'Linear trend estimate from the displayed historical periods; not a guarantee.',
+        method: 'Weighted recent-trend estimate using the selected reporting window and visible demand pattern; not a guarantee.',
         groomingRevenue: groomingForecast,
         hotelRevenue: hotelForecast,
-        groomingBookings: forecastTrend(dataPoints(groomingBuckets, 'count')),
-        hotelBookings: forecastTrend(dataPoints(hotelBuckets, 'count')),
+        groomingBookings: forecastTrend(dataPoints(groomingBuckets, 'count'), { period }),
+        hotelBookings: forecastTrend(dataPoints(hotelBuckets, 'count'), { period }),
       },
     });
   } catch (error) {

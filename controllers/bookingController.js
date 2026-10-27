@@ -20,6 +20,7 @@ const {
   areBookingSlotsAvailable,
   releaseBookingSlots,
   releaseBookingSlotsByIds,
+  releaseGroomingBookingSlots,
 } = require('../util/bookingLocks');
 const { validateTime, validatePickupTime, validateAppointmentDuration } = require('../util/businessHours');
 const {

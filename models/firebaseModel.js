@@ -1,5 +1,16 @@
 const { firestore } = require('../config/firebase');
 
+const isFirebaseUnavailableError = (error) => {
+  const message = error && (error.message || String(error));
+  return Boolean(message) && (
+    /Unable to detect a Project Id/i.test(message)
+    || /Could not load the default credentials/i.test(message)
+    || /project id/i.test(message)
+    || /Firebase.*not configured/i.test(message)
+    || /Firestore.*unavailable/i.test(message)
+  );
+};
+
 const toPlain = (value) => {
   if (value && typeof value.toDate === 'function') return value.toDate();
   if (Array.isArray(value)) return value.map(toPlain);
@@ -45,58 +56,78 @@ class FirebaseModel {
   constructor(collection) { this.collection = collection; }
 
   async _all(options = {}) {
-    let query = firestore.collection(this.collection);
-    const filters = Object.entries(options.where || {});
-    const order = options.order || [];
+    try {
+      let query = firestore.collection(this.collection);
+      const filters = Object.entries(options.where || {});
+      const order = options.order || [];
 
-    // Firestore automatically indexes a single field. Use that index for the
-    // common one-field lookups without imposing composite-index requirements
-    // on deployments that previously relied on the in-memory compatibility
-    // layer. More complex predicates retain the compatibility fallback below.
-    const canQueryFilter = filters.length === 1 && !order.length;
-    const canQueryOrder = !filters.length && order.length === 1;
-    if (canQueryFilter) {
-      const [field, expected] = filters[0];
-      if (Array.isArray(expected) && expected.length <= 10) query = query.where(field, 'in', expected);
-      else if (!expected || typeof expected !== 'object' || expected.toDate) query = query.where(field, '==', expected);
-      else query = null;
-    } else if (canQueryOrder) {
-      const [field, direction] = order[0];
-      query = query.orderBy(field, String(direction).toLowerCase() === 'desc' ? 'desc' : 'asc');
-    } else {
-      query = null;
+      const canQueryFilter = filters.length === 1 && !order.length;
+      const canQueryOrder = !filters.length && order.length === 1;
+      if (canQueryFilter) {
+        const [field, expected] = filters[0];
+        if (Array.isArray(expected) && expected.length <= 10) query = query.where(field, 'in', expected);
+        else if (!expected || typeof expected !== 'object' || expected.toDate) query = query.where(field, '==', expected);
+        else query = null;
+      } else if (canQueryOrder) {
+        const [field, direction] = order[0];
+        query = query.orderBy(field, String(direction).toLowerCase() === 'desc' ? 'desc' : 'asc');
+      } else {
+        query = null;
+      }
+
+      if (query && options.limit) query = query.limit(options.limit);
+      const snapshot = query ? await query.get() : await firestore.collection(this.collection).get();
+      return snapshot.docs.map((doc) => new FirebaseRecord(this, toPlain({ id: doc.id, ...doc.data() }), doc.ref));
+    } catch (error) {
+      if (isFirebaseUnavailableError(error)) return [];
+      throw error;
     }
-
-    if (query && options.limit) query = query.limit(options.limit);
-    const snapshot = query ? await query.get() : await firestore.collection(this.collection).get();
-    return snapshot.docs.map((doc) => new FirebaseRecord(this, toPlain({ id: doc.id, ...doc.data() }), doc.ref));
   }
 
   async findAll(options = {}) {
-    let records = await this._all(options);
-    if (options.where) records = records.filter((record) => Object.entries(options.where).every(([field, expected]) => matches(record, field, expected)));
-    if (options.order) {
-      for (const [field, direction] of [...options.order].reverse()) {
-        records.sort((a, b) => ((a[field] || 0) > (b[field] || 0) ? 1 : (a[field] || 0) < (b[field] || 0) ? -1 : 0) * (direction === 'DESC' ? -1 : 1));
+    try {
+      let records = await this._all(options);
+      if (options.where) records = records.filter((record) => Object.entries(options.where).every(([field, expected]) => matches(record, field, expected)));
+      if (options.order) {
+        for (const [field, direction] of [...options.order].reverse()) {
+          records.sort((a, b) => ((a[field] || 0) > (b[field] || 0) ? 1 : (a[field] || 0) < (b[field] || 0) ? -1 : 0) * (direction === 'DESC' ? -1 : 1));
+        }
       }
+      return options.limit ? records.slice(0, options.limit) : records;
+    } catch (error) {
+      if (isFirebaseUnavailableError(error)) return [];
+      throw error;
     }
-    return options.limit ? records.slice(0, options.limit) : records;
   }
 
   async findByPk(id) {
-    const ref = firestore.collection(this.collection).doc(String(id));
-    const snapshot = await ref.get();
-    return snapshot.exists ? new FirebaseRecord(this, toPlain({ id: snapshot.id, ...snapshot.data() }), ref) : null;
+    try {
+      const ref = firestore.collection(this.collection).doc(String(id));
+      const snapshot = await ref.get();
+      return snapshot.exists ? new FirebaseRecord(this, toPlain({ id: snapshot.id, ...snapshot.data() }), ref) : null;
+    } catch (error) {
+      if (isFirebaseUnavailableError(error)) return null;
+      throw error;
+    }
   }
 
   async findOne(options = {}) { return (await this.findAll(options))[0] || null; }
 
   async create(values) {
-    const ref = firestore.collection(this.collection).doc();
-    const now = new Date();
-    const record = { ...values, createdAt: values.createdAt || now, updatedAt: now };
-    await ref.set(record);
-    return new FirebaseRecord(this, { id: ref.id, ...toPlain(record) }, ref);
+    try {
+      const ref = firestore.collection(this.collection).doc();
+      const now = new Date();
+      const record = { ...values, createdAt: values.createdAt || now, updatedAt: now };
+      await ref.set(record);
+      return new FirebaseRecord(this, { id: ref.id, ...toPlain(record) }, ref);
+    } catch (error) {
+      if (isFirebaseUnavailableError(error)) {
+        const firebaseError = new Error('Firebase Firestore is not configured for this environment.');
+        firebaseError.code = 'FIREBASE_UNAVAILABLE';
+        throw firebaseError;
+      }
+      throw error;
+    }
   }
 
   async count(options = {}) { return (await this.findAll(options)).length; }

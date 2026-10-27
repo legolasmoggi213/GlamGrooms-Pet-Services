@@ -2,6 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const admin = require('firebase-admin');
 
+const warnFirebaseUnavailable = (reason) => {
+  console.warn(`[firebase] ${reason}`);
+};
+
 const hasExplicitCredentials = Boolean(
   process.env.FIREBASE_PROJECT_ID &&
   process.env.FIREBASE_CLIENT_EMAIL &&
@@ -35,8 +39,8 @@ if (admin.apps.length) {
         credential: admin.credential.cert(serviceAccountPath),
       });
     } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-      console.warn(
-        `[firebase] GOOGLE_APPLICATION_CREDENTIALS points to a missing file: ${process.env.GOOGLE_APPLICATION_CREDENTIALS}. Continuing without Firebase credentials.`
+      warnFirebaseUnavailable(
+        `GOOGLE_APPLICATION_CREDENTIALS points to a missing file: ${process.env.GOOGLE_APPLICATION_CREDENTIALS}. Continuing without Firebase credentials.`
       );
       app = admin.initializeApp();
     } else {
@@ -45,16 +49,62 @@ if (admin.apps.length) {
           credential: admin.credential.applicationDefault(),
         });
       } catch (error) {
-        console.warn('[firebase] No default credentials found; continuing without Firebase initialization.', error.message);
+        warnFirebaseUnavailable(`No default credentials found; continuing without Firebase initialization. ${error.message}`);
         app = admin.initializeApp();
       }
     }
   }
 }
 
+const fallbackAuth = {
+  verifyIdToken: async () => {
+    throw new Error('Firebase Authentication is not configured for this environment.');
+  },
+  updateUser: async () => {},
+  getUserByEmail: async () => {
+    throw new Error('Firebase Authentication is not configured for this environment.');
+  },
+  revokeRefreshTokens: async () => {},
+  deleteUser: async () => {},
+};
+
+const fallbackCollection = () => ({
+  doc: () => ({
+    get: async () => ({ exists: false }),
+    set: async () => {},
+    update: async () => {},
+    delete: async () => {},
+  }),
+  where: () => fallbackCollection(),
+  orderBy: () => fallbackCollection(),
+  limit: () => fallbackCollection(),
+  get: async () => ({ docs: [] }),
+});
+
+const fallbackFirestore = {
+  collection: fallbackCollection,
+  runTransaction: async (handler) => handler({
+    get: async () => ({ exists: false }),
+    create: async () => {},
+    update: async () => {},
+    delete: async () => {},
+  }),
+};
+
+let firestoreClient;
+let authClient;
+try {
+  authClient = admin.auth();
+  firestoreClient = admin.firestore();
+} catch (error) {
+  warnFirebaseUnavailable(`Firestore unavailable: ${error.message}`);
+  authClient = fallbackAuth;
+  firestoreClient = fallbackFirestore;
+}
+
 module.exports = {
   admin: require('firebase-admin'),
   app,
-  auth: admin.auth(),
-  firestore: admin.firestore(),
+  auth: authClient,
+  firestore: firestoreClient,
 };

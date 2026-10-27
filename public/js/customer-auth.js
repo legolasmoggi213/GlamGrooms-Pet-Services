@@ -153,10 +153,19 @@ form.addEventListener('submit', async (event) => {
       }
       return;
     }
+    const isRegistration = form.action.endsWith('/customer/register');
+    const termsCheckbox = isRegistration ? document.getElementById('privacy-panel-accept') : null;
+    if (isRegistration && (!termsCheckbox || !termsCheckbox.checked)) {
+      showAuthError({ message: 'Please accept the terms and conditions before continuing.' });
+      if (typeof window.openPrivacyModal === 'function') window.openPrivacyModal();
+      termsCheckbox?.focus();
+      return;
+    }
     const data = Object.fromEntries(new FormData(form));
     // Mark empty required fields as invalid (red) before any other checks
     let hasEmptyRequired = false;
     form.querySelectorAll('[required]').forEach((field) => {
+      if (field === termsCheckbox) return;
       const empty = !String(field.value || '').trim();
       field.classList.toggle('is-invalid', empty);
       if (empty) hasEmptyRequired = true;
@@ -166,7 +175,6 @@ form.addEventListener('submit', async (event) => {
       if (firstInvalid) firstInvalid.focus();
       return;
     }
-    const isRegistration = form.action.endsWith('/customer/register');
     const continueButton = credentialFields && credentialFields.querySelector('button[type="submit"]');
     if (!isRegistration) {
       const verifyButton = document.getElementById('verify-code-button');
@@ -185,15 +193,6 @@ form.addEventListener('submit', async (event) => {
       if (phoneInput && /[^0-9]/.test(phoneInput.value)) {
         phoneInput.focus();
         showAuthError({ message: 'Phone number must contain digits only.' });
-        return;
-      }
-      const termsCheckbox = document.getElementById('privacy-panel-accept');
-      if (!termsCheckbox || !termsCheckbox.checked) {
-        if (typeof window.openPrivacyModal === 'function') {
-          window.openPrivacyModal();
-        } else {
-          showAuthError({ message: 'You must accept the privacy policy and terms and conditions to register.' });
-        }
         return;
       }
       if (!isGmailOnly(data.email)) {
@@ -250,6 +249,7 @@ form.addEventListener('submit', async (event) => {
               email: data.email,
               phone: data.phone,
               address: data.address,
+              termsAccepted: Boolean(termsCheckbox?.checked),
             },
           }),
         });
@@ -312,22 +312,26 @@ showAuthStatus('error', `<span style="color:#9c3a2e; font-weight:700;">✗ ${msg
     }
   });
 
-  resendCodeButton.addEventListener('click', async () => {
-    if (!pendingUser) return;
-    resendCodeButton.disabled = true;
-    try {
-      challengeId = await requestLoginCode(pendingUser);
-      codeInput.disabled = false;
-      document.getElementById('verify-code-button').disabled = false;
-      codeInput.focus();
-      showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">A new verification code was sent to your Gmail.</span>');
-    } catch (error) {
-      showAuthStatus('error', `<span style="color:#9c3a2e; font-weight:700;">✗ ${error.message}</span>`);
-    } finally {
-      resendCodeButton.disabled = false;
-    }
-  });
-  backButton.addEventListener('click', () => returnToCredentials().catch((error) => {
-    console.error('Unable to reset customer sign-in:', error);
-  }));
+  if (resendCodeButton) {
+    resendCodeButton.addEventListener('click', async () => {
+      if (!pendingUser) return;
+      resendCodeButton.disabled = true;
+      try {
+        challengeId = await requestLoginCode(pendingUser);
+        codeInput.disabled = false;
+        document.getElementById('verify-code-button').disabled = false;
+        codeInput.focus();
+        showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">A new verification code was sent to your Gmail.</span>');
+      } catch (error) {
+        showAuthStatus('error', `<span style="color:#9c3a2e; font-weight:700;">✗ ${error.message}</span>`);
+      } finally {
+        resendCodeButton.disabled = false;
+      }
+    });
+  }
+  if (backButton) {
+    backButton.addEventListener('click', () => returnToCredentials().catch((error) => {
+      console.error('Unable to reset customer sign-in:', error);
+    }));
+  }
 });

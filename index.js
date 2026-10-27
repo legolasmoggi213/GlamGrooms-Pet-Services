@@ -226,13 +226,19 @@ app.post('/customer/session', async (req, res) => {
   } catch (error) {
     if (error instanceof VerificationError) return res.status(error.status).json({ error: error.message });
     console.error('Session creation error:', error);
-    return res.status(401).json({ error: 'Invalid or incomplete sign-in verification.' });
+    const firebaseUnavailable = error && error.message && /Firebase|Project Id|credentials|Firestore/i.test(error.message);
+    return res.status(firebaseUnavailable ? 503 : 401).json({
+      error: firebaseUnavailable ? 'Customer authentication is temporarily unavailable. Please try again later.' : 'Invalid or incomplete sign-in verification.',
+    });
   }
 });
 
 app.post('/customer/register-profile', async (req, res) => {
   try {
     const { idToken, profile = {} } = req.body || {};
+    if (profile.termsAccepted !== true) {
+      return res.status(400).json({ error: 'Please accept the terms and conditions before continuing.' });
+    }
     if (!idToken) return res.status(400).json({ error: 'Missing ID token' });
 
     const decoded = await auth.verifyIdToken(idToken);
@@ -401,8 +407,11 @@ app.post('/customer/delete-account', async (req, res) => {
     };
     res.json({ customer, pets, grooming: await Promise.all(grooming.map(attachPet)), hotel: await Promise.all(hotel.map(attachPet)) });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Customer profile lookup failed:', e);
+    const message = e && e.message && /Firebase|Project Id|credentials|Firestore/i.test(e.message)
+      ? 'Customer account data is temporarily unavailable. Please try again later.'
+      : 'Server error';
+    res.status(e && e.code === 'FIREBASE_UNAVAILABLE' ? 503 : 500).json({ error: message });
   }
 });
 

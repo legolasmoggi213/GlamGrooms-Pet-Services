@@ -1,6 +1,14 @@
 const { GroomingAppointment, Customer, Pet } = require('../models');
 const { sendReservationTicket, sendBookingCancellation } = require('../util/mailer');
-const { groomingLockIds, claimBookingSlots, claimReplacementBookingSlots, releaseBookingSlots, releaseBookingSlotsByIds } = require('../util/bookingLocks');
+const {
+  groomingLockIds,
+  claimBookingSlots,
+  claimReplacementBookingSlots,
+  releaseBookingSlots,
+  releaseBookingSlotsByIds,
+  releaseGroomingBookingSlots,
+  releaseGroomingLockIds,
+} = require('../util/bookingLocks');
 const { validateTime, validatePickupTime, validateAppointmentDuration } = require('../util/businessHours');
 const {
   validateFutureBookingTime,

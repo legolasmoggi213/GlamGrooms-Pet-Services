@@ -9,6 +9,11 @@
     hotel: [24, 30, 25, 32, 31, 31, 20, 24, 28, 28],
     walkin: [24, 30, 23, 50, 24, 25, 25, 25, 20, 27],
   };
+  const reportHeaders = {
+    grooming: ['Appointment ID', 'Customer', 'Pet(s)', 'Grooming service(s)', 'Appointment', 'Status', 'Payment', 'Payment status', 'Amount (PHP)'],
+    hotel: ['Reservation ID', 'Customer', 'Pet(s)', 'Room(s)', 'Check-in', 'Check-out', 'Status', 'Payment', 'Payment status', 'Amount (PHP)'],
+    walkin: ['Transaction ID', 'Customer', 'Pet', 'Sale/items', 'Payment', 'Payment status', 'Amount (PHP)', 'Cash tendered', 'Change', 'Date'],
+  };
   const titles = { grooming: 'Grooming', hotel: 'Hotel', walkin: 'Walk-in' };
   const paymentIndexes = { grooming: 6, hotel: 7, walkin: 4 };
   const amountIndexes = { grooming: 8, hotel: 9, walkin: 6 };
@@ -37,16 +42,16 @@
 
   const drawHeaderRow = (pdf, headers, widths, y) => {
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8);
-    pdf.setFillColor(235, 232, 223);
+    pdf.setFontSize(7);
+    pdf.setFillColor(32, 45, 50);
     pdf.setDrawColor(207, 211, 205);
-    const headerLines = headers.map((header, index) => pdf.splitTextToSize(String(header), widths[index] - 4));
-    const headerHeight = Math.max(12, ...headerLines.map((lines) => lines.length * 4 + 4));
+    const headerLines = widths.map((width, index) => pdf.splitTextToSize(String(headers[index]), width - 4));
+    const headerHeight = Math.max(12, ...headerLines.map((lines) => lines.length * 3.5 + 5));
     let x = 12;
     headerLines.forEach((lines, index) => {
       pdf.rect(x, y, widths[index], headerHeight, 'FD');
-      pdf.setTextColor(37, 50, 56);
-      pdf.text(lines, x + 2, y + 4, { lineHeightFactor: 1.15 });
+      pdf.setTextColor(255, 255, 255);
+      pdf.text(lines, x + 2, y + 3.5, { lineHeightFactor: 1.05 });
       x += widths[index];
     });
     return y + headerHeight;
@@ -142,6 +147,7 @@
       });
       const report = await response.json();
       if (!response.ok) throw new Error(report.error || `Report request failed (${response.status}).`);
+      const headers = reportHeaders[type].map((fallback, index) => String(report.headers?.[index] || fallback));
 
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF('l', 'mm', 'a4');
@@ -168,8 +174,8 @@
         y,
       );
       y += 7;
-      y = drawHeaderRow(pdf, report.headers, reportWidths[type], y);
-      drawRows(pdf, report, type, y, subtitle);
+      y = drawHeaderRow(pdf, headers, reportWidths[type], y);
+      drawRows(pdf, { ...report, headers }, type, y, subtitle);
       addPageNumbers(pdf);
 
       const date = new Date().toISOString().slice(0, 10);

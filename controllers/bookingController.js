@@ -32,7 +32,7 @@ const {
   groomingBookingDuration,
   groomingRecordDuration,
 } = require('../util/bookingCalculations');
-const { sendPayMongoReceipt } = require('../util/mailer');
+const { sendPayMongoReceipt, sendReservationTicket } = require('../util/mailer');
 const { requestGcashBookingRefund } = require('../util/paymentRefund');
 const { isValidMobileNumber } = require('../util/mobileNumber');
 const { isDigitsOnly, isOptionalPhoneNumber } = require('../util/numericValidation');

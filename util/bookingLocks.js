@@ -221,4 +221,5 @@ module.exports = {
   claimReplacementBookingSlots,
   releaseBookingSlots,
   releaseBookingSlotsByIds,
+  releaseGroomingBookingSlots,
 };

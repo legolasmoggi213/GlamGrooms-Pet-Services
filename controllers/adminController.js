@@ -504,9 +504,50 @@ const getRevenueBreakdown = async (req, res, next) => {
   }
 };
 
+const formatReportDate = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+  const date = value instanceof Date
+    ? value
+    : value && typeof value.toDate === 'function'
+      ? value.toDate()
+      : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  const datePart = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+  const timePart = new Intl.DateTimeFormat('en-GB', {
+    timeZone: BUSINESS_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date);
+  return `${datePart} ${timePart}`;
+};
+
+const formatReportLabel = (value) => String(value || '')
+  .replace(/-/g, ' ')
+  .split(' ')
+  .map((word) => {
+    const specialLabel = { pos: 'POS', qrph: 'QR Ph', xl: 'XL' }[word.toLowerCase()];
+    return specialLabel || word.replace(/\b\w/g, (letter) => letter.toUpperCase());
+  })
+  .join(' ');
+
+const formatReportAmount = (value) => {
+  if (value == null || value === '') return '';
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount.toFixed(2) : '';
+};
+
 const csvCell = (value) => {
-  let text = String(value == null ? '' : value);
-  if (/^[\s]*[=+\-@]/.test(text)) text = `'${text}`;
+  let text = value == null ? '' : String(value);
+  if (typeof value !== 'number' && /^[\s]*[=+\-@]/.test(text)) text = `'${text}`;
   return `"${text.replace(/"/g, '""')}"`;
 };
 
@@ -535,21 +576,24 @@ const getOperationalReport = async (req, res, next) => {
       const rows = [
         ...grooming.map((booking) => [
           'Grooming', booking.id, (customerMap[String(booking.customerId)] || {}).name,
-          (booking.petNames || []).join('; ') || booking.service, booking.service,
-          booking.date, booking.time, '', '', booking.status, booking.paymentMethod,
-          booking.paymentStatus || 'unpaid', booking.price, booking.createdAt,
+          (booking.petNames || []).join('; ') || formatReportLabel(booking.service),
+          formatReportLabel(booking.service), formatReportDate(booking.date), booking.time, '', '',
+          formatReportLabel(booking.status), formatReportLabel(booking.paymentMethod),
+          formatReportLabel(booking.paymentStatus || 'unpaid'), formatReportAmount(booking.price),
+          formatReportDate(booking.createdAt),
         ]),
         ...hotel.map((booking) => [
           'Hotel', booking.id, (customerMap[String(booking.customerId)] || {}).name,
-          (booking.petNames || []).join('; '), booking.roomType,
-          booking.checkIn, booking.checkInTime, booking.checkOut, booking.checkOutTime,
-          booking.status, booking.paymentMethod, booking.paymentStatus || 'unpaid',
-          booking.totalPrice, booking.createdAt,
+          (booking.petNames || []).join('; '), formatReportLabel(booking.roomType),
+          formatReportDate(booking.checkIn), booking.checkInTime, formatReportDate(booking.checkOut),
+          booking.checkOutTime, formatReportLabel(booking.status),
+          formatReportLabel(booking.paymentMethod), formatReportLabel(booking.paymentStatus || 'unpaid'),
+          formatReportAmount(booking.totalPrice), formatReportDate(booking.createdAt),
         ]),
       ];
       return sendCsv(res, 'bookings-report.csv', [
         'Type', 'Booking ID', 'Customer', 'Pets', 'Service or room', 'Start date', 'Start time',
-        'End date', 'End time', 'Status', 'Payment method', 'Payment status', 'Amount', 'Created at',
+        'End date', 'End time', 'Status', 'Payment method', 'Payment status', 'Amount (PHP)', 'Created at',
       ], rows);
     }
 
@@ -562,25 +606,29 @@ const getOperationalReport = async (req, res, next) => {
       const rows = [
         ...grooming.map((booking) => [
           'Grooming booking', booking.id, booking.customerDetails?.name || booking.customerId,
-          booking.paymentMethod || 'cash', booking.paymentStatus || 'unpaid',
-          booking.paymentReference || '', booking.price, booking.paymentPaidAt || booking.createdAt,
+          formatReportLabel(booking.paymentMethod || 'cash'),
+          formatReportLabel(booking.paymentStatus || 'unpaid'),
+          booking.paymentReference || '', formatReportAmount(booking.price),
+          formatReportDate(booking.paymentPaidAt || booking.createdAt),
         ]),
         ...hotel.map((booking) => [
           'Hotel booking', booking.id, booking.customerDetails?.name || booking.customerId,
-          booking.paymentMethod || 'cash', booking.paymentStatus || 'unpaid',
-          booking.paymentReference || '', booking.totalPrice, booking.paymentPaidAt || booking.createdAt,
+          formatReportLabel(booking.paymentMethod || 'cash'),
+          formatReportLabel(booking.paymentStatus || 'unpaid'),
+          booking.paymentReference || '', formatReportAmount(booking.totalPrice),
+          formatReportDate(booking.paymentPaidAt || booking.createdAt),
         ]),
         ...transactions.map((transaction) => [
-          transaction.type || 'POS', transaction.id, transaction.customerName,
-          transaction.paymentMethod || 'cash',
-          transaction.paymentStatus || (transaction.paymentMethod === 'qrph' ? 'pending' : 'paid'),
-          transaction.paymentReference || '', transaction.amount,
-          transaction.paidAt || (transaction.paymentMethod === 'qrph' ? '' : transaction.createdAt),
+          formatReportLabel(transaction.type || 'POS'), transaction.id, transaction.customerName,
+          formatReportLabel(transaction.paymentMethod || 'cash'),
+          formatReportLabel(transaction.paymentStatus || (transaction.paymentMethod === 'qrph' ? 'pending' : 'paid')),
+          transaction.paymentReference || '', formatReportAmount(transaction.amount),
+          formatReportDate(transaction.paidAt || (transaction.paymentMethod === 'qrph' ? '' : transaction.createdAt)),
         ]),
       ];
       return sendCsv(res, 'payments-report.csv', [
         'Transaction type', 'Reference', 'Customer', 'Payment method', 'Payment status',
-        'Payment reference', 'Amount', 'Paid or created at',
+        'Payment reference', 'Amount (PHP)', 'Paid or created at',
       ], rows);
     }
 
@@ -595,7 +643,7 @@ const getOperationalReport = async (req, res, next) => {
       pets.filter((pet) => String(pet.customerId) === String(customer.id)).length,
       grooming.filter((booking) => String(booking.customerId) === String(customer.id)).length,
       hotel.filter((booking) => String(booking.customerId) === String(customer.id)).length,
-      customer.createdAt,
+      formatReportDate(customer.createdAt),
     ]);
     return sendCsv(res, 'customers-report.csv', [
       'Customer ID', 'Name', 'Email', 'Phone', 'Address', 'Pet count',

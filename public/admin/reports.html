@@ -4,23 +4,41 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Reports — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
+  <link rel="stylesheet" href="/css/style.css?v=reports-polish-20261027" />
 </head>
 <body>
   <div class="admin-layout">
     <aside class="sidebar" id="sidebar"></aside>
     <main class="admin-main">
-      <h1>Reports</h1>
-      <p class="page-sub">Download current operational records for review.</p>
-      <section class="panel">
-        <h3>Booking and transaction reports</h3>
-        <p class="text-muted">CSV exports include current booking and payment status.</p>
-        <div class="button-row">
-          <a class="btn btn-primary" href="/api/v1/admin/reports?type=bookings">Download bookings</a>
-          <a class="btn btn-outline" href="/api/v1/admin/reports?type=payments">Download payments</a>
-          <a class="btn btn-outline" href="/api/v1/admin/reports?type=customers">Download customers</a>
+      <div class="reports-heading">
+        <div>
+          <p class="reports-eyebrow">BUSINESS INSIGHTS</p>
+          <h1>Reports</h1>
+          <p class="page-sub">Clear, organized exports for your day-to-day operations.</p>
         </div>
+        <span class="reports-format">CSV · Spreadsheet ready</span>
+      </div>
+      <section class="reports-grid" aria-label="Available reports">
+        <article class="report-card">
+          <span class="report-number">01</span>
+          <h2>Bookings</h2>
+          <p>Grooming appointments and hotel stays, with customer, schedule, status, and payment details.</p>
+          <a class="btn btn-primary" href="/api/v1/admin/reports?type=bookings">Download bookings <span aria-hidden="true">↓</span></a>
+        </article>
+        <article class="report-card">
+          <span class="report-number">02</span>
+          <h2>Payments</h2>
+          <p>Booking charges and point-of-sale transactions, including payment method, reference, and amount.</p>
+          <a class="btn btn-primary" href="/api/v1/admin/reports?type=payments">Download payments <span aria-hidden="true">↓</span></a>
+        </article>
+        <article class="report-card">
+          <span class="report-number">03</span>
+          <h2>Customers</h2>
+          <p>Customer contact details and a quick summary of pets, grooming bookings, and hotel reservations.</p>
+          <a class="btn btn-primary" href="/api/v1/admin/reports?type=customers">Download customers <span aria-hidden="true">↓</span></a>
+        </article>
       </section>
+      <p class="reports-note">For the best viewing experience, open a download in Excel or Google Sheets. CSV files contain clean, sortable data but do not support colors or font styling.</p>
     </main>
   </div>
   <script src="/js/api.js"></script>

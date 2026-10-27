@@ -49,6 +49,7 @@
     const headerHeight = Math.max(12, ...headerLines.map((lines) => lines.length * 3.5 + 5));
     let x = 12;
     headerLines.forEach((lines, index) => {
+      pdf.setFillColor(32, 45, 50);
       pdf.rect(x, y, widths[index], headerHeight, 'FD');
       pdf.setTextColor(255, 255, 255);
       pdf.text(lines, x + 2, y + 3.5, { lineHeightFactor: 1.05 });

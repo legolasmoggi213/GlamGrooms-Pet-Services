@@ -11,6 +11,7 @@ const listNotifications = async (req, res, next) => {
       customerName: notification.customerName,
       petNames: Array.isArray(notification.petNames) ? notification.petNames : [],
       schedule: notification.schedule || '',
+      previousSchedule: notification.previousSchedule || '',
       status: notification.status || 'pending',
       read: notification.read === true,
       createdAt: notification.createdAt || null,

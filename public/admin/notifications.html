@@ -32,9 +32,9 @@
       list.innerHTML = notifications.length ? `<ul class="transaction-list">${notifications.map((notice) => `
         <li>
           <div>
-            <strong>${notice.read ? '' : 'New · '}${notice.type === 'booking_cancelled' ? 'Booking canceled' : 'New booking'} · ${escape(notice.bookingType)} #${escape(notice.bookingId)}</strong>
+            <strong>${notice.read ? '' : 'New · '}${notice.type === 'booking_cancelled' ? 'Booking canceled' : notice.type === 'booking_rescheduled' ? 'Booking rescheduled' : 'New booking'} · ${escape(notice.bookingType)} #${escape(notice.bookingId)}</strong>
             <div class="transaction-meta">${escape(notice.customerName)} · ${escape(notice.petNames.join(', ') || 'No pet listed')} · ${escape(notice.schedule)}</div>
-            <div class="transaction-meta">${notice.type === 'booking_cancelled' ? 'Customer canceled this booking' : `Status: ${escape(notice.status)}`} · ${escape(fmtDateTime(notice.createdAt))}</div>
+            <div class="transaction-meta">${notice.type === 'booking_cancelled' ? 'Customer canceled this booking' : notice.type === 'booking_rescheduled' ? `Previous schedule: ${escape(notice.previousSchedule)}` : `Status: ${escape(notice.status)}`} · ${escape(fmtDateTime(notice.createdAt))}</div>
           </div>
           ${notice.read ? '' : `<button class="btn btn-outline btn-sm" data-mark-read="${escape(notice.id)}">Mark read</button>`}
         </li>`).join('')}</ul>` : '<div class="empty">No booking notifications yet.</div>';

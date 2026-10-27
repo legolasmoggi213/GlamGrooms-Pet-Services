@@ -51,4 +51,27 @@ const notifyStaffOfCancellation = async ({ type, booking, customer, pets }) => {
   }
 };
 
-module.exports = { notifyStaffOfBooking, notifyStaffOfCancellation };
+const notifyStaffOfReschedule = async ({ type, booking, customer, pets, previousSchedule }) => {
+  try {
+    await StaffNotification.create({
+      type: 'booking_rescheduled',
+      bookingType: type,
+      bookingId: String(booking.id),
+      customerName: customer?.name || booking.customerDetails?.name || 'Customer',
+      petNames: (pets || []).map((pet) => pet.name).filter(Boolean),
+      previousSchedule,
+      schedule: type === 'hotel'
+        ? `${booking.checkIn || ''} ${booking.checkInTime || ''} – ${booking.checkOut || ''} ${booking.checkOutTime || ''}`.trim()
+        : `${booking.date || ''} ${booking.time || ''}`.trim(),
+      status: booking.status || 'pending',
+      read: false,
+      createdAt: new Date(),
+    });
+    return true;
+  } catch (error) {
+    console.error(`Unable to notify staff about rescheduled ${type} booking ${booking.id}:`, error);
+    return false;
+  }
+};
+
+module.exports = { notifyStaffOfBooking, notifyStaffOfCancellation, notifyStaffOfReschedule };

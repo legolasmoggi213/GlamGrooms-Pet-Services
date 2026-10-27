@@ -161,12 +161,12 @@
     const bookingActions = (item, type) => {
       if (String(item.status || '').toLowerCase() !== 'pending') return '';
       if (item.paymentStatus === 'paid' || item.paymentMethod === 'qrph') {
-        return '<div class="transaction-meta">Editing is unavailable while online payment is processing.</div>';
+        return '<div class="transaction-meta">Cancel and reschedule are available for upcoming pending, unpaid bookings. Contact the team for paid or online-payment bookings.</div>';
       }
       if (!bookingCanChange(item, type)) return '';
       return `
         <div class="profile-actions">
-          <button class="btn btn-outline btn-sm" type="button" data-reschedule-type="${type}" data-reschedule-id="${escapeHtml(item.id)}">Edit booking</button>
+          <button class="btn btn-outline btn-sm" type="button" data-reschedule-type="${type}" data-reschedule-id="${escapeHtml(item.id)}">Reschedule booking</button>
           <button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}">Cancel booking</button>
         </div>
       `;
@@ -203,7 +203,7 @@
       const item = [...(data.grooming || []), ...(data.hotel || [])].find((booking) => String(booking.id) === String(id));
       if (!item) return alert('Booking not found. Refresh the page and try again.');
       activeBooking = { type, id, item };
-      document.getElementById('booking-dialog-title').textContent = `Edit ${type} booking`;
+      document.getElementById('booking-dialog-title').textContent = `Reschedule ${type} booking`;
       const minDate = new Date().toLocaleDateString('en-CA');
       const fields = type === 'grooming'
         ? `<label class="field">Appointment date<input name="date" type="date" min="${minDate}" required value="${escapeHtml(item.date)}"></label>
@@ -235,6 +235,9 @@
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || 'Unable to reschedule booking.');
+        if (result.notificationSent === false) {
+          alert('Your booking was rescheduled, but staff could not be notified automatically. Please contact the team.');
+        }
         bookingDialog.close();
         activeBooking = null;
         await loadProfile();

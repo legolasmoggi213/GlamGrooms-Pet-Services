@@ -35,7 +35,11 @@ const {
 const { sendPayMongoReceipt } = require('../util/mailer');
 const { isValidMobileNumber } = require('../util/mobileNumber');
 const { isDigitsOnly, isOptionalPhoneNumber } = require('../util/numericValidation');
-const { notifyStaffOfBooking, notifyStaffOfCancellation } = require('../util/staffNotifications');
+const {
+  notifyStaffOfBooking,
+  notifyStaffOfCancellation,
+  notifyStaffOfReschedule,
+} = require('../util/staffNotifications');
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -867,8 +871,17 @@ const updateCustomerBooking = async (req, res, next) => {
       const pickupCheck = validatePickupTime(date, pickupTime);
       if (!pickupCheck.ok) return res.status(400).json({ error: pickupCheck.error });
 
-      const oldLockIds = groomingLockIds(booking.date, booking.time);
-      const newLockIds = groomingLockIds(date, time);
+      const oldDate = booking.date;
+      const oldTime = booking.time;
+      const durationMinutes = groomingRecordDuration(booking);
+      const durationCheck = validateAppointmentDuration(date, time, durationMinutes);
+      if (!durationCheck.ok) return res.status(400).json({ error: durationCheck.error });
+      if (timeToMinutes(pickupTime) < timeToMinutes(durationCheck.pickupEarliest)) {
+        return res.status(400).json({ error: `Pickup must be at or after ${durationCheck.pickupEarliest}.` });
+      }
+      const oldSchedule = `${oldDate || ''} ${oldTime || ''}`.trim();
+      const oldLockIds = groomingLockIds(oldDate, oldTime, durationMinutes);
+      const newLockIds = groomingLockIds(date, time, durationMinutes);
       const scheduleChanged = date !== booking.date || time !== booking.time;
       let claimedLockIds = [];
       if (scheduleChanged) {
@@ -883,7 +896,19 @@ const updateCustomerBooking = async (req, res, next) => {
       if (scheduleChanged) {
         await releaseBookingSlotsByIds(oldLockIds.filter((id) => !newLockIds.includes(id)));
       }
-      return res.json({ success: true, bookingId: booking.id });
+      if (scheduleChanged) {
+        const pets = await Promise.all((booking.petIds || (booking.petId ? [booking.petId] : [])).map((id) => Pet.findByPk(id)));
+        const fallbackPetNames = booking.petNames || booking.petServices?.map((item) => item.petName) || [];
+        const notificationSent = await notifyStaffOfReschedule({
+          type: bookingType,
+          booking,
+          customer,
+          pets: pets.filter(Boolean).length ? pets.filter(Boolean) : fallbackPetNames.map((name) => ({ name })),
+          previousSchedule: oldSchedule,
+        });
+        return res.json({ success: true, bookingId: booking.id, notificationSent });
+      }
+      return res.json({ success: true, bookingId: booking.id, notificationSent: true });
     }
 
     const checkIn = String(body.checkIn || '').trim();
@@ -904,8 +929,12 @@ const updateCustomerBooking = async (req, res, next) => {
     }
 
     const roomTypes = reservationRoomTypes(booking);
+    const oldSchedule = `${booking.checkIn || ''} ${booking.checkInTime || ''} – ${booking.checkOut || ''} ${booking.checkOutTime || ''}`.trim();
     const oldLockIds = hotelReservationLockIds(booking);
     const stayChanged = checkIn !== booking.checkIn || checkOut !== booking.checkOut;
+    const scheduleChanged = stayChanged
+      || checkInTime !== booking.checkInTime
+      || checkOutTime !== booking.checkOutTime;
     const ownerId = booking.hotelSlotOwnerId || String(booking.id);
     const legacyOccupancyByDate = await getLegacyHotelOccupancyByDate(checkIn, checkOut, booking.id);
     let claimedLockIds = [];
@@ -943,7 +972,20 @@ const updateCustomerBooking = async (req, res, next) => {
       const newLockIds = hotelLockIdsForAssignments(newSlotAssignments);
       await releaseBookingSlotsByIds(oldLockIds.filter((id) => !newLockIds.includes(id)));
     }
-    return res.json({ success: true, bookingId: booking.id });
+    if (scheduleChanged) {
+      const petIds = booking.petIds || (booking.petId ? [booking.petId] : []);
+      const pets = await Promise.all(petIds.map((id) => Pet.findByPk(id)));
+      const fallbackPetNames = booking.petNames || booking.petRooms?.map((item) => item.petName) || [];
+      const notificationSent = await notifyStaffOfReschedule({
+        type: bookingType,
+        booking,
+        customer,
+        pets: pets.filter(Boolean).length ? pets.filter(Boolean) : fallbackPetNames.map((name) => ({ name })),
+        previousSchedule: oldSchedule,
+      });
+      return res.json({ success: true, bookingId: booking.id, notificationSent });
+    }
+    return res.json({ success: true, bookingId: booking.id, notificationSent: true });
   } catch (error) {
     if (error instanceof BookingConflictError) return res.status(error.status).json({ error: error.message });
     next(error);
@@ -963,7 +1005,7 @@ const cancelCustomerBooking = async (req, res, next) => {
 
     const lockIds = bookingType === 'hotel'
       ? hotelReservationLockIds(booking)
-      : groomingLockIds(booking.date, booking.time);
+      : groomingLockIds(booking.date, booking.time, groomingRecordDuration(booking));
     await booking.update({ status: 'cancelled' });
     await releaseBookingSlotsByIds(lockIds);
     const bookingPetIds = Array.isArray(booking.petIds) && booking.petIds.length

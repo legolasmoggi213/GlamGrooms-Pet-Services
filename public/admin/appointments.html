@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Appointments — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=appointments-manage-20261028" />
+  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
 </head>
 <body>
   <div class="admin-layout">
@@ -21,6 +21,25 @@
         </div>
       </div>
       <p id="appointments-message" class="text-muted" role="status" aria-live="polite"></p>
+      <section class="panel reschedule-requests-panel" aria-labelledby="reschedule-requests-heading">
+        <div class="flex-between">
+          <div>
+            <h2 id="reschedule-requests-heading">Customer Reschedule Requests</h2>
+            <p class="text-muted">Review requested booking changes before applying them.</p>
+          </div>
+          <button class="btn btn-outline btn-sm" id="refresh-reschedule-requests" type="button">Refresh requests</button>
+        </div>
+        <div class="table-wrap">
+          <table class="reschedule-requests-table">
+            <thead>
+              <tr><th>Customer</th><th>Booking</th><th>Pet(s)</th><th>Current schedule</th><th>Requested schedule</th><th>Payment</th><th>Notes</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="reschedule-request-rows">
+              <tr><td colspan="8" class="loading">Loading reschedule requests…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
       <div class="appointments-columns" id="appointments-columns">
         <section class="appointments-section" aria-labelledby="grooming-appointments-heading">
           <h2 id="grooming-appointments-heading">Grooming</h2>
@@ -52,7 +71,7 @@
     </main>
   </div>
   <script src="/js/api.js"></script>
-  <script src="/js/admin.js?v=appointments-manage-20261028"></script>
-  <script src="/js/appointments.js?v=appointments-manage-20261028"></script>
+  <script src="/js/admin.js?v=appointments-reschedule-requests-20261028"></script>
+  <script src="/js/appointments.js?v=appointments-reschedule-requests-20261028"></script>
 </body>
 </html>

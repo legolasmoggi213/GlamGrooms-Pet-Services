@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Account — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=customer-dashboard-20261028" />
+  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -207,11 +207,37 @@
       return Boolean(date && new Date(`${date}T${time || '00:00'}:00`) > new Date());
     };
 
+    const bookingCanCancel = (item, type) => {
+      const status = String(item.status || '').toLowerCase();
+      const unavailableStatuses = type === 'hotel'
+        ? ['cancelled', 'checked-in', 'checked-out']
+        : ['cancelled', 'in-progress', 'completed'];
+      const date = type === 'hotel' ? item.checkIn : item.date;
+      const time = type === 'hotel' ? item.checkInTime : item.time || '00:00';
+      return !unavailableStatuses.includes(status)
+        && Boolean(date && new Date(`${date}T${time || '00:00'}:00`) > new Date())
+        && (item.paymentMethod === 'qrph' || (status === 'pending' && !item.confirmedAt));
+    };
+
+    const bookingCanRequestReschedule = (item, type) => {
+      if (item.paymentMethod === 'qrph') return false;
+      const status = String(item.status || '').toLowerCase();
+      const needsStaffApproval = item.paymentStatus === 'paid' || item.paymentMethod === 'qrph' || status !== 'pending';
+      if (!needsStaffApproval) return false;
+      if (type === 'grooming' && ['completed', 'cancelled'].includes(status)) return false;
+      if (type === 'hotel' && ['checked-in', 'checked-out', 'cancelled'].includes(status)) return false;
+      const date = type === 'hotel' ? item.checkIn : item.date;
+      const time = type === 'hotel' ? item.checkInTime : item.time || '00:00';
+      return Boolean(date && new Date(`${date}T${time || '00:00'}:00`) > new Date());
+    };
+
     const bookingActions = (item, type) => {
-      if (String(item.status || '').toLowerCase() !== 'pending') return '';
-      if (item.paymentStatus === 'paid' || item.paymentMethod === 'qrph') {
-        return '<div class="transaction-meta">Cancel and reschedule are available for upcoming pending, unpaid bookings. Contact the team for paid or online-payment bookings.</div>';
+      if (item.paymentMethod === 'qrph') {
+        if (!bookingCanCancel(item, type)) return '';
+        return `<div class="transaction-meta">GCash bookings can be cancelled but not rescheduled. Refunds are subject to PayMongo processing.</div>
+          <div class="profile-actions"><button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}" data-cancel-paid-online="${item.paymentStatus === 'paid'}">Cancel booking</button></div>`;
       }
+      if (String(item.status || '').toLowerCase() !== 'pending') return '';
       if (!bookingCanChange(item, type)) return '';
       return `
         <div class="profile-actions">
@@ -221,11 +247,34 @@
       `;
     };
 
+    const rescheduleRequestAction = (booking, type, requests) => {
+      if (!bookingCanRequestReschedule(booking, type)) return '';
+      const matchingRequests = requests.filter((request) => (
+        request.bookingType === type && String(request.bookingId) === String(booking.id)
+      ));
+      const pendingRequest = matchingRequests.find((request) => request.status === 'pending');
+      if (pendingRequest) {
+        return '<p class="transaction-meta">Reschedule request sent. Waiting for staff approval.</p>';
+      }
+      const latestRequest = matchingRequests[0];
+      const statusMessage = latestRequest?.status === 'declined'
+        ? '<p class="transaction-meta">Your previous reschedule request was declined. You can send another request.</p>'
+        : latestRequest?.status === 'approved'
+          ? '<p class="transaction-meta">Your previous reschedule request was approved.</p>'
+          : '';
+      return `${statusMessage}
+        <div class="profile-actions">
+          <button class="btn btn-outline btn-sm" type="button" data-request-reschedule-type="${type}" data-request-reschedule-id="${escapeHtml(booking.id)}">Request reschedule</button>
+        </div>`;
+    };
+
     document.querySelector('.customer-account-content').addEventListener('click', async (event) => {
       const cancelButton = event.target.closest('[data-cancel-type]');
       if (cancelButton) {
         const { cancelType: type, cancelId: id } = cancelButton.dataset;
-        if (!window.confirm('Cancel this upcoming unpaid booking?')) return;
+        if (!window.confirm(cancelButton.dataset.cancelPaidOnline === 'true'
+          ? 'Cancel this GCash booking? PayMongo will be asked to refund the payment, subject to provider processing.'
+          : 'Cancel this upcoming booking?')) return;
         cancelButton.disabled = true;
         try {
           const response = await fetch(`/api/v1/bookings/customer/${type}/${encodeURIComponent(id)}/cancel`, {
@@ -234,6 +283,13 @@
           });
           const result = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(result.error || 'Unable to cancel booking.');
+          if (result.paid && !result.deleted) {
+            alert('The GCash payment completed before cancellation. The booking is still active; select Cancel booking again to request cancellation and refund.');
+          } else if (result.refund?.status === 'failed') {
+            alert('The booking was cancelled, but PayMongo could not start the refund. Please contact the business to arrange it.');
+          } else if (result.refund) {
+            alert('The booking was cancelled and the refund request was sent to PayMongo. Refund completion may take time.');
+          }
           if (result.notificationSent === false) {
             alert('Your booking was canceled, but staff could not be notified automatically. Please contact the team.');
           }
@@ -245,23 +301,30 @@
         return;
       }
 
+      const requestButton = event.target.closest('[data-request-reschedule-type]');
       const rescheduleButton = event.target.closest('[data-reschedule-type]');
-      if (!rescheduleButton) return;
-      const { rescheduleType: type, rescheduleId: id } = rescheduleButton.dataset;
+      const actionButton = requestButton || rescheduleButton;
+      if (!actionButton) return;
+      const requestOnly = Boolean(requestButton);
+      const type = requestOnly ? requestButton.dataset.requestRescheduleType : rescheduleButton.dataset.rescheduleType;
+      const id = requestOnly ? requestButton.dataset.requestRescheduleId : rescheduleButton.dataset.rescheduleId;
       const data = await fetch('/customer/profile', { credentials: 'include' }).then((response) => response.json());
       const item = [...(data.grooming || []), ...(data.hotel || [])].find((booking) => String(booking.id) === String(id));
       if (!item) return alert('Booking not found. Refresh the page and try again.');
-      activeBooking = { type, id, item };
-      document.getElementById('booking-dialog-title').textContent = `Reschedule ${type} booking`;
+      activeBooking = { type, id, item, requestOnly };
+      document.getElementById('booking-dialog-title').textContent = requestOnly
+        ? `Request ${type} reschedule`
+        : `Reschedule ${type} booking`;
+      bookingEditForm.querySelector('[type="submit"]').textContent = requestOnly ? 'Send request' : 'Save changes';
       const minDate = new Date().toLocaleDateString('en-CA');
       const fields = type === 'grooming'
         ? `<label class="field">Appointment date<input name="date" type="date" min="${minDate}" required value="${escapeHtml(item.date)}"></label>
-           <label class="field">Appointment time<input name="time" type="time" step="3600" required value="${escapeHtml(item.time || '')}"></label>
-           <label class="field">Pickup time<input name="pickupTime" type="time" step="3600" required value="${escapeHtml(item.pickupTime || '')}"></label>`
-        : `<label class="field">Check-in<input name="checkIn" type="date" min="${minDate}" required value="${escapeHtml(item.checkIn)}"></label>
-           <label class="field">Check-in time<input name="checkInTime" type="time" step="3600" required value="${escapeHtml(item.checkInTime || '')}"></label>
+           <label class="field">Appointment time<input name="time" type="time" step="60" required value="${escapeHtml(item.time || '')}"></label>
+           <label class="field">Pickup time<input name="pickupTime" type="time" step="60" required value="${escapeHtml(item.pickupTime || '')}"></label>`
+          : `<label class="field">Check-in<input name="checkIn" type="date" min="${minDate}" required value="${escapeHtml(item.checkIn)}"></label>
+            <label class="field">Check-in time<input name="checkInTime" type="time" step="60" required value="${escapeHtml(item.checkInTime || '')}"></label>
            <label class="field">Check-out<input name="checkOut" type="date" min="${minDate}" required value="${escapeHtml(item.checkOut)}"></label>
-           <label class="field">Check-out time<input name="checkOutTime" type="time" step="3600" required value="${escapeHtml(item.checkOutTime || '')}"></label>`;
+           <label class="field">Check-out time<input name="checkOutTime" type="time" step="60" required value="${escapeHtml(item.checkOutTime || '')}"></label>`;
       document.getElementById('booking-edit-fields').innerHTML = `${fields}
         <label class="field full">Special care notes<textarea name="notes" maxlength="1000" rows="3">${escapeHtml(item.notes || '')}</textarea></label>`;
       document.getElementById('booking-edit-message').textContent = '';
@@ -276,8 +339,12 @@
       saveButton.disabled = true;
       document.getElementById('booking-edit-message').textContent = '';
       try {
-        const response = await fetch(`/api/v1/bookings/customer/${activeBooking.type}/${encodeURIComponent(activeBooking.id)}`, {
-          method: 'PUT',
+        const requestOnly = activeBooking.requestOnly;
+        const endpoint = requestOnly
+          ? `/api/v1/bookings/customer/${activeBooking.type}/${encodeURIComponent(activeBooking.id)}/reschedule-request`
+          : `/api/v1/bookings/customer/${activeBooking.type}/${encodeURIComponent(activeBooking.id)}`;
+        const response = await fetch(endpoint, {
+          method: requestOnly ? 'POST' : 'PUT',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify(body),
@@ -285,11 +352,19 @@
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || 'Unable to reschedule booking.');
         if (result.notificationSent === false) {
-          alert('Your booking was rescheduled, but staff could not be notified automatically. Please contact the team.');
+          alert(requestOnly
+            ? 'Your request was saved, but staff could not be notified automatically. Please contact the team.'
+            : 'Your booking was rescheduled, but staff could not be notified automatically. Please contact the team.');
         }
         bookingDialog.close();
         activeBooking = null;
         await loadProfile();
+        if (requestOnly) {
+          const toast = document.getElementById('toast');
+          toast.textContent = 'Reschedule request sent to staff for approval.';
+          toast.classList.add('show');
+          setTimeout(() => toast.classList.remove('show'), 3000);
+        }
       } catch (error) {
         document.getElementById('booking-edit-message').textContent = error.message;
       } finally {
@@ -312,6 +387,8 @@
         if (!r.ok) throw new Error(`Profile request failed (${r.status}).`);
         if (!contentType.includes('application/json')) throw new Error('Profile response was not JSON.');
         const data = await r.json();
+        const requestsResponse = await fetch('/api/v1/bookings/customer/reschedule-requests', { credentials: 'include' });
+        const rescheduleRequests = requestsResponse.ok ? await requestsResponse.json() : [];
         const p = data.customer || {};
         const groomingBookings = data.grooming || [];
         const hotelBookings = data.hotel || [];
@@ -593,7 +670,7 @@
         const recentHtml = recent.length
           ? `<ul class="transaction-list">${recent.map(item => {
               const statusClass = ['completed', 'checked-out'].includes(item.status) ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
-              return recentBookingCardMarkup(item, pets, p, statusClass);
+              return recentBookingCardMarkup(item, pets, p, statusClass, rescheduleRequests);
             }).join('')}</ul>`
           : '<div class="empty-state">No recent transactions yet.</div>';
 
@@ -651,7 +728,7 @@
       return `PHP ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
 
-    function recentBookingCardMarkup(item, pets, profile, statusClass) {
+    function recentBookingCardMarkup(item, pets, profile, statusClass, rescheduleRequests) {
       const booking = item.booking;
       const isHotel = item.bookingType === 'hotel';
       const customer = booking.customerDetails || profile;
@@ -695,6 +772,7 @@
               ${detailRows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || 'Not provided')}</dd></div>`).join('')}
             </dl>
             ${bookingActions(booking, item.bookingType)}
+            ${rescheduleRequestAction(booking, item.bookingType, rescheduleRequests)}
             ${paymentReceiptMarkup(booking, item.bookingType, profile)}
             ${reservationTicketMarkup(booking, item.bookingType, pets, profile)}
           </div>

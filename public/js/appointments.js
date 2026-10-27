@@ -3,6 +3,7 @@
 
   const groomingRowsEl = document.getElementById('grooming-appointment-rows');
   const hotelRowsEl = document.getElementById('hotel-appointment-rows');
+  const rescheduleRowsEl = document.getElementById('reschedule-request-rows');
   const messageEl = document.getElementById('appointments-message');
   const terminalStatuses = {
     grooming: new Set(['completed']),
@@ -10,6 +11,7 @@
   };
   let isAdmin = false;
   let bookings = [];
+  let rescheduleRequests = [];
   const groomingServices = ['bath', 'nail-trim', 'haircut', 'deshedding', 'full-groom'];
   const groomingStatuses = ['pending', 'scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled'];
 
@@ -229,20 +231,90 @@
     const message = escapeHtml(error.message);
     groomingRowsEl.innerHTML = `<tr><td colspan="5" class="empty">${message}</td></tr>`;
     hotelRowsEl.innerHTML = `<tr><td colspan="5" class="empty">${message}</td></tr>`;
+    rescheduleRowsEl.innerHTML = `<tr><td colspan="8" class="empty">${message}</td></tr>`;
+  };
+
+  const renderRescheduleRequests = () => {
+    if (!rescheduleRequests.length) {
+      rescheduleRowsEl.innerHTML = '<tr><td colspan="8" class="empty">No pending customer reschedule requests.</td></tr>';
+      return;
+    }
+    rescheduleRowsEl.innerHTML = rescheduleRequests.map((request) => {
+      const typeLabel = request.bookingType === 'grooming' ? 'Grooming' : 'Pet Hotel';
+      const paymentLabel = `${request.paymentMethod === 'qrph' ? 'GCash' : 'Cash'} · ${request.paymentStatus || 'unpaid'}`;
+      const paymentNotice = request.paymentStatus === 'paid' || request.paymentMethod === 'qrph'
+        ? `<span class="reschedule-payment-warning">${escapeHtml(paymentLabel)} · Review any price difference</span>`
+        : escapeHtml(paymentLabel);
+      return `
+        <tr>
+          <td>${escapeHtml(request.customerName || 'Customer')}</td>
+          <td>${typeLabel} #${escapeHtml(request.bookingId)}</td>
+          <td>${escapeHtml((request.petNames || []).join(', ') || '—')}</td>
+          <td>${escapeHtml(scheduleFor(request.currentSchedule || {}, request.bookingType))}</td>
+          <td>${escapeHtml(scheduleFor(request.requestedSchedule || {}, request.bookingType))}</td>
+          <td>${paymentNotice}</td>
+          <td>${escapeHtml(request.requestedSchedule?.notes || '—')}</td>
+          <td><div class="reschedule-review-actions">
+            <button type="button" class="btn btn-primary btn-sm" data-request-decision="approved" data-request-id="${escapeHtml(request.id)}">Approve</button>
+            <button type="button" class="btn btn-outline btn-sm" data-request-decision="declined" data-request-id="${escapeHtml(request.id)}">Decline</button>
+          </div></td>
+        </tr>`;
+    }).join('');
+  };
+
+  const sameSchedule = (booking, requested, type) => {
+    const fields = type === 'grooming' ? ['date', 'time', 'pickupTime'] : ['checkIn', 'checkInTime', 'checkOut', 'checkOutTime'];
+    return fields.every((field) => String(booking[field] || '') === String(requested[field] || ''));
+  };
+
+  const handleRescheduleDecision = async (button) => {
+    const request = rescheduleRequests.find((item) => String(item.id) === String(button.dataset.requestId));
+    if (!request) return;
+    const decision = button.dataset.requestDecision;
+    if (decision === 'declined') {
+      if (!window.confirm(`Decline ${request.customerName || 'this customer'}'s reschedule request?`)) return;
+    }
+    if (decision === 'approved' && (request.paymentStatus === 'paid' || request.paymentMethod === 'qrph')
+      && !window.confirm('This booking has an online or completed payment. Approving may change the total. Review and handle any payment difference with the customer. Continue?')) return;
+
+    button.disabled = true;
+    try {
+      if (decision === 'approved') {
+        const type = request.bookingType;
+        const currentBooking = await apiGet(`/${type}/${encodeURIComponent(request.bookingId)}`);
+        const alreadyApplied = sameSchedule(currentBooking, request.requestedSchedule, type);
+        if (!alreadyApplied) {
+          if (!sameSchedule(currentBooking, request.currentSchedule, type)) {
+            throw new Error('This booking changed after the request was submitted. Refresh the request and review it again.');
+          }
+          await apiPut(`/${type}/${encodeURIComponent(request.bookingId)}`, request.requestedSchedule);
+        }
+      }
+      await apiPost(`/admin/reschedule-requests/${encodeURIComponent(request.id)}/decision`, { decision });
+      await loadAppointments();
+      messageEl.className = 'text-success';
+      messageEl.textContent = decision === 'approved' ? 'Reschedule request approved and applied.' : 'Reschedule request declined.';
+    } catch (error) {
+      button.disabled = false;
+      messageEl.className = 'text-error';
+      messageEl.textContent = error.message;
+    }
   };
 
   const loadAppointments = async () => {
     groomingRowsEl.innerHTML = '<tr><td colspan="5" class="loading">Loading grooming appointments…</td></tr>';
     hotelRowsEl.innerHTML = '<tr><td colspan="5" class="loading">Loading pet hotel reservations…</td></tr>';
     messageEl.textContent = '';
-    const [grooming, hotel, sessionResponse] = await Promise.all([
+    const [grooming, hotel, sessionResponse, requests] = await Promise.all([
       apiGet('/grooming'),
       apiGet('/hotel'),
       fetch('/admin/nav-status', { credentials: 'include', cache: 'no-store' }),
+      apiGet('/admin/reschedule-requests'),
     ]);
     if (!sessionResponse.ok) throw new Error(`Unable to verify your role (${sessionResponse.status}).`);
     const session = await sessionResponse.json();
     isAdmin = session.role === 'ADMIN';
+    rescheduleRequests = requests;
     bookings = [
       ...grooming.filter((booking) => !terminalStatuses.grooming.has(booking.status))
         .map((booking) => ({ type: 'grooming', booking })),
@@ -258,6 +330,7 @@
       return String(rightTime || '').localeCompare(String(leftTime || ''));
     });
     renderAppointments();
+    renderRescheduleRequests();
   };
 
   const rescheduleForm = (booking, type) => {
@@ -316,6 +389,11 @@
   };
 
   document.addEventListener('click', async (event) => {
+    const requestDecisionButton = event.target.closest('[data-request-decision][data-request-id]');
+    if (requestDecisionButton) {
+      await handleRescheduleDecision(requestDecisionButton);
+      return;
+    }
     const manageButton = event.target.closest('[data-manage][data-type][data-id]');
     if (manageButton) {
       const { type, id } = manageButton.dataset;
@@ -420,6 +498,10 @@
     loadAppointments().catch((error) => {
       showLoadError(error);
     });
+  });
+
+  document.getElementById('refresh-reschedule-requests').addEventListener('click', () => {
+    loadAppointments().catch(showLoadError);
   });
 
   document.getElementById('new-grooming-appointment').addEventListener('click', () => {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=admin-revenue-forecast-20261028" />
+  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -70,18 +70,6 @@
             <div id="hotel-service-chart" class="revenue-bars service-revenue-bars"></div>
           </section>
         </div>
-      </section>
-
-      <section class="panel" aria-label="Revenue forecast">
-        <div class="forecast-heading">
-          <div>
-            <h3>Revenue Forecast</h3>
-            <p class="text-muted">Projected revenue and booking volume based on the selected reporting period.</p>
-          </div>
-          <span id="forecast-period-label" class="forecast-period-label">Next month</span>
-        </div>
-        <div id="revenue-forecast" class="forecast-grid" aria-live="polite">Loading forecast…</div>
-        <p id="forecast-method" class="forecast-method"></p>
       </section>
 
       <section class="panel" aria-label="Operational reports">
@@ -506,52 +494,6 @@
         document.getElementById('hotel-service-total').textContent = fmtMoney(hotelServiceTotal);
         document.getElementById('grooming-service-chart').innerHTML = renderServiceChart(data.groomingServices);
         document.getElementById('hotel-service-chart').innerHTML = renderServiceChart(data.hotelServices);
-        const forecast = data.forecast;
-        document.getElementById('forecast-period-label').textContent = capitalize(forecast.periodLabel);
-        const renderForecastColumn = (label, kind, revenue, bookings) => {
-          const direction = revenue.direction || 'stable';
-          const directionLabel = direction === 'up' ? 'Rising' : direction === 'down' ? 'Falling' : 'Steady';
-          const noPriorBaseline = revenue.available
-            && Number(revenue.previousAverage) === 0
-            && Number(revenue.recentAverage) > 0;
-          const changeLabel = revenue.available
-            ? noPriorBaseline
-              ? 'No prior revenue baseline'
-              : `${directionLabel} ${Math.abs(Number(revenue.changePercent) || 0).toFixed(1)}% vs prior periods`
-            : 'Not enough history';
-          const summary = noPriorBaseline
-            ? 'Recent revenue is present, but prior periods have no baseline for a meaningful percentage comparison.'
-            : revenue.summary || 'More historical data is needed for a reliable estimate.';
-          const metrics = [
-            ['Recent average', revenue.available ? fmtMoney(revenue.recentAverage) : 'Unavailable'],
-            ['Previous average', revenue.available ? fmtMoney(revenue.previousAverage) : 'Unavailable'],
-            ['Expected bookings', bookings.available ? `${Math.round(bookings.predicted)} bookings` : 'Unavailable'],
-            ['Periods analyzed', `${Number(revenue.sampleCount) || 0} periods`],
-          ];
-          return `
-            <article class="forecast-column ${kind}">
-              <div class="forecast-column-heading">
-                <h4>${label}</h4>
-                <span class="forecast-confidence ${revenue.available ? `confidence-${revenue.confidence}` : 'confidence-unavailable'}">${revenue.available ? `${capitalize(revenue.confidence)} confidence` : 'Limited data'}</span>
-              </div>
-              <div class="forecast-projection">
-                <div>
-                  <span class="forecast-metric-caption">Projected revenue</span>
-                  <strong>${revenue.available ? fmtMoney(revenue.predicted) : 'Unavailable'}</strong>
-                </div>
-                <span class="forecast-change ${revenue.available ? `trend-${direction}` : 'trend-unavailable'}">${escapeHtml(changeLabel)}</span>
-              </div>
-              <dl class="forecast-metrics">
-                ${metrics.map(([metricLabel, value]) => `<div><dt>${metricLabel}</dt><dd>${escapeHtml(String(value))}</dd></div>`).join('')}
-              </dl>
-              <p class="forecast-summary">${escapeHtml(summary)}</p>
-            </article>`;
-        };
-        document.getElementById('revenue-forecast').innerHTML = [
-          renderForecastColumn('Grooming', 'grooming-forecast', forecast.groomingRevenue, forecast.groomingBookings),
-          renderForecastColumn('Pet Hotel', 'hotel-forecast', forecast.hotelRevenue, forecast.hotelBookings),
-        ].join('');
-        document.getElementById('forecast-method').textContent = forecast.method;
       }
 
       async function loadServiceCatalog() {

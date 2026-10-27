@@ -11,4 +11,5 @@ module.exports = {
   InventoryItem: new FirebaseModel('inventoryItems'),
   StockRequest: new FirebaseModel('stockRequests'),
   StaffNotification: new FirebaseModel('staffNotifications'),
+  BookingChangeRequest: new FirebaseModel('bookingChangeRequests'),
 };

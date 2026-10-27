@@ -6,6 +6,7 @@ const listNotifications = async (req, res, next) => {
     res.json(notifications.map((notification) => ({
       id: notification.id,
       type: notification.type,
+      requestId: notification.requestId || null,
       bookingType: notification.bookingType,
       bookingId: notification.bookingId,
       customerName: notification.customerName,

@@ -1,4 +1,4 @@
-const { Customer, Pet, GroomingAppointment, HotelReservation } = require('../models');
+const { Customer, Pet, GroomingAppointment, HotelReservation, BookingChangeRequest, StaffNotification } = require('../models');
 const { randomUUID } = require('crypto');
 const { SERVICE_PRICES } = require('./groomingController');
 const { ROOM_PRICES, ROOM_DETAILS } = require('./hotelController');
@@ -33,6 +33,7 @@ const {
   groomingRecordDuration,
 } = require('../util/bookingCalculations');
 const { sendPayMongoReceipt } = require('../util/mailer');
+const { requestGcashBookingRefund } = require('../util/paymentRefund');
 const { isValidMobileNumber } = require('../util/mobileNumber');
 const { isDigitsOnly, isOptionalPhoneNumber } = require('../util/numericValidation');
 const {
@@ -845,6 +846,22 @@ const ensureCustomerCanChangeBooking = (booking, bookingType, res) => {
   return true;
 };
 
+const ensureCustomerCanCancelBooking = (booking, bookingType, res) => {
+  const status = String(booking.status || '').toLowerCase();
+  const unavailableStatuses = bookingType === 'hotel'
+    ? ['cancelled', 'checked-in', 'checked-out']
+    : ['cancelled', 'in-progress', 'completed'];
+  if (unavailableStatuses.includes(status) || !isFutureBooking(booking, bookingType)) {
+    res.status(409).json({ error: 'Only upcoming bookings that have not started can be cancelled online.' });
+    return false;
+  }
+  if (booking.paymentMethod !== 'qrph' && (status !== 'pending' || booking.confirmedAt)) {
+    res.status(409).json({ error: 'Only pending counter-payment bookings can be cancelled online.' });
+    return false;
+  }
+  return true;
+};
+
 const updateCustomerBooking = async (req, res, next) => {
   try {
     const bookingType = req.params.bookingType;
@@ -992,6 +1009,204 @@ const updateCustomerBooking = async (req, res, next) => {
   }
 };
 
+const bookingSchedule = (booking, bookingType) => bookingType === 'grooming'
+  ? { date: booking.date || '', time: booking.time || '', pickupTime: booking.pickupTime || '' }
+  : {
+    checkIn: booking.checkIn || '',
+    checkInTime: booking.checkInTime || '',
+    checkOut: booking.checkOut || '',
+    checkOutTime: booking.checkOutTime || '',
+  };
+
+const requestCustomerBookingReschedule = async (req, res, next) => {
+  try {
+    const bookingType = req.params.bookingType;
+    if (!['grooming', 'hotel'].includes(bookingType)) {
+      return res.status(400).json({ error: 'Choose grooming or hotel as the booking type.' });
+    }
+    const context = await customerBookingContext(req, res, bookingType);
+    if (!context) return;
+    const { customer, booking } = context;
+    if (booking.paymentMethod === 'qrph') {
+      return res.status(409).json({ error: 'GCash bookings cannot be rescheduled. Cancel the booking to request a refund.' });
+    }
+    const status = String(booking.status || '').toLowerCase();
+    if (status === 'pending' && booking.paymentStatus !== 'paid' && booking.paymentMethod !== 'qrph') {
+      return res.status(409).json({ error: 'Upcoming unpaid bookings can be rescheduled directly from Transactions.' });
+    }
+    if (!isFutureBooking(booking, bookingType)
+      || (bookingType === 'grooming' && ['completed', 'cancelled'].includes(status))
+      || (bookingType === 'hotel' && ['checked-in', 'checked-out', 'cancelled'].includes(status))) {
+      return res.status(409).json({ error: 'Only upcoming bookings can be submitted for rescheduling.' });
+    }
+
+    const body = req.body || {};
+    let requestedSchedule;
+    if (bookingType === 'grooming') {
+      const date = String(body.date || '').trim();
+      const time = String(body.time || '').trim();
+      const pickupTime = String(body.pickupTime || '').trim();
+      if (!isValidDateKey(date)) return res.status(400).json({ error: 'Choose a valid appointment date.' });
+      const timeCheck = validateTime(date, time);
+      if (!timeCheck.ok) return res.status(400).json({ error: timeCheck.error });
+      if (!pickupTime) return res.status(400).json({ error: 'A pickup time is required.' });
+      const pickupCheck = validatePickupTime(date, pickupTime);
+      if (!pickupCheck.ok) return res.status(400).json({ error: pickupCheck.error });
+      const durationCheck = validateAppointmentDuration(date, time, groomingRecordDuration(booking));
+      if (!durationCheck.ok) return res.status(400).json({ error: durationCheck.error });
+      if (timeToMinutes(pickupTime) < timeToMinutes(durationCheck.pickupEarliest)) {
+        return res.status(400).json({ error: `Pickup must be at or after ${durationCheck.pickupEarliest}.` });
+      }
+      if (!isFutureBooking({ date, time }, 'grooming')) {
+        return res.status(400).json({ error: 'Choose a future appointment time.' });
+      }
+      requestedSchedule = {
+        date,
+        time,
+        pickupTime,
+        notes: body.notes === undefined ? booking.notes || null : String(body.notes).trim().slice(0, 1000) || null,
+      };
+    } else {
+      const checkIn = String(body.checkIn || '').trim();
+      const checkInTime = String(body.checkInTime || '').trim();
+      const checkOut = String(body.checkOut || '').trim();
+      const checkOutTime = String(body.checkOutTime || '').trim();
+      if (!isValidDateKey(checkIn) || !isValidDateKey(checkOut)) {
+        return res.status(400).json({ error: 'Choose valid check-in and check-out dates.' });
+      }
+      if (new Date(`${checkOut}T00:00:00Z`) <= new Date(`${checkIn}T00:00:00Z`)) {
+        return res.status(400).json({ error: 'Check-out must be after check-in.' });
+      }
+      const checkInCheck = validateTime(checkIn, checkInTime);
+      if (!checkInCheck.ok) return res.status(400).json({ error: checkInCheck.error });
+      const checkOutCheck = validateTime(checkOut, checkOutTime);
+      if (!checkOutCheck.ok) return res.status(400).json({ error: checkOutCheck.error });
+      if (!isFutureBooking({ checkIn, checkInTime }, 'hotel')) {
+        return res.status(400).json({ error: 'Choose a future hotel check-in time.' });
+      }
+      const quote = quoteHotelStay({ petRoomTypes: reservationRoomTypes(booking), checkIn, checkOut });
+      if (!quote.ok) return res.status(400).json({ error: quote.error });
+      requestedSchedule = {
+        checkIn,
+        checkInTime,
+        checkOut,
+        checkOutTime,
+        notes: body.notes === undefined ? booking.notes || null : String(body.notes).trim().slice(0, 1000) || null,
+      };
+    }
+
+    const previousSchedule = bookingSchedule(booking, bookingType);
+    const scheduleFields = Object.keys(previousSchedule);
+    if (scheduleFields.every((field) => String(previousSchedule[field] || '') === String(requestedSchedule[field] || ''))) {
+      return res.status(400).json({ error: 'Choose a different schedule from the current booking.' });
+    }
+    const pendingRequests = await BookingChangeRequest.findAll({
+      where: { bookingId: String(booking.id), bookingType, status: 'pending' },
+    });
+    if (pendingRequests.some((request) => String(request.customerId) === String(customer.id))) {
+      return res.status(409).json({ error: 'You already have a reschedule request awaiting staff review.' });
+    }
+
+    const petNames = Array.isArray(booking.petNames) ? booking.petNames
+      : (booking.petServices || booking.petRooms || []).map((item) => item.petName).filter(Boolean);
+    const request = await BookingChangeRequest.create({
+      bookingId: String(booking.id),
+      bookingType,
+      customerId: String(customer.id),
+      customerName: customer.name || booking.customerDetails?.name || 'Customer',
+      petNames,
+      currentSchedule: previousSchedule,
+      requestedSchedule,
+      currentAmount: Number(bookingType === 'hotel' ? booking.totalPrice : booking.price) || 0,
+      paymentStatus: booking.paymentStatus || 'unpaid',
+      paymentMethod: booking.paymentMethod || 'cash',
+      status: 'pending',
+      createdAt: new Date(),
+    });
+    let notificationSent = true;
+    try {
+      await StaffNotification.create({
+        type: 'booking_reschedule_request',
+        requestId: String(request.id),
+        bookingType,
+        bookingId: String(booking.id),
+        customerName: customer.name || booking.customerDetails?.name || 'Customer',
+        petNames,
+        previousSchedule: bookingType === 'hotel'
+          ? `${previousSchedule.checkIn} ${previousSchedule.checkInTime} – ${previousSchedule.checkOut} ${previousSchedule.checkOutTime}`.trim()
+          : `${previousSchedule.date} ${previousSchedule.time}`.trim(),
+        schedule: bookingType === 'hotel'
+          ? `${requestedSchedule.checkIn} ${requestedSchedule.checkInTime} – ${requestedSchedule.checkOut} ${requestedSchedule.checkOutTime}`.trim()
+          : `${requestedSchedule.date} ${requestedSchedule.time} · Pickup ${requestedSchedule.pickupTime}`.trim(),
+        status: 'pending',
+        read: false,
+      });
+    } catch (error) {
+      notificationSent = false;
+      console.error(`Unable to create staff notification for reschedule request ${request.id}:`, error);
+    }
+    return res.status(201).json({ success: true, requestId: request.id, status: 'pending', notificationSent });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const listCustomerRescheduleRequests = async (req, res, next) => {
+  try {
+    const customer = await getSignedInCustomer(req);
+    if (!customer) return res.status(401).json({ error: 'Sign in to view your reschedule requests.' });
+    const requests = await BookingChangeRequest.findAll({
+      where: { customerId: String(customer.id) },
+      order: [['createdAt', 'DESC']],
+      limit: 100,
+    });
+    return res.json(requests);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const listPendingRescheduleRequests = async (req, res, next) => {
+  try {
+    const requests = await BookingChangeRequest.findAll({
+      where: { status: 'pending' },
+      order: [['createdAt', 'DESC']],
+      limit: 100,
+    });
+    return res.json(requests);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const decideCustomerRescheduleRequest = async (req, res, next) => {
+  try {
+    const request = await BookingChangeRequest.findByPk(req.params.id);
+    if (!request) return res.status(404).json({ error: 'Reschedule request not found.' });
+    if (request.status !== 'pending') return res.status(409).json({ error: 'This reschedule request has already been reviewed.' });
+    const decision = String(req.body?.decision || '').toLowerCase();
+    if (!['approved', 'declined'].includes(decision)) {
+      return res.status(400).json({ error: 'Choose approve or decline.' });
+    }
+    if (decision === 'approved') {
+      const Model = request.bookingType === 'hotel' ? HotelReservation : GroomingAppointment;
+      const booking = await Model.findByPk(request.bookingId);
+      if (!booking) return res.status(404).json({ error: 'The booking for this request no longer exists.' });
+      const currentSchedule = bookingSchedule(booking, request.bookingType);
+      const fields = Object.keys(currentSchedule);
+      if (!fields.every((field) => String(currentSchedule[field] || '') === String(request.requestedSchedule?.[field] || ''))) {
+        return res.status(409).json({ error: 'Apply the requested schedule to the booking before approving this request.' });
+      }
+    }
+    await request.update({ status: decision, reviewedAt: new Date() });
+    const notifications = await StaffNotification.findAll({ where: { requestId: String(request.id) } });
+    await Promise.all(notifications.map((notification) => notification.update({ read: true, status: decision })));
+    return res.json({ success: true, requestId: request.id, status: decision });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const cancelCustomerBooking = async (req, res, next) => {
   try {
     const bookingType = req.params.bookingType;
@@ -1001,7 +1216,12 @@ const cancelCustomerBooking = async (req, res, next) => {
     const context = await customerBookingContext(req, res, bookingType);
     if (!context) return;
     const { customer, booking } = context;
-    if (!ensureCustomerCanChangeBooking(booking, bookingType, res)) return;
+    if (!ensureCustomerCanCancelBooking(booking, bookingType, res)) return;
+
+    if (booking.paymentMethod === 'qrph' && booking.paymentStatus === 'pending') {
+      req.body = { bookingType, bookingId: booking.id };
+      return cancelPayment(req, res, next);
+    }
 
     const lockIds = bookingType === 'hotel'
       ? hotelReservationLockIds(booking)
@@ -1022,7 +1242,8 @@ const cancelCustomerBooking = async (req, res, next) => {
       customer,
       pets: pets.length ? pets : fallbackPetNames.map((name) => ({ name })),
     });
-    return res.json({ success: true, bookingId: booking.id, status: 'cancelled', notificationSent });
+    const refund = await requestGcashBookingRefund(booking);
+    return res.json({ success: true, bookingId: booking.id, status: 'cancelled', notificationSent, refund });
   } catch (error) {
     next(error);
   }
@@ -1172,6 +1393,10 @@ module.exports = {
   verifyPayment,
   cancelPayment,
   updateCustomerBooking,
+  requestCustomerBookingReschedule,
+  listCustomerRescheduleRequests,
+  listPendingRescheduleRequests,
+  decideCustomerRescheduleRequest,
   cancelCustomerBooking,
   getGroomingAvailability,
   getHotelAvailability,

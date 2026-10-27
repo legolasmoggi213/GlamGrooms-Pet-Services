@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hotel Reservations — Glam Grooms Admin</title>
-  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
+  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
 </head>
 <body>
   <div class="admin-layout">
@@ -71,7 +71,7 @@
             ${['reserved', 'confirmed'].includes(r.status) ? `<button class="btn btn-outline btn-sm" onclick='setResStatus(${escapeHtml(JSON.stringify(r.id))}, "checked-in", this)'>Check In</button>` : ''}
             ${r.status === 'checked-in' ? `<button class="btn btn-success btn-sm" onclick='setResStatus(${escapeHtml(JSON.stringify(r.id))}, "checked-out", this)'>Check Out</button>` : ''}
             <button class="btn btn-outline btn-sm" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})'>View</button>
-            ${r.status !== 'cancelled' && r.status !== 'checked-in' && r.status !== 'checked-out' ? `<button class="btn btn-danger btn-sm" onclick='rejectRes(${escapeHtml(JSON.stringify(r.id))}, ${escapeHtml(JSON.stringify(r.status))})'>${r.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
+            ${r.status !== 'cancelled' && r.status !== 'checked-in' && r.status !== 'checked-out' ? `<button class="btn btn-danger btn-sm" onclick='rejectRes(${escapeHtml(JSON.stringify(r.id))}, ${escapeHtml(JSON.stringify(r.status))}, this)'>${r.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
             ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeRes(${escapeHtml(JSON.stringify(r.id))})'>Delete</button>` : ''}
             </div>
           </td>
@@ -167,14 +167,33 @@
         }
       });
 
-    window.rejectRes = async (id, status) => {
+    window.rejectRes = async (id, status, button) => {
       const action = status === 'pending' ? 'Reject this reservation?' : 'Cancel this reservation?';
       if (!window.confirm(action)) return;
+      const key = String(id);
+      if (bookingActionsInProgress.has(key)) return;
+      bookingActionsInProgress.add(key);
+      const label = button ? button.textContent : '';
+      if (button) {
+        button.disabled = true;
+        button.textContent = status === 'pending' ? 'Rejecting...' : 'Cancelling...';
+      }
       try {
-        await apiPut(`/hotel/${id}`, { status: 'cancelled' });
+        const result = await apiPut(`/hotel/${id}`, { status: 'cancelled' });
+        if (result.refund?.status === 'failed') {
+          alert('The reservation was cancelled, but PayMongo could not start the refund. Contact the customer to arrange it.');
+        } else if (result.refund) {
+          alert('The reservation was cancelled and the refund request was sent to PayMongo.');
+        }
         await loadReservations();
       } catch (error) {
         alert(error.message);
+      } finally {
+        bookingActionsInProgress.delete(key);
+        if (button?.isConnected) {
+          button.disabled = false;
+          button.textContent = label;
+        }
       }
     };
 

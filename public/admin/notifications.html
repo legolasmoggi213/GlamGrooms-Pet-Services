@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Booking Notifications — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=admin-modern-20261027" />
+  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
 </head>
 <body>
   <div class="admin-layout">
@@ -32,9 +32,9 @@
       list.innerHTML = notifications.length ? `<ul class="transaction-list">${notifications.map((notice) => `
         <li>
           <div>
-            <strong>${notice.read ? '' : 'New · '}${notice.type === 'booking_cancelled' ? 'Booking canceled' : notice.type === 'booking_rescheduled' ? 'Booking rescheduled' : 'New booking'} · ${escape(notice.bookingType)} #${escape(notice.bookingId)}</strong>
+            <strong>${notice.read ? '' : 'New · '}${notice.type === 'booking_cancelled' ? 'Booking canceled' : notice.type === 'booking_rescheduled' ? 'Booking rescheduled' : notice.type === 'booking_reschedule_request' ? 'Reschedule request' : 'New booking'} · ${escape(notice.bookingType)} #${escape(notice.bookingId)}</strong>
             <div class="transaction-meta">${escape(notice.customerName)} · ${escape(notice.petNames.join(', ') || 'No pet listed')} · ${escape(notice.schedule)}</div>
-            <div class="transaction-meta">${notice.type === 'booking_cancelled' ? 'Customer canceled this booking' : notice.type === 'booking_rescheduled' ? `Previous schedule: ${escape(notice.previousSchedule)}` : `Status: ${escape(notice.status)}`} · ${escape(fmtDateTime(notice.createdAt))}</div>
+            <div class="transaction-meta">${notice.type === 'booking_cancelled' ? 'Customer canceled this booking' : ['booking_rescheduled', 'booking_reschedule_request'].includes(notice.type) ? `Previous schedule: ${escape(notice.previousSchedule)}` : `Status: ${escape(notice.status)}`} · ${escape(fmtDateTime(notice.createdAt))}</div>
           </div>
           ${notice.read ? '' : `<button class="btn btn-outline btn-sm" data-mark-read="${escape(notice.id)}">Mark read</button>`}
         </li>`).join('')}</ul>` : '<div class="empty">No booking notifications yet.</div>';

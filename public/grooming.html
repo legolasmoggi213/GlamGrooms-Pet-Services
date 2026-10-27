@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Book Grooming — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -136,7 +136,7 @@
           </div>
           <div class="field">
             <label for="pickupTime">Pickup Time *</label>
-            <input id="pickupTime" name="pickupTime" type="time" step="3600" required disabled />
+            <input id="pickupTime" name="pickupTime" type="time" step="60" required disabled />
           </div>
           <div class="field full">
             <label for="notes">Special Requests (Optional)</label>
@@ -163,7 +163,7 @@
 
   <script src="/js/mobile-number.js"></script>
   <script src="/js/api.js?v=2"></script>
-  <script src="/js/grooming.js?v=8"></script>
+  <script src="/js/grooming.js?v=9"></script>
 <script>
     // Show "My Account" if the customer is logged in, otherwise "Login".
     // Verified against the server via the httpOnly token — no stale cookie issues.

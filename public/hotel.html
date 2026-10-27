@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pet Hotel Reservation — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -79,7 +79,7 @@
         <div class="form-grid stay-details-grid">
           <div class="field">
             <label for="checkInTime">Check-in time *</label>
-            <select id="checkInTime" name="checkInTime" required></select>
+            <input id="checkInTime" name="checkInTime" type="time" step="60" value="14:00" min="09:00" max="16:59" required />
           </div>
           <div class="field">
             <label for="checkOut">Check-out *</label>
@@ -87,7 +87,7 @@
           </div>
           <div class="field">
             <label for="checkOutTime">Check-out time *</label>
-            <select id="checkOutTime" name="checkOutTime" required></select>
+            <input id="checkOutTime" name="checkOutTime" type="time" step="60" value="12:00" min="09:00" max="16:59" required />
           </div>
           <div class="field full">
             <label for="notes">Special Care Instructions (Optional)</label>
@@ -115,7 +115,7 @@
 
   <script src="/js/mobile-number.js"></script>
   <script src="/js/api.js?v=2"></script>
-  <script src="/js/hotel.js?v=16"></script>
+  <script src="/js/hotel.js?v=17"></script>
 <script>
     // Show "My Account" if the customer is logged in, otherwise "Login".
     // Verified against the server via the httpOnly token — no stale cookie issues.

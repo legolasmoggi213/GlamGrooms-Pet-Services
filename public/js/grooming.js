@@ -373,7 +373,7 @@
     }
     pickupTimeInput.min = selectedSlot.pickupEarliest;
     pickupTimeInput.max = '17:00';
-    pickupTimeInput.step = '3600';
+    pickupTimeInput.step = '60';
   };
 
   const loadAvailability = async () => {

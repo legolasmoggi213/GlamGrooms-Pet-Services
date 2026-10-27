@@ -48,8 +48,7 @@ const validateTime = (date, time) => {
   if (!date || !time) return { ok: false, error: 'Date and time are required.' };
   if (!isValidDateKey(date)) return { ok: false, error: 'A valid date is required.' };
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(time))) return { ok: false, error: 'Invalid time format.' };
-  const [h, m] = String(time).split(':').map(Number);
-  if (m !== 0) return { ok: false, error: 'Times must be on the hour (e.g. 09:00, 14:00).' };
+  const [h] = String(time).split(':').map(Number);
   const open = openHourFor(date);
   if (h < open || h >= CLOSE_HOUR) {
     return { ok: false, error: `Business hours are ${fmtHour(open)}–${fmtHour(CLOSE_HOUR)} on ${dayName(new Date(`${date}T00:00:00.000Z`).getUTCDay())}.` };
@@ -62,9 +61,8 @@ const validatePickupTime = (date, time) => {
   if (!isValidDateKey(date)) return { ok: false, error: 'A valid date is required.' };
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(time))) return { ok: false, error: 'Invalid pickup time format.' };
   const [h, m] = String(time).split(':').map(Number);
-  if (m !== 0) return { ok: false, error: 'Pickup times must be on the hour.' };
   const open = openHourFor(date);
-  if (h < open || h > CLOSE_HOUR) {
+  if (h < open || h > CLOSE_HOUR || (h === CLOSE_HOUR && m > 0)) {
     return { ok: false, error: `Pickup must be between ${fmtHour(open)} and ${fmtHour(CLOSE_HOUR)}.` };
   }
   return { ok: true };

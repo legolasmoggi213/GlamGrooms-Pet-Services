@@ -1,5 +1,6 @@
 const { GroomingAppointment, Customer, Pet } = require('../models');
 const { sendReservationTicket, sendBookingCancellation } = require('../util/mailer');
+const { requestGcashBookingRefund } = require('../util/paymentRefund');
 const {
   groomingLockIds,
   claimBookingSlots,
@@ -293,7 +294,10 @@ const updateAppointment = async (req, res, next) => {
         console.error(`Unable to send cancellation notice for grooming appointment ${appointment.id}:`, notificationError);
       }
     }
-    res.json({ success: true });
+    const refund = updates.status === 'cancelled' && !wasAlreadyCancelled
+      ? await requestGcashBookingRefund(appointment)
+      : null;
+    res.json({ success: true, refund });
   } catch (error) {
     next(error);
   }

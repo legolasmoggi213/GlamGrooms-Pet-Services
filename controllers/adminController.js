@@ -3,7 +3,6 @@ const { firestore } = require('../config/firebase');
 const { createQrPhCheckout, getPayMongoKey } = require('../util/paymongo');
 const { isValidMobileNumber } = require('../util/mobileNumber');
 const { isDigitsOnly, isDecimalNumber, isOptionalPhoneNumber } = require('../util/numericValidation');
-const { forecastTrend } = require('../util/trendForecast');
 const { SERVICE_PRICES } = require('./groomingController');
 const { ROOM_PRICES } = require('./hotelController');
 
@@ -82,7 +81,6 @@ const aggregateRevenue = (records, amountField, period, buckets) => {
   }
   return buckets.map(({ key, label }) => ({ label, ...values.get(key) }));
 };
-const dataPoints = (buckets, field) => buckets.map((bucket) => Number(bucket[field]) || 0);
 const isPaidWalkInTransaction = (transaction) => transaction.paymentStatus
   ? transaction.paymentStatus === 'paid'
   : transaction.paymentMethod !== 'qrph';
@@ -437,10 +435,6 @@ const getRevenueAnalytics = async (req, res, next) => {
     );
     const groomingRevenue = groomingBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
     const hotelRevenue = hotelBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
-    const periodLabels = { daily: 'tomorrow', weekly: 'next week', monthly: 'next month' };
-    const groomingForecast = forecastTrend(dataPoints(groomingBuckets, 'revenue'), { period });
-    const hotelForecast = forecastTrend(dataPoints(hotelBuckets, 'revenue'), { period });
-
     res.json({
       period,
       grooming: groomingBuckets,
@@ -451,14 +445,6 @@ const getRevenueAnalytics = async (req, res, next) => {
         grooming: groomingRevenue,
         hotel: hotelRevenue,
         combined: groomingRevenue + hotelRevenue,
-      },
-      forecast: {
-        periodLabel: periodLabels[period],
-        method: 'Weighted recent-trend estimate using the selected reporting window and visible demand pattern; not a guarantee.',
-        groomingRevenue: groomingForecast,
-        hotelRevenue: hotelForecast,
-        groomingBookings: forecastTrend(dataPoints(groomingBuckets, 'count'), { period }),
-        hotelBookings: forecastTrend(dataPoints(hotelBuckets, 'count'), { period }),
       },
     });
   } catch (error) {

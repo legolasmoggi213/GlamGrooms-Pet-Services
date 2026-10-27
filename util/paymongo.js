@@ -57,8 +57,48 @@ const createQrPhCheckout = async ({ amount, description, metadata, successUrl, c
 const getCheckoutSession = (sessionId) => paymongoRequest(`/checkout_sessions/${encodeURIComponent(sessionId)}`);
 const expireCheckoutSession = (sessionId) => paymongoRequest(`/checkout_sessions/${encodeURIComponent(sessionId)}/expire`, { method: 'POST' });
 
+const refundCheckoutSession = async (sessionId, fallbackAmount) => {
+  const checkout = await getCheckoutSession(sessionId);
+  const attributes = checkout.data?.attributes || {};
+  const payment = (attributes.payments || []).find((item) => {
+    const status = item?.attributes?.status;
+    return status === 'paid' || status === 'succeeded';
+  });
+  const paymentId = payment?.id || attributes.payment_intent?.id;
+  const paymentAttributes = payment?.attributes || attributes.payment_intent?.attributes || {};
+  const amount = Number(paymentAttributes.amount) || Math.round(Number(fallbackAmount) * 100);
+  if (!paymentId || !Number.isInteger(amount) || amount < 100) {
+    throw new Error('PayMongo could not identify a refundable payment for this booking.');
+  }
+
+  const result = await paymongoRequest('/refunds', {
+    method: 'POST',
+    body: JSON.stringify({
+      data: {
+        attributes: {
+          amount,
+          payment_id: paymentId,
+          reason: 'requested_by_customer',
+          notes: `Booking cancellation for checkout ${sessionId}`,
+        },
+      },
+    }),
+  });
+  return {
+    id: result.data?.id || null,
+    status: result.data?.attributes?.status || 'pending',
+  };
+};
+
 const isCheckoutSessionPaid = (attributes = {}) => attributes.payment_status === 'paid'
   || (Array.isArray(attributes.payments) && attributes.payments.some((payment) => payment?.attributes?.status === 'paid'))
   || attributes.payment_intent?.attributes?.status === 'succeeded';
 
-module.exports = { createQrPhCheckout, getCheckoutSession, expireCheckoutSession, getPayMongoKey, isCheckoutSessionPaid };
+module.exports = {
+  createQrPhCheckout,
+  getCheckoutSession,
+  expireCheckoutSession,
+  refundCheckoutSession,
+  getPayMongoKey,
+  isCheckoutSessionPaid,
+};

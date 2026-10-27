@@ -83,21 +83,15 @@ const ROOM_PRICES = {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 
-  const populateTimeOptions = (select, date, selectedValue) => {
+  const setTimeBounds = (input, date, fallback) => {
     const day = date ? new Date(`${date}T00:00:00.000Z`).getUTCDay() : -1;
     const openHour = day === 0 ? 6 : 9;
-    const closeHour = 18;
-    const previous = select.value;
-    const options = Array.from({ length: closeHour - openHour }, (_, index) => {
-      const hour = openHour + index;
-      const value = `${String(hour).padStart(2, '0')}:00`;
-      const labelHour = hour % 12 || 12;
-      const period = hour >= 12 ? 'PM' : 'AM';
-      return new Option(`${labelHour}:00 ${period}`, value);
-    });
-    select.replaceChildren(...options);
-    const preferred = [previous, selectedValue].find((value) => options.some((option) => option.value === value));
-    if (preferred) select.value = preferred;
+    input.min = `${String(openHour).padStart(2, '0')}:00`;
+    input.max = '16:59';
+    input.step = '60';
+    if (!input.value || input.value < input.min || input.value > input.max) {
+      input.value = fallback < input.min ? input.min : fallback;
+    }
   };
 
   const renderOrderSummary = () => {
@@ -192,8 +186,8 @@ const ROOM_PRICES = {
     }
   };
   const updateDateTimes = () => {
-    populateTimeOptions(checkInTime, checkInInput.value, '14:00');
-    populateTimeOptions(checkOutTime, checkOutInput.value, '12:00');
+    setTimeBounds(checkInTime, checkInInput.value, '14:00');
+    setTimeBounds(checkOutTime, checkOutInput.value, '12:00');
   };
   applyCheckInDates();
   updateDateTimes();
@@ -476,7 +470,14 @@ const checkAvailability = async () => {
     checkAvailability();
     renderOrderSummary();
   });
-  checkInInput.addEventListener('change', () => { selectedHotelSlots.clear(); updatePrice(); checkAvailability(); renderOrderSummary(); });
+  checkInInput.addEventListener('change', () => {
+    selectedHotelSlots.clear();
+    applyCheckInDates();
+    updateDateTimes();
+    updatePrice();
+    checkAvailability();
+    renderOrderSummary();
+  });
   checkOutInput.addEventListener('change', () => {
     if (checkInInput.value && checkOutInput.value && checkOutInput.value < checkOutInput.min) applyCheckInDates();
     updateDateTimes();
@@ -484,12 +485,10 @@ const checkAvailability = async () => {
     checkAvailability();
     renderOrderSummary();
   });
-  checkInInput.addEventListener('change', applyCheckInDates);
   form.addEventListener('input', renderOrderSummary);
   form.addEventListener('change', renderOrderSummary);
   petCount.addEventListener('change', () => { selectedHotelSlots.clear(); renderPetFields(); updatePrice(); checkAvailability(); renderOrderSummary(); });
-  populateTimeOptions(checkInTime, '14:00');
-  populateTimeOptions(checkOutTime, '12:00');
+  updateDateTimes();
   renderPetFields();
   updatePrice();
   checkAvailability();

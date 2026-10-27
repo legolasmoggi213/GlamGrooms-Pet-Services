@@ -109,8 +109,18 @@ router.use('/grooming', staffOrAdmin);
 router.use('/hotel', staffOrAdmin);
 router.use('/inventory', staffOrAdmin);
 router.use('/notifications', staffOrAdmin);
+const staffReadableAdminPaths = new Set([
+  '/activity',
+  '/occupancy',
+  '/reports',
+  '/revenue-analytics',
+  '/revenue-by-service',
+  '/services',
+  '/stats',
+]);
+
 router.use('/admin', (req, res, next) => {
-	if (req.path === '/reports') return staffOrAdmin(req, res, next);
+  if (req.method === 'GET' && staffReadableAdminPaths.has(req.path)) return staffOrAdmin(req, res, next);
 	return adminOnly(req, res, next);
 });
 

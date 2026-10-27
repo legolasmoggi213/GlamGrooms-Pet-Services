@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=reports-pdf-20261027" />
+  <link rel="stylesheet" href="/css/style.css?v=admin-revenue-forecast-20261028" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -72,31 +72,16 @@
         </div>
       </section>
 
-      <section class="panel" id="booking-report" aria-label="Booking report">
-        <div class="analytics-heading">
-          <div>
-            <h3>Booking Report</h3>
-            <p class="text-muted">Filter grooming appointments and hotel reservations by date.</p>
-          </div>
-          <div class="analytics-actions">
-            <label class="field"><span>From</span><input id="report-start" type="date" /></label>
-            <label class="field"><span>To</span><input id="report-end" type="date" /></label>
-            <button type="button" class="btn btn-primary" id="generate-booking-report">Generate Report</button>
-            <button type="button" class="btn btn-outline" id="export-booking-report" disabled>Export PDF</button>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Date</th><th>Type</th><th>Customer</th><th>Service / Room</th><th>Status</th><th>Amount</th></tr></thead>
-            <tbody id="booking-report-rows"><tr><td colspan="6" class="empty">Choose a date range or generate a report for all bookings.</td></tr></tbody>
-          </table>
-        </div>
-      </section>
-
       <section class="panel" aria-label="Revenue forecast">
-        <h3>Revenue Forecast</h3>
-        <p class="text-muted">A linear estimate based on the periods selected above; actual results may vary.</p>
-        <div id="revenue-forecast" aria-live="polite">Loading forecast…</div>
+        <div class="forecast-heading">
+          <div>
+            <h3>Revenue Forecast</h3>
+            <p class="text-muted">Projected revenue and booking volume based on the selected reporting period.</p>
+          </div>
+          <span id="forecast-period-label" class="forecast-period-label">Next month</span>
+        </div>
+        <div id="revenue-forecast" class="forecast-grid" aria-live="polite">Loading forecast…</div>
+        <p id="forecast-method" class="forecast-method"></p>
       </section>
 
       <section class="panel" aria-label="Operational reports">
@@ -120,17 +105,12 @@
   </div>
 
   <script src="/js/api.js?v=php-currency-20261027"></script>
-  <script src="/js/admin.js"></script>
+  <script src="/js/admin.js?v=staff-dashboard-access-20261028"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script>
     const initDashboard = () => {
       renderSidebar('Dashboard');
-      let bookingReportRows = [];
       let revenueAnalyticsData = null;
-
-      const reportDateRange = (start, end) => start || end
-        ? `${start ? fmtDate(start) : 'All dates'} – ${end ? fmtDate(end) : 'Present'}`
-        : 'All recorded dates';
 
       const addPdfPageHeading = (pdf, title, subtitle) => {
         const pageWidth = pdf.internal.pageSize.getWidth();
@@ -228,15 +208,6 @@
         }
       };
 
-      const readableServiceName = (value) => String(value || 'Service')
-        .replace(/^grooming-/, '')
-        .replace(/^ayurveda-herb-/, 'Ayurveda Herb ')
-        .replace(/^ayurveda-pkg-/, 'Ayurveda Package ')
-        .replace(/^staycation-/, 'Staycation ')
-        .replace(/-/g, ' ')
-        .replace(/\b\w/g, (letter) => letter.toUpperCase())
-        .replace(/\bXl\b/g, 'XL');
-
       const statCard = (label, value, color, href) => `
         <a class="stat-card stat-card-link" href="${href}" aria-label="View ${escapeHtml(label)}">
           <div class="label">${label}</div>
@@ -258,111 +229,6 @@
           statCard('Product Sales', fmtMoney(s.productSalesRevenue), 'green', '/admin/pos.html') +
           statCard('Walk-in Cash Sales', fmtMoney(s.overTheCounterRevenue), 'green', '/admin/pos.html') +
           statCard('Total Revenue', fmtMoney(s.totalRevenue), 'purple', '#revenue');
-      }
-
-      async function generateBookingReport() {
-        const startDate = document.getElementById('report-start').value;
-        const endDate = document.getElementById('report-end').value;
-        if (startDate && endDate && startDate > endDate) {
-          throw new Error('The start date must be on or before the end date.');
-        }
-
-        const [grooming, hotel] = await Promise.all([
-          apiGet('/grooming'),
-          apiGet('/hotel'),
-        ]);
-        bookingReportRows = [
-          ...grooming.map((booking) => ({
-            date: booking.date,
-            type: 'Grooming',
-            customer: booking.Customer?.name || booking.customerDetails?.name || 'Customer',
-            pets: (booking.petNames || []).join(', ') || booking.Pet?.name || 'Pet not listed',
-            service: (booking.petServices || []).map((service) =>
-              `${service.petName || 'Pet'}: ${readableServiceName(service.service)} (${fmtMoney(service.price)})`).join('; ')
-              || readableServiceName(booking.service || 'Grooming'),
-            schedule: `${booking.time || 'Time not set'}${booking.pickupTime ? ` · Pickup ${booking.pickupTime}` : ''}`,
-            status: booking.status || 'unknown',
-            payment: `${booking.paymentMethod === 'qrph' ? 'GCash' : 'Cash'} · ${booking.paymentStatus || 'unpaid'}`,
-            amount: Number(booking.price || 0),
-          })),
-          ...hotel.map((booking) => {
-            const assignedSlots = booking.hotelSlotAssignments?.[booking.checkIn]
-              || Object.values(booking.hotelSlotAssignments || {}).find(Array.isArray)
-              || booking.hotelSlotNumbers
-              || [];
-            return {
-            date: booking.checkIn,
-            type: 'Hotel',
-            customer: booking.Customer?.name || booking.customerDetails?.name || 'Customer',
-            pets: (booking.petNames || []).join(', ') || booking.Pet?.name || 'Pet not listed',
-            service: (booking.petRooms || []).map((room, index) =>
-              `${room.petName || 'Pet'}: ${readableServiceName(room.roomType || booking.roomType)}${assignedSlots[index] ? ` · Slot ${assignedSlots[index]}` : ''}${room.pricePerNight ? ` (${fmtMoney(room.pricePerNight)}/night)` : ''}`).join('; ')
-              || readableServiceName(booking.roomType || 'Hotel stay'),
-            schedule: `${booking.checkInTime || 'Time not set'} check-in · ${fmtDate(booking.checkOut)} ${booking.checkOutTime || ''}`.trim(),
-            status: booking.status || 'unknown',
-            payment: `${booking.paymentMethod === 'qrph' ? 'GCash' : 'Cash'} · ${booking.paymentStatus || 'unpaid'}`,
-            amount: Number(booking.totalPrice || 0),
-            };
-          }),
-        ]
-          .filter((booking) => (!startDate || booking.date >= startDate) && (!endDate || booking.date <= endDate))
-          .sort((left, right) => String(right.date).localeCompare(String(left.date)));
-
-        const rows = document.getElementById('booking-report-rows');
-        rows.innerHTML = bookingReportRows.length
-          ? bookingReportRows.map((booking) => `
-            <tr>
-              <td>${fmtDate(booking.date)}</td>
-              <td>${escapeHtml(booking.type)}</td>
-              <td>${escapeHtml(booking.customer)}</td>
-              <td>${escapeHtml(booking.service)}</td>
-              <td>${statusBadge(booking.status)}</td>
-              <td>${fmtMoney(booking.amount)}</td>
-            </tr>`).join('')
-          : '<tr><td colspan="6" class="empty">No bookings found for this date range.</td></tr>';
-        document.getElementById('export-booking-report').disabled = bookingReportRows.length === 0;
-      }
-
-      function exportBookingReportPdf() {
-        if (!bookingReportRows.length) return;
-        if (!window.jspdf) {
-          alert('PDF export is unavailable right now. Please refresh and try again.');
-          return;
-        }
-
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF('l', 'mm', 'a4');
-        const startDate = document.getElementById('report-start').value;
-        const endDate = document.getElementById('report-end').value;
-        const range = reportDateRange(startDate, endDate);
-        let y = addPdfPageHeading(pdf, 'Booking Report', `Booking schedule and service details  •  ${range}`);
-        const groomingCount = bookingReportRows.filter((booking) => booking.type === 'Grooming').length;
-        const hotelCount = bookingReportRows.length - groomingCount;
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(9);
-        pdf.setTextColor(37, 50, 56);
-        pdf.text(`Bookings: ${bookingReportRows.length}     Grooming: ${groomingCount}     Hotel: ${hotelCount}     Booking value: ${fmtMoney(bookingReportRows.reduce((sum, booking) => sum + booking.amount, 0))}`, 12, y);
-        y += 8;
-        drawPdfTable(pdf, {
-          headers: ['Date', 'Type', 'Customer', 'Pet(s)', 'Service / room details', 'Schedule', 'Status / payment', 'Amount'],
-          rows: bookingReportRows.map((booking) => [
-            fmtDate(booking.date),
-            booking.type,
-            booking.customer,
-            booking.pets,
-            booking.service,
-            booking.schedule,
-            `${booking.status} · ${booking.payment}`,
-            fmtMoney(booking.amount),
-          ]),
-          widths: [22, 19, 33, 30, 69, 39, 39, 22],
-          y,
-          title: 'Booking details',
-          subtitle: 'Grooming service assignments include each pet, service, and price. Hotel entries include each pet’s room and stay schedule.',
-          fontSize: 7,
-        });
-        addPdfPageNumbers(pdf);
-        pdf.save('booking-report.pdf');
       }
 
       async function loadOccupancy() {
@@ -641,23 +507,51 @@
         document.getElementById('grooming-service-chart').innerHTML = renderServiceChart(data.groomingServices);
         document.getElementById('hotel-service-chart').innerHTML = renderServiceChart(data.hotelServices);
         const forecast = data.forecast;
-        const forecastValue = (metric, format) => metric.available
-          ? format(metric.predicted)
-          : 'Insufficient historical data';
-        const bookingForecast = (metric) => metric.available
-          ? `${metric.predicted.toFixed(0)} bookings`
-          : 'Insufficient historical data';
-        const forecastSummary = (metric, label) => {
-          if (!metric.available) return `${label}: Insufficient historical data for a forecast.`;
-          const directionText = metric.direction === 'up' ? 'rising' : metric.direction === 'down' ? 'falling' : 'steady';
-          return `${label}: ${fmtMoney(metric.predicted)} revenue (${directionText} ${Math.abs(metric.changePercent).toFixed(1)}% vs. recent history, ${metric.confidence} confidence). ${metric.summary}`;
+        document.getElementById('forecast-period-label').textContent = capitalize(forecast.periodLabel);
+        const renderForecastColumn = (label, kind, revenue, bookings) => {
+          const direction = revenue.direction || 'stable';
+          const directionLabel = direction === 'up' ? 'Rising' : direction === 'down' ? 'Falling' : 'Steady';
+          const noPriorBaseline = revenue.available
+            && Number(revenue.previousAverage) === 0
+            && Number(revenue.recentAverage) > 0;
+          const changeLabel = revenue.available
+            ? noPriorBaseline
+              ? 'No prior revenue baseline'
+              : `${directionLabel} ${Math.abs(Number(revenue.changePercent) || 0).toFixed(1)}% vs prior periods`
+            : 'Not enough history';
+          const summary = noPriorBaseline
+            ? 'Recent revenue is present, but prior periods have no baseline for a meaningful percentage comparison.'
+            : revenue.summary || 'More historical data is needed for a reliable estimate.';
+          const metrics = [
+            ['Recent average', revenue.available ? fmtMoney(revenue.recentAverage) : 'Unavailable'],
+            ['Previous average', revenue.available ? fmtMoney(revenue.previousAverage) : 'Unavailable'],
+            ['Expected bookings', bookings.available ? `${Math.round(bookings.predicted)} bookings` : 'Unavailable'],
+            ['Periods analyzed', `${Number(revenue.sampleCount) || 0} periods`],
+          ];
+          return `
+            <article class="forecast-column ${kind}">
+              <div class="forecast-column-heading">
+                <h4>${label}</h4>
+                <span class="forecast-confidence ${revenue.available ? `confidence-${revenue.confidence}` : 'confidence-unavailable'}">${revenue.available ? `${capitalize(revenue.confidence)} confidence` : 'Limited data'}</span>
+              </div>
+              <div class="forecast-projection">
+                <div>
+                  <span class="forecast-metric-caption">Projected revenue</span>
+                  <strong>${revenue.available ? fmtMoney(revenue.predicted) : 'Unavailable'}</strong>
+                </div>
+                <span class="forecast-change ${revenue.available ? `trend-${direction}` : 'trend-unavailable'}">${escapeHtml(changeLabel)}</span>
+              </div>
+              <dl class="forecast-metrics">
+                ${metrics.map(([metricLabel, value]) => `<div><dt>${metricLabel}</dt><dd>${escapeHtml(String(value))}</dd></div>`).join('')}
+              </dl>
+              <p class="forecast-summary">${escapeHtml(summary)}</p>
+            </article>`;
         };
-        document.getElementById('revenue-forecast').innerHTML = `
-          <p><strong>${escapeHtml(forecast.periodLabel)}:</strong>
-            ${escapeHtml(forecastSummary(forecast.groomingRevenue, 'Grooming'))}
-            ${escapeHtml(forecastSummary(forecast.hotelRevenue, 'Hotel'))}</p>
-          <p class="text-muted">Bookings forecast: ${escapeHtml(bookingForecast(forecast.groomingBookings))} and ${escapeHtml(bookingForecast(forecast.hotelBookings))}.</p>
-          <p class="text-muted">${escapeHtml(forecast.method)}</p>`;
+        document.getElementById('revenue-forecast').innerHTML = [
+          renderForecastColumn('Grooming', 'grooming-forecast', forecast.groomingRevenue, forecast.groomingBookings),
+          renderForecastColumn('Pet Hotel', 'hotel-forecast', forecast.hotelRevenue, forecast.hotelBookings),
+        ].join('');
+        document.getElementById('forecast-method').textContent = forecast.method;
       }
 
       async function loadServiceCatalog() {
@@ -763,10 +657,6 @@
         runDashboardLoader(loadRevenue, 'revenue');
       });
       document.getElementById('export-revenue-pdf')?.addEventListener('click', exportRevenuePdf);
-      document.getElementById('generate-booking-report')?.addEventListener('click', () => {
-        generateBookingReport().catch((error) => alert(error.message));
-      });
-      document.getElementById('export-booking-report')?.addEventListener('click', exportBookingReportPdf);
       runDashboardLoader(loadStats, 'stats');
       runDashboardLoader(loadOccupancy, 'occupancy');
       runDashboardLoader(loadActivity, 'activity');

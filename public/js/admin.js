@@ -13,7 +13,7 @@ const ADMIN_PAGES = [
 ];
 
 const STAFF_PAGES = [
-  { href: '/admin/staff-dashboard.html', label: 'Dashboard' },
+  { href: '/admin/index.html', label: 'Dashboard' },
   { href: '/admin/appointments.html', label: 'Appointments' },
   ...ADMIN_PAGES.filter((page) => ['Customers', 'Pets', 'Notifications', 'Reports'].includes(page.label)),
 ];
@@ -32,7 +32,7 @@ function renderSidebar(activeLabel) {
         return;
       }
       const pages = role === 'STAFF' ? STAFF_PAGES : ADMIN_PAGES;
-      const home = role === 'STAFF' ? '/admin/staff-dashboard.html' : '/admin/index.html';
+      const home = '/admin/index.html';
       const links = pages.map((page) =>
         `<a href="${page.href}" class="${page.label === activeLabel ? 'active' : ''}">${page.label === 'Notifications' ? 'Notifications <span class="admin-notification-count" data-notification-count hidden></span>' : page.label}</a>`
       ).join('');

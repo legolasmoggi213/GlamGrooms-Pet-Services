@@ -1496,6 +1496,33 @@ tr:hover td { background: #f5f1e5; }
 .revenue-periods button { border: 0; border-radius: 6px; padding: 0.55rem 0.8rem; background: transparent; color: var(--admin-muted); font: inherit; font-size: 0.88rem; font-weight: 700; cursor: pointer; }
 .revenue-periods button[aria-pressed="true"] { color: #263238; background: var(--primary); box-shadow: 0 2px 6px rgba(80, 64, 0, 0.14); }
 .revenue-combined { margin: 0.4rem 0 1.4rem; font-family: var(--font-display); font-size: 1.35rem; font-weight: 800; color: #8a6900; }
+.forecast-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-bottom: 1rem; }
+.forecast-heading h3 { margin-bottom: 0.25rem; }
+.forecast-heading .text-muted { margin: 0; }
+.forecast-period-label { flex: 0 0 auto; padding: 0.45rem 0.7rem; border: 1px solid var(--admin-border); border-radius: 6px; background: #f7f8f5; color: var(--admin-muted); font-size: 0.78rem; font-weight: 700; }
+.forecast-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.forecast-column { min-width: 0; padding: 0.9rem 1.35rem 0.7rem; border-top: 3px solid var(--gold-dark); }
+.forecast-column + .forecast-column { border-left: 1px solid var(--admin-border); }
+.forecast-column.hotel-forecast { border-top-color: #28766f; }
+.forecast-column-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; margin-bottom: 1rem; }
+.forecast-column-heading h4 { margin: 0; color: var(--admin-text); font-size: 1rem; }
+.forecast-confidence { flex: 0 0 auto; padding: 0.25rem 0.5rem; border-radius: 999px; background: #e7f4ec; color: #286341; font-size: 0.68rem; font-weight: 700; text-transform: capitalize; }
+.forecast-confidence.confidence-medium { background: #fff3d2; color: #806000; }
+.forecast-confidence.confidence-low,
+.forecast-confidence.confidence-unavailable { background: #f1f2f0; color: #66737a; }
+.forecast-projection { display: flex; align-items: flex-end; justify-content: space-between; gap: 0.75rem; margin-bottom: 1rem; }
+.forecast-metric-caption { display: block; margin-bottom: 0.25rem; color: var(--admin-muted); font-size: 0.76rem; font-weight: 700; }
+.forecast-projection strong { display: block; color: var(--admin-text); font-family: var(--font-display); font-size: 1.8rem; line-height: 1.2; }
+.forecast-change { max-width: 48%; padding: 0.35rem 0.55rem; border-radius: 6px; font-size: 0.72rem; font-weight: 700; line-height: 1.3; text-align: center; }
+.forecast-change.trend-up { background: #e7f4ec; color: #286341; }
+.forecast-change.trend-down { background: #fdebe8; color: #a53d32; }
+.forecast-change.trend-stable { background: #eef1f0; color: #536168; }
+.forecast-change.trend-unavailable { background: #f1f2f0; color: #66737a; }
+.forecast-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem 1rem; margin: 0; padding: 0.9rem 0 0.8rem; border-top: 1px solid var(--admin-border); }
+.forecast-metrics dt { margin-bottom: 0.2rem; color: var(--admin-muted); font-size: 0.72rem; }
+.forecast-metrics dd { margin: 0; color: var(--admin-text); font-size: 0.86rem; font-weight: 700; }
+.forecast-summary { margin: 0; color: var(--admin-muted); font-size: 0.76rem; line-height: 1.55; }
+.forecast-method { margin: 0.9rem 0 0; padding-top: 0.7rem; border-top: 1px solid var(--admin-border); color: var(--admin-muted); font-size: 0.74rem; line-height: 1.5; }
 .revenue-breakdown-title { margin: 1.6rem 0 0.8rem; font-size: 1rem; }
 .revenue-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem; }
 .revenue-chart-panel { min-width: 0; padding: 1rem; border: 1px solid var(--admin-border); border-radius: 8px; background: #fffefa; }
@@ -2737,6 +2764,11 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
   .reports-heading { align-items: flex-start; flex-direction: column; gap: 0.85rem; }
   .reports-filters { grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
   .reports-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .forecast-grid { grid-template-columns: minmax(0, 1fr); }
+  .forecast-column { padding: 0.9rem 0 1rem; }
+  .forecast-column + .forecast-column { margin-top: 0.5rem; padding-top: 1rem; border-left: 0; border-top: 1px solid var(--admin-border); }
 }
 @media print {
   body.receipt-page .receipt-actions { display: none; }

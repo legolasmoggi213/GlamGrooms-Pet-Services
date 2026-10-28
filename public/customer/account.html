@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Account — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
+  <link rel="stylesheet" href="/css/style.css?v=service-header-center-20261028" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -59,7 +59,7 @@
 
   <div class="customer-account-layout">
     <aside class="customer-account-sidebar">
-      <a class="customer-account-brand" href="/">Glam Grooms <span>Pet Spa &amp; Hotel</span></a>
+      <a class="customer-account-brand" href="/customer/account.html" aria-label="Customer dashboard"><img src="/favicon-48x48.png" alt="" width="48" height="48" /></a>
       <nav class="customer-account-nav" aria-label="Customer account">
         <a class="active" href="#dashboard" aria-current="page">Dashboard</a>
         <a href="#grooming-section">Grooming</a>
@@ -83,10 +83,10 @@
             <button id="customer-book-now" class="btn btn-primary" type="button">Book Now</button>
           </div>
           <div class="customer-summary-grid" aria-label="Account summary">
-            <div class="customer-summary-item"><span>Pets</span><strong id="summary-pets">—</strong></div>
-            <div class="customer-summary-item"><span>Grooming</span><strong id="summary-grooming">—</strong></div>
-            <div class="customer-summary-item"><span>Pet hotel</span><strong id="summary-hotel">—</strong></div>
-            <div class="customer-summary-item"><span>Transactions</span><strong id="summary-transactions">—</strong></div>
+            <a class="customer-summary-item" href="#pets-section"><span>Pets</span><strong id="summary-pets">—</strong></a>
+            <a class="customer-summary-item" href="#grooming-section"><span>Grooming</span><strong id="summary-grooming">—</strong></a>
+            <a class="customer-summary-item" href="#hotel-section"><span>Pet hotel</span><strong id="summary-hotel">—</strong></a>
+            <a class="customer-summary-item" href="#transactions-section"><span>Transactions</span><strong id="summary-transactions">—</strong></a>
           </div>
         </section>
 

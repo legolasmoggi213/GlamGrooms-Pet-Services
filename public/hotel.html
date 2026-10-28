@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pet Hotel Reservation — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
+  <link rel="stylesheet" href="/css/style.css?v=service-header-center-20261028" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -12,12 +12,10 @@
 </head>
 <body>
   <header class="navbar">
-    <a class="brand" href="/">Glam Grooms Pet Spa & Hotel</a>
-    <nav>
-      <a href="/">Home</a>
-      <a id="customer-nav-link" href="/customer/login.html">Login</a>
+    <a class="brand" href="/customer/account.html" aria-label="Glam Grooms customer dashboard"><img src="/favicon-48x48.png" alt="" width="48" height="48" /></a>
+    <nav aria-label="Services">
       <a href="/grooming.html">Grooming</a>
-      <a href="/hotel.html" class="active">Pet Hotel</a>
+      <a href="/hotel.html" class="active" aria-current="page">Pet Hotel</a>
     </nav>
   </header>
 
@@ -116,36 +114,5 @@
   <script src="/js/mobile-number.js"></script>
   <script src="/js/api.js?v=2"></script>
   <script src="/js/hotel.js?v=17"></script>
-<script>
-    // Show "My Account" if the customer is logged in, otherwise "Login".
-    // Verified against the server via the httpOnly token — no stale cookie issues.
-    function updateCustomerNav() {
-      const navLink = document.getElementById('customer-nav-link');
-      if (!navLink) return;
-      navLink.textContent = 'Login';
-      navLink.href = '/customer/login.html';
-      fetch('/admin/nav-status', { credentials: 'include' })
-        .then((r) => r.ok ? r.json() : null)
-        .then((admin) => {
-          if (admin && admin.authenticated) {
-            navLink.textContent = 'Admin Dashboard';
-            navLink.href = '/admin/index.html';
-            return;
-          }
-          return fetch('/customer/nav-status', { credentials: 'include' })
-            .then((r) => r.ok ? r.json() : null)
-            .then((data) => {
-              if (data && data.authenticated) {
-                navLink.textContent = 'My Account';
-                navLink.href = '/customer/account.html';
-              }
-            });
-        })
-        .catch(() => {});
-    }
-    document.addEventListener('DOMContentLoaded', updateCustomerNav);
-    // Re-check on every page show (including back/forward cache restores)
-    window.addEventListener('pageshow', updateCustomerNav);
-  </script>
 </body>
 </html>

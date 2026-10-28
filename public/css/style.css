@@ -133,6 +133,7 @@ a:hover { color: var(--primary-dark); text-decoration: none; }
   letter-spacing: -0.04em;
 }
 .navbar .brand:hover { text-decoration: none; color: var(--primary); }
+.navbar .brand img { display: block; width: 48px; height: 48px; object-fit: contain; }
 .navbar .brand .logo-dot {
   display: inline-block;
   width: 11px;
@@ -2022,7 +2023,12 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
 .customer-account-heading h1 { margin: 0; font-family: var(--font-display); font-size: 2rem; line-height: 1.2; }
 .customer-dashboard-subtitle { margin-top: 0.45rem; color: #66737a; font-size: 0.94rem; }
 .service-choice-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
   width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
   padding: 1.4rem;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2046,7 +2052,11 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
   border-left: 3px solid var(--gold-dark);
   border-radius: 8px;
   background: #fffefa;
+  color: #253238;
+  text-decoration: none;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
+.customer-summary-item:hover { transform: translateY(-2px); border-color: #c9cfc8; box-shadow: 0 4px 12px rgba(28, 38, 40, 0.1); text-decoration: none; }
 .customer-summary-item span { color: #66737a; font-size: 0.78rem; font-weight: 700; }
 .customer-summary-item strong { color: #253238; font-size: 1.45rem; line-height: 1; }
 .customer-account-section { padding: 1.35rem 0 1.6rem; border-bottom: 1px solid #dfe3df; scroll-margin-top: 1.25rem; }

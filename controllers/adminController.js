@@ -596,12 +596,13 @@ const getOperationalReport = async (req, res, next) => {
             `${formatReportDate(booking.date)}${booking.time ? ` ${booking.time}` : ''}`,
             formatReportLabel(booking.status),
             paymentMethodLabel(booking.paymentMethod),
+            formatReportLabel(booking.paymentStatus || 'unpaid'),
             formatAmount(booking.price),
           ];
         });
       return res.json({
         title: 'Grooming Report',
-        headers: ['Appointment ID', 'CUSTOMER', 'PET', 'SERVICES APPLIED', 'CHECK IN TIME', 'STATUS', 'PAYMENT TYPE', 'PAYMENT TOTAL'],
+        headers: ['Appointment ID', 'CUSTOMER', 'PET', 'SERVICES APPLIED', 'CHECK IN TIME', 'STATUS', 'PAYMENT TYPE', 'PAYMENT STATUS', 'PAYMENT TOTAL'],
         rows,
       });
     }

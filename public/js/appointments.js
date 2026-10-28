@@ -50,6 +50,12 @@
           || (booking.confirmedAt && !booking.reservationTicketEmailSentAt))) {
         actions.push(actionButton(booking, type, booking.confirmedAt ? 'send-ticket' : 'confirm', booking.confirmedAt ? 'Send Ticket' : 'Confirm', 'btn-success'));
       }
+      if (booking.status === 'confirmed') actions.push(actionButton(booking, type, 'check-in', 'Check In', 'btn-outline'));
+      if (booking.status === 'in-progress' && booking.confirmedAt && booking.paymentMethod !== 'qrph') {
+        const paymentStatus = booking.paymentStatus === 'paid' ? 'paid' : 'unpaid';
+        actions.push(`<span class="appointment-payment-status">Payment: ${paymentStatus.toUpperCase()}</span>`);
+        actions.push(actionButton(booking, type, 'payment', paymentStatus === 'paid' ? 'Mark Unpaid' : 'Mark Paid', paymentStatus === 'paid' ? 'btn-outline' : 'btn-success'));
+      }
       actions.push(actionButton(booking, type, 'view', 'View', 'btn-outline'));
       if (canReschedule(booking, type)) actions.push(actionButton(booking, type, 'reschedule', 'Reschedule', 'btn-outline'));
       if (booking.status !== 'cancelled' && booking.status !== 'completed') {
@@ -65,6 +71,11 @@
         actions.push(actionButton(booking, type, 'check-in', 'Check In', 'btn-outline'));
       }
       if (booking.status === 'checked-in') actions.push(actionButton(booking, type, 'check-out', 'Check Out', 'btn-success'));
+      if (booking.status === 'checked-in' && booking.confirmedAt && booking.paymentMethod !== 'qrph') {
+        const paymentStatus = booking.paymentStatus === 'paid' ? 'paid' : 'unpaid';
+        actions.push(`<span class="appointment-payment-status">Payment: ${paymentStatus.toUpperCase()}</span>`);
+        actions.push(actionButton(booking, type, 'payment', paymentStatus === 'paid' ? 'Mark Unpaid' : 'Mark Paid', paymentStatus === 'paid' ? 'btn-outline' : 'btn-success'));
+      }
       actions.push(actionButton(booking, type, 'view', 'View', 'btn-outline'));
       if (booking.status !== 'cancelled' && booking.status !== 'checked-in' && booking.status !== 'checked-out') {
         actions.push(actionButton(booking, type, 'cancel', booking.status === 'pending' ? 'Reject' : 'Cancel', 'btn-danger'));
@@ -444,14 +455,30 @@
       return;
     }
     if (action === 'check-in' || action === 'check-out') {
-      const status = action === 'check-in' ? 'checked-in' : 'checked-out';
+      const status = type === 'grooming' ? 'in-progress' : action === 'check-in' ? 'checked-in' : 'checked-out';
       button.disabled = true;
       try {
-        await apiPut(`/hotel/${encodeURIComponent(id)}`, { status });
+        await apiPut(`/${type}/${encodeURIComponent(id)}`, { status });
         closeModal();
         await loadAppointments();
         messageEl.className = 'text-success';
-        messageEl.textContent = status === 'checked-in' ? 'Pet checked in.' : 'Pet checked out.';
+        messageEl.textContent = type === 'grooming' ? 'Grooming appointment checked in.' : status === 'checked-in' ? 'Pet checked in.' : 'Pet checked out.';
+      } catch (error) {
+        button.disabled = false;
+        messageEl.className = 'text-error';
+        messageEl.textContent = error.message;
+      }
+      return;
+    }
+    if (action === 'payment') {
+      const paymentStatus = record.booking.paymentStatus === 'paid' ? 'unpaid' : 'paid';
+      button.disabled = true;
+      try {
+        await apiPut(`/${type}/${encodeURIComponent(id)}`, { paymentStatus });
+        closeModal();
+        await loadAppointments();
+        messageEl.className = 'text-success';
+        messageEl.textContent = `${type === 'grooming' ? 'Appointment' : 'Reservation'} marked ${paymentStatus}.`;
       } catch (error) {
         button.disabled = false;
         messageEl.className = 'text-error';

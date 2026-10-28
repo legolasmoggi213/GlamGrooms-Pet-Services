@@ -5,18 +5,18 @@
   const endDateFilter = document.getElementById('report-end-date');
   const message = document.getElementById('report-message');
   const reportWidths = {
-    grooming: [24, 34, 28, 54, 42, 24, 32, 35],
+    grooming: [22, 30, 24, 50, 40, 20, 28, 25, 30],
     hotel: [24, 30, 25, 32, 31, 31, 20, 24, 28, 28],
     walkin: [24, 30, 23, 50, 24, 25, 25, 25, 20, 27],
   };
   const reportHeaders = {
-    grooming: ['Appointment ID', 'CUSTOMER', 'PET', 'SERVICES APPLIED', 'CHECK IN TIME', 'STATUS', 'PAYMENT TYPE', 'PAYMENT TOTAL'],
+    grooming: ['Appointment ID', 'CUSTOMER', 'PET', 'SERVICES APPLIED', 'CHECK IN TIME', 'STATUS', 'PAYMENT TYPE', 'PAYMENT STATUS', 'PAYMENT TOTAL'],
     hotel: ['Reservation ID', 'Customer', 'Pet(s)', 'Room(s)', 'Check-in', 'Check-out', 'Status', 'Payment', 'Payment status', 'Amount (PHP)'],
     walkin: ['Transaction ID', 'Customer', 'Pet', 'Sale/items', 'Payment', 'Payment status', 'Amount (PHP)', 'Cash tendered', 'Change', 'Date'],
   };
   const titles = { grooming: 'Grooming', hotel: 'Hotel', walkin: 'Walk-in' };
   const paymentIndexes = { grooming: 6, hotel: 7, walkin: 4 };
-  const amountIndexes = { grooming: 7, hotel: 9, walkin: 6 };
+  const amountIndexes = { grooming: 8, hotel: 9, walkin: 6 };
 
   const setMessage = (text, isError = false) => {
     if (!message) return;

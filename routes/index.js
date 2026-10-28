@@ -145,7 +145,7 @@ router.get('/grooming', groomingController.listAppointments);
 router.get('/grooming/:id', groomingController.getAppointment);
 router.post('/grooming', groomingController.createAppointment);
 router.post('/grooming/:id/resend-ticket', groomingController.resendAppointmentTicket);
-router.put('/grooming/:id', groomingController.updateAppointment);
+router.put('/grooming/:id', adminOrStaff, groomingController.updateAppointment);
 router.post('/grooming/:id/ticket', groomingController.sendAppointmentTicket);
 router.delete('/grooming/:id', adminOnly, groomingController.deleteAppointment);
 
@@ -154,7 +154,7 @@ router.get('/hotel', hotelController.listReservations);
 router.get('/hotel/:id', hotelController.getReservation);
 router.post('/hotel', hotelController.createReservation);
 router.post('/hotel/:id/resend-ticket', hotelController.resendReservationTicket);
-router.put('/hotel/:id', hotelController.updateReservation);
+router.put('/hotel/:id', adminOrStaff, hotelController.updateReservation);
 router.post('/hotel/:id/ticket', hotelController.sendReservationTicketEmail);
 router.delete('/hotel/:id', adminOnly, hotelController.deleteReservation);
 

@@ -179,7 +179,28 @@ const updateAppointment = async (req, res, next) => {
       return res.status(404).json({ error: 'Appointment not found' });
     }
     const wasAlreadyCancelled = appointment.status === 'cancelled';
-    const { service, date, time, pickupTime, status, notes, customerId, petId } = req.body;
+    const body = req.body || {};
+    if (Object.prototype.hasOwnProperty.call(body, 'paymentStatus')) {
+      if (Object.keys(body).length !== 1) {
+        return res.status(400).json({ error: 'Payment status must be updated separately.' });
+      }
+      const paymentStatus = String(body.paymentStatus).toLowerCase();
+      if (!['paid', 'unpaid'].includes(paymentStatus)) {
+        return res.status(400).json({ error: 'Payment status must be paid or unpaid.' });
+      }
+      if (appointment.status !== 'in-progress' || !appointment.confirmedAt) {
+        return res.status(409).json({ error: 'Payment can only be updated for confirmed, in-progress appointments.' });
+      }
+      if (appointment.paymentMethod === 'qrph') {
+        return res.status(409).json({ error: 'GCash payment status is updated automatically after payment verification.' });
+      }
+      await appointment.update({
+        paymentStatus,
+        paymentPaidAt: paymentStatus === 'paid' ? new Date() : null,
+      });
+      return res.json({ success: true, paymentStatus });
+    }
+    const { service, date, time, pickupTime, status, notes, customerId, petId } = body;
     if (status && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'A valid status is required' });
     }

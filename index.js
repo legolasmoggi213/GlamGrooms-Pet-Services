@@ -763,6 +763,15 @@ app.use('/admin', async (req, res, next) => {
   next();
 }, express.static(path.join(__dirname, 'public', 'admin')));
 
+app.get(['/', '/index.html'], (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const raw = req.headers.cookie || '';
+  const cookie = raw.split(';').map((part) => part.trim()).find((part) => part.startsWith('customer_token='));
+  const token = cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : null;
+  if (parseCustomerToken(token)) return res.redirect('/customer/account.html');
+  next();
+});
+
 // Serve the frontend (public site) as static files.
 app.use(express.static(path.join(__dirname, 'public')));
 

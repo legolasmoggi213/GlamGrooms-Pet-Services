@@ -20,6 +20,20 @@
     </div>
   </dialog>
 
+  <dialog id="service-choice-dialog" class="service-choice-dialog" aria-labelledby="service-choice-title">
+    <div class="service-choice-content">
+      <div class="service-choice-heading">
+        <h2 id="service-choice-title">Choose a service</h2>
+        <button id="close-service-choice" class="btn btn-outline btn-sm" type="button">Close</button>
+      </div>
+      <p>What would you like to book?</p>
+      <div class="service-choice-options">
+        <a class="btn btn-primary service-choice-option" href="/grooming.html">Grooming</a>
+        <a class="btn btn-primary service-choice-option" href="/hotel.html">Pet Hotel</a>
+      </div>
+    </div>
+  </dialog>
+
   <div id="confirm-delete" class="confirm-box hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
     <div class="confirm-card">
       <h3 id="confirm-title">Delete account?</h3>
@@ -66,6 +80,7 @@
               <h1 id="customer-greeting">My Dashboard</h1>
               <p class="customer-dashboard-subtitle">Your pets, appointments, and stays in one place.</p>
             </div>
+            <button id="customer-book-now" class="btn btn-primary" type="button">Book Now</button>
           </div>
           <div class="customer-summary-grid" aria-label="Account summary">
             <div class="customer-summary-item"><span>Pets</span><strong id="summary-pets">—</strong></div>
@@ -159,6 +174,7 @@
     const confirmDelete = document.getElementById('confirm-delete-btn');
     const bookingDialog = document.getElementById('booking-dialog');
     const bookingEditForm = document.getElementById('booking-edit-form');
+    const serviceChoiceDialog = document.getElementById('service-choice-dialog');
     let activeBooking = null;
     let autoRefresh = null;
     let profileRequestInFlight = false;
@@ -197,6 +213,11 @@
       }
     });
     document.getElementById('close-booking-dialog').addEventListener('click', () => bookingDialog.close());
+    document.getElementById('customer-book-now').addEventListener('click', () => serviceChoiceDialog.showModal());
+    document.getElementById('close-service-choice').addEventListener('click', () => serviceChoiceDialog.close());
+    serviceChoiceDialog.addEventListener('click', (event) => {
+      if (event.target === serviceChoiceDialog) serviceChoiceDialog.close();
+    });
 
     const bookingCanChange = (item, type) => {
       if (String(item.status || '').toLowerCase() !== 'pending'

@@ -13,12 +13,8 @@
 <body class="home-page">
   <header class="navbar">
     <a class="brand" href="/">Glam Grooms Pet Spa & Hotel</a>
-    <nav>
-      <a href="/" class="active">Home</a>
-      <a id="customer-nav-link" href="/customer/login.html">Login</a>
-      <a href="/grooming.html">Reservation</a>
-      <a href="/hotel.html">Pet Hotel</a>
-      <a class="btn btn-primary btn-sm" href="/grooming.html">Book Now</a>
+    <nav aria-label="Main navigation">
+      <a class="btn btn-primary btn-sm" href="/customer/login.html">Book Now</a>
     </nav>
   </header>
 
@@ -163,36 +159,6 @@
   <script src="/js/heroCarousel.js?v=2"></script>
   <script src="/js/lightbox.js?v=2"></script>
   <script>
-    // Show "My Account" if the customer is logged in, otherwise "Login".
-    // Verified against the server via the httpOnly token — no stale cookie issues.
-    function updateCustomerNav() {
-      const navLink = document.getElementById('customer-nav-link');
-      if (!navLink) return;
-      navLink.textContent = 'Login';
-      navLink.href = '/customer/login.html';
-      fetch('/admin/nav-status', { credentials: 'include' })
-        .then((r) => r.ok ? r.json() : null)
-        .then((admin) => {
-          if (admin && admin.authenticated) {
-            navLink.textContent = 'Admin Dashboard';
-            navLink.href = '/admin/index.html';
-            return;
-          }
-          return fetch('/customer/nav-status', { credentials: 'include' })
-            .then((r) => r.ok ? r.json() : null)
-            .then((data) => {
-              if (data && data.authenticated) {
-                navLink.textContent = 'My Account';
-                navLink.href = '/customer/account.html';
-              }
-            });
-        })
-        .catch(() => {});
-    }
-    document.addEventListener('DOMContentLoaded', updateCustomerNav);
-    // Re-check on every page show (including back/forward cache restores)
-    window.addEventListener('pageshow', updateCustomerNav);
-
     document.addEventListener('click', async (event) => {
       const link = event.target.closest('a[href]');
       if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || (link.target && link.target !== '_self')) return;

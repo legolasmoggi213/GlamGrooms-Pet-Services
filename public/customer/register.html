@@ -38,7 +38,7 @@
         </div>
         <p id="confirm-password-error" class="confirm-password-error" role="status" hidden>Passwords do not match</p>
       </div>
-      <div class="field"><label for="phone">Phone *</label><input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number pattern="09[0-9]{9}" title="Enter an 11-digit mobile number starting with 09." required placeholder="09615153112" /></div>
+      <div class="field"><label for="phone">Phone *</label><input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number data-mobile-number-prefix="09" pattern="09[0-9]{9}" maxlength="11" title="Enter an 11-digit mobile number starting with 09." required value="09" placeholder="09615153112" /></div>
       <div class="field"><label for="address">Address *</label><input id="address" name="address" required placeholder="Street, City" /></div>
       <div class="field terms">
         <button class="terms-link" id="toggle-privacy-terms" type="button" aria-expanded="false" aria-controls="privacy-terms-panel">Review privacy terms and conditions</button>
@@ -85,14 +85,6 @@
     const privacyToggle = document.getElementById('toggle-privacy-terms');
     const privacyAcceptCheckbox = document.getElementById('privacy-panel-accept');
     const privacyCloseBtn = document.getElementById('privacy-panel-close');
-    const phoneInput = document.getElementById('phone');
-
-    if (phoneInput) {
-      phoneInput.addEventListener('input', () => {
-        phoneInput.value = phoneInput.value.replace(/[^0-9]/g, '');
-      });
-    }
-
     const setPrivacyPanelOpen = (isOpen) => {
       privacyPanel.hidden = !isOpen;
       privacyToggle.setAttribute('aria-expanded', String(isOpen));
@@ -117,7 +109,7 @@
       setPrivacyPanelOpen(true);
     };
   </script>
-  <script src="/js/mobile-number.js"></script>
+  <script src="/js/mobile-number.js?v=fixed-phone-prefix-20261028"></script>
   <script src="/js/password-strength.js"></script>
   <script src="/js/customer-auth.js?v=2"></script>
   <script src="/js/password-toggle.js"></script>

@@ -47,7 +47,6 @@ const {
   releaseBookingSlotsByIds,
 } = require('./util/bookingLocks');
 const ADMIN_USERNAME = 'ADMIN';
-const STAFF_USERNAME = String(process.env.STAFF_USERNAME || 'STAFF').trim().toUpperCase();
 const safeReturnPath = (value, fallback) => {
   const target = String(value || '');
   return target.startsWith('/') && !target.startsWith('//') ? target : fallback;
@@ -539,32 +538,24 @@ const getAdminFromRequest = async (req) => {
 // Admin login handler (placed before admin protection)
 app.post('/admin/login', async (req, res) => {
     const password = String(req.body && req.body.password || '');
-    const submittedUsername = String(req.body && req.body.username || '').trim();
-    const username = submittedUsername.toUpperCase();
+    const submittedEmail = String(req.body && req.body.email || '').trim().toLowerCase();
     const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
 
-    if (!password) return res.redirect('/admin/login.html?error=1');
+    if (!password || !submittedEmail) return res.redirect('/admin/login.html?error=1');
     try {
       let role = null;
       let staffEmail = '';
-      const isAdminLogin = adminEmail
-        ? submittedUsername.toLowerCase() === adminEmail
-        : username === ADMIN_USERNAME;
-      if (isAdminLogin) {
+      if (submittedEmail === adminEmail) {
         const envPass = String(process.env.ADMIN_PASS || '');
         const envMatch = Boolean(envPass && password === envPass);
         const admin = envPass ? null : await findAdminAccount();
         const dbMatch = !envPass && admin && admin.passwordHash && bcrypt.compareSync(password, admin.passwordHash);
         if (dbMatch || envMatch) role = ADMIN_USERNAME;
       } else {
-        const staff = await db.StaffAccount.findOne({ where: { username } });
+        const staff = await db.StaffAccount.findOne({ where: { email: submittedEmail } });
         if (staff && staff.active === true && bcrypt.compareSync(password, staff.passwordHash || '')) {
           role = `STAFF:${staff.id}`;
           staffEmail = String(staff.email || '').trim().toLowerCase();
-        } else if (STAFF_USERNAME && username === STAFF_USERNAME
-          && process.env.STAFF_PASS && password === process.env.STAFF_PASS) {
-          role = 'STAFF';
-          staffEmail = String(process.env.STAFF_EMAIL || '').trim().toLowerCase();
         }
       }
 
@@ -590,7 +581,7 @@ app.post('/admin/login', async (req, res) => {
         }
         if (isStaffRole(role)) {
           if (!/^[^@\s]+@gmail\.com$/.test(staffEmail)) {
-            console.warn(`Staff sign-in blocked because no valid Gmail address is configured for ${username}.`);
+            console.warn(`Staff sign-in blocked because no valid Gmail address is configured for ${submittedEmail}.`);
             return res.redirect('/admin/login.html?error=email');
           }
           const { challengeId } = await createVerificationChallenge({
@@ -655,15 +646,9 @@ app.post('/admin/login/verify-code', async (req, res) => {
     if (!isStaffRole(role) || !/^[^@\s]+@gmail\.com$/.test(email)) {
       return res.redirect('/admin/login.html?error=expired');
     }
-    if (role === 'STAFF') {
-      if (email !== String(process.env.STAFF_EMAIL || '').trim().toLowerCase()) {
-        return res.redirect('/admin/login.html?error=expired');
-      }
-    } else {
-      const staff = await db.StaffAccount.findByPk(role.slice('STAFF:'.length));
-      if (!staff || staff.active !== true || String(staff.email || '').trim().toLowerCase() !== email) {
-        return res.redirect('/admin/login.html?error=expired');
-      }
+    const staff = await db.StaffAccount.findByPk(role.slice('STAFF:'.length));
+    if (!staff || staff.active !== true || String(staff.email || '').trim().toLowerCase() !== email) {
+      return res.redirect('/admin/login.html?error=expired');
     }
     res.clearCookie('staff_login_challenge', { path: '/admin/login' });
     res.cookie('admin_token', createToken(role), {

@@ -167,6 +167,28 @@ a:hover { color: var(--primary-dark); text-decoration: none; }
 .navbar nav a:hover, .navbar nav a.active { color: var(--primary); text-decoration: none; }
 .navbar nav a.btn-primary { color: #111; }
 .navbar nav a.btn-primary:hover { color: #111; }
+.home-navbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 1rem;
+  padding: 0.65rem clamp(1rem, 4vw, 4rem);
+}
+.home-navbar nav { gap: clamp(0.65rem, 1.2vw, 1.4rem); flex-wrap: nowrap; }
+.home-nav-links { justify-self: start; }
+.home-navbar-brand { justify-self: center; gap: 0.5rem; font-size: 1.45rem !important; letter-spacing: 0 !important; white-space: nowrap; }
+.home-navbar .brand img { width: 36px; height: 36px; }
+.home-nav-account { justify-self: end; }
+.home-services-menu { position: relative; color: #d1d1cc; font-size: 0.97rem; font-weight: 600; }
+.home-services-menu summary { display: flex; align-items: center; gap: 0.55rem; padding: 0.4rem 0.15rem; cursor: pointer; list-style: none; }
+.home-services-menu summary::-webkit-details-marker { display: none; }
+.home-services-menu summary::after { width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; content: ''; transform: rotate(45deg) translateY(-2px); }
+.home-services-menu[open] summary::after { transform: rotate(225deg) translate(-1px, -1px); }
+.home-services-dropdown { position: absolute; z-index: 110; top: calc(100% + 0.8rem); left: -0.75rem; display: grid; min-width: 10.5rem; padding: 0.4rem; border: 1px solid rgba(255, 210, 26, 0.3); border-radius: 8px; background: #111; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35); }
+.home-services-dropdown a { display: block; padding: 0.75rem 0.8rem; border-radius: 5px; color: #e5e5e0; }
+.home-services-dropdown a::after { display: none; }
+.home-services-dropdown a:hover { background: rgba(255, 210, 26, 0.12); color: var(--gold); }
+.home-page #grooming-menu,
+.home-page #hotel-services { scroll-margin-top: 6rem; }
 
 /* ===== Buttons ===== */
 .btn {
@@ -1814,6 +1836,11 @@ tr:hover td { background: #f5f1e5; }
   .form-grid { grid-template-columns: 1fr; }
   .navbar { flex-wrap: wrap; gap: 1rem; padding: 1rem 5vw; }
   .navbar nav { gap: 0.8rem; flex-wrap: wrap; justify-content: center; }
+  .home-navbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'brand brand' 'primary account'; gap: 0.75rem 1rem; padding: 0.75rem 1rem; }
+  .home-navbar-brand { grid-area: brand; }
+  .home-nav-links { grid-area: primary; }
+  .home-nav-account { grid-area: account; }
+  .home-navbar nav { justify-content: flex-start; }
   .about-inner { grid-template-columns: 1fr; gap: 2.5rem; }
   .about-visual { order: -1; }
   .about-stats { grid-template-columns: repeat(3, 1fr); gap: 1rem; }
@@ -1836,6 +1863,12 @@ tr:hover td { background: #f5f1e5; }
   .instagram-grid { grid-template-columns: repeat(2, 1fr); }
   .form-card { padding: 1.8rem; }
   .navbar .brand { font-size: 1.3rem; }
+  .home-navbar { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'brand' 'primary' 'account'; gap: 0.55rem; }
+  .home-navbar .brand { font-size: 1.05rem !important; }
+  .home-navbar nav { justify-content: center; gap: 0.9rem; }
+  .home-navbar nav a, .home-services-menu { font-size: 0.85rem; }
+  .home-navbar nav a.btn-sm { padding: 0.45rem 0.75rem; }
+  .home-nav-links { flex-wrap: wrap !important; }
   .footer { padding: 3rem 5vw; }
 }
 

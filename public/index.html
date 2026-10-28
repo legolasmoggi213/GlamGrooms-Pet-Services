@@ -4,18 +4,33 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Glam Grooms Pet Spa & Hotel</title>
-  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
+  <link rel="stylesheet" href="/css/style.css?v=guest-home-navbar-20261028" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 </head>
 <body class="home-page">
-  <header class="navbar">
-    <a class="brand" href="/">Glam Grooms Pet Spa & Hotel</a>
-    <nav aria-label="Main navigation">
-      <a class="btn btn-primary btn-sm" href="/customer/register.html">Sign In</a>
+  <header class="navbar home-navbar">
+    <nav class="home-nav-links" aria-label="Main navigation">
+      <a href="/" class="active">Home</a>
+      <details class="home-services-menu">
+        <summary>Services</summary>
+        <div class="home-services-dropdown">
+          <a href="#grooming-menu">Grooming</a>
+          <a href="#hotel-services">Hotel</a>
+        </div>
+      </details>
+      <a href="/customer/login.html">Book Now</a>
+      <a href="#about">About</a>
+    </nav>
+    <a class="brand home-navbar-brand" href="/" aria-label="Glam Grooms home">
+      <img src="/favicon-48x48.png" alt="" width="36" height="36" />
+      <span>Glam Grooms Pet Spa &amp; Hotel</span>
+    </a>
+    <nav class="home-nav-account" aria-label="Account">
       <a href="/customer/login.html">Login</a>
+      <a class="btn btn-primary btn-sm" href="/customer/register.html">Sign In</a>
     </nav>
   </header>
 
@@ -147,7 +162,7 @@
     <img id="lightbox-img" alt=" enlarged view" />
   </div>
 
-  <footer class="footer">
+  <footer class="footer" id="about">
     <div class="footer-brand">Glam Grooms Pet Spa & Hotel</div>
     <p>A glamorous and pawesome experience for your pets</p>
     <div class="footer-contact">

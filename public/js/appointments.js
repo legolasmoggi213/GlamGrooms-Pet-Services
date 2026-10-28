@@ -13,6 +13,7 @@
   let bookings = [];
   let rescheduleRequests = [];
   const recentCustomerActivity = new Map();
+  const recentBookingActivity = new Map();
   const groomingServices = ['bath', 'nail-trim', 'haircut', 'deshedding', 'full-groom'];
   const groomingStatuses = ['pending', 'scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled'];
 
@@ -22,13 +23,19 @@
 
   const noteBookingActivity = (type, bookingId) => {
     const item = bookings.find((entry) => entry.type === type && String(entry.booking.id) === String(bookingId));
+    recentBookingActivity.set(`${type}:${bookingId}`, Date.now());
     if (item) noteCustomerActivity(item.booking.customerId || item.booking.Customer?.id);
   };
 
-  const activityTime = (item) => {
+  const bookingActivityTime = (item) => {
+    const key = `${item.type}:${item.booking.id}`;
+    const updatedAt = Date.parse(item.booking.updatedAt || item.booking.createdAt || '') || 0;
+    return Math.max(recentBookingActivity.get(key) || 0, updatedAt);
+  };
+
+  const customerActivityTime = (item) => {
     const customerId = String(item.booking.customerId || item.booking.Customer?.id || '');
-    const updatedAt = Date.parse(item.booking.updatedAt || '') || 0;
-    return Math.max(recentCustomerActivity.get(customerId) || 0, updatedAt);
+    return recentCustomerActivity.get(customerId) || 0;
   };
 
   const petsFor = (booking) => Array.isArray(booking.petNames) && booking.petNames.length
@@ -355,8 +362,10 @@
       ...hotel.filter((booking) => !terminalStatuses.hotel.has(booking.status))
         .map((booking) => ({ type: 'hotel', booking })),
     ].sort((left, right) => {
-      const activityOrder = activityTime(right) - activityTime(left);
-      if (activityOrder) return activityOrder;
+      const bookingActivityOrder = bookingActivityTime(right) - bookingActivityTime(left);
+      if (bookingActivityOrder) return bookingActivityOrder;
+      const customerActivityOrder = customerActivityTime(right) - customerActivityTime(left);
+      if (customerActivityOrder) return customerActivityOrder;
       const leftDate = left.type === 'grooming' ? left.booking.date : left.booking.checkIn;
       const rightDate = right.type === 'grooming' ? right.booking.date : right.booking.checkIn;
       const dateOrder = String(rightDate || '').localeCompare(String(leftDate || ''));

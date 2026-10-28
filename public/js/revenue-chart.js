@@ -6,8 +6,22 @@
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 
-  const splitLabel = (label) => {
+  const splitLabel = (label, wrap = false) => {
     const text = String(label || '');
+    if (wrap) {
+      const lines = [];
+      let line = '';
+      String(text).split(/\s+/).forEach((word) => {
+        if (line && `${line} ${word}`.length > 14) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = line ? `${line} ${word}` : word;
+        }
+      });
+      if (line) lines.push(line);
+      return lines;
+    }
     const daily = text.match(/^([A-Za-z]{3}),\s*(.+)$/);
     if (daily) return [daily[1], daily[2]];
     const weekly = text.split('–');
@@ -27,12 +41,16 @@
     maximumFractionDigits: 2,
   })}`;
 
-  window.renderRevenueLineChart = (buckets = [], { countLabel = 'bookings', ariaLabel = 'Revenue over time' } = {}) => {
+  window.renderRevenueLineChart = (buckets = [], {
+    countLabel = 'bookings',
+    ariaLabel = 'Revenue over time',
+    wrapLabels = false,
+  } = {}) => {
     if (!buckets.length) return '<div class="empty">No revenue for this period.</div>';
 
     const values = buckets.map((bucket) => Number(bucket.revenue) || 0);
     const maximum = Math.max(0, ...values);
-    const chartWidth = Math.max(660, buckets.length * 78 + 110);
+    const chartWidth = Math.max(660, buckets.length * (wrapLabels ? 120 : 78) + 110);
     const chartHeight = 300;
     const plot = { left: 78, right: chartWidth - 24, top: 28, bottom: 220 };
     const plotWidth = plot.right - plot.left;
@@ -57,7 +75,7 @@
     const line = points.map((point) => `${point.x},${point.y}`).join(' ');
     const dots = points.map(({ bucket, value, x, y }) => {
       const count = Number(bucket.count) || 0;
-      const label = splitLabel(bucket.label);
+      const label = splitLabel(bucket.label, wrapLabels);
       const valueY = Math.max(16, y - 11);
       const valueLabel = value > 0 ? formatExactValue(value) : '';
       return `<g class="revenue-line-point">
@@ -65,8 +83,7 @@
         <circle cx="${x}" cy="${y}" r="5" />
         ${valueLabel ? `<text class="revenue-line-value-label" x="${x}" y="${valueY}" text-anchor="middle">${escapeXml(valueLabel)}</text>` : ''}
         <text class="revenue-line-axis-label revenue-line-date-label" x="${x}" y="${plot.bottom + 22}" text-anchor="middle">
-          <tspan x="${x}">${escapeXml(label[0])}</tspan>
-          ${label[1] ? `<tspan x="${x}" dy="12">${escapeXml(label[1])}</tspan>` : ''}
+          ${label.map((line, index) => `<tspan x="${x}"${index ? ' dy="12"' : ''}>${escapeXml(line)}</tspan>`).join('')}
           <tspan class="revenue-line-count-label" x="${x}" dy="12">${count}</tspan>
         </text>
       </g>`;

@@ -13,14 +13,14 @@
     <main class="admin-main">
       <div class="flex-between">
         <div>
-          <h1>Hotel Reservations</h1>
-          <p class="page-sub">Manage pet hotel stays and check-ins.</p>
+          <h1 id="hotel-page-title">Hotel Reservations</h1>
+          <p class="page-sub" id="hotel-page-subtitle">Manage pet hotel stays and check-ins.</p>
         </div>
       </div>
 
       <div class="table-wrap">
         <table class="hotel-table">
-          <thead>
+          <thead id="hotel-table-head">
             <tr><th>ID</th><th>Check-in</th><th>Check-out</th><th>Room</th><th>Pet</th><th>Customer</th><th>Total</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody id="rows">
@@ -37,32 +37,42 @@
     renderSidebar('Hotel');
 
     const rowsEl = document.getElementById('rows');
+    const upcomingOnly = new URLSearchParams(location.search).get('filter') === 'upcoming';
+    const businessToday = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const upcomingStatuses = new Set(['pending', 'reserved', 'confirmed']);
     const bookingActionsInProgress = new Set();
     const roomSummary = (reservation) => Array.isArray(reservation.petRooms) && reservation.petRooms.length
       ? reservation.petRooms.map((petRoom) => `${escapeHtml(petRoom.petName || 'Pet')}: ${escapeHtml(String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' '))}`).join('<br>')
       : escapeHtml(capitalize(reservation.roomType));
 
+    if (upcomingOnly) {
+      document.title = 'Upcoming Pet Hotel Bookings — Glam Grooms Admin';
+      document.getElementById('hotel-page-title').textContent = 'Upcoming Pet Hotel Bookings';
+      document.getElementById('hotel-page-subtitle').textContent = 'Active reservations checking in today or later.';
+      document.getElementById('hotel-table-head').innerHTML = '<tr><th>ID</th><th>Check-in</th><th>Check-out</th><th>Room</th><th>Pet</th><th>Customer</th></tr>';
+    }
+
     async function loadReservations() {
       const items = sortByNewestDate(
-        (await apiGet('/hotel')).filter((reservation) => reservation.status !== 'checked-out'),
+        (await apiGet('/hotel')).filter((reservation) => upcomingOnly
+          ? upcomingStatuses.has(reservation.status) && String(reservation.checkIn || '') >= businessToday
+          : reservation.status !== 'checked-out'),
         'checkIn',
         'checkInTime',
       );
       const session = await fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json());
       if (!items.length) {
-        rowsEl.innerHTML = '<tr><td colspan="9" class="empty">No active reservations.</td></tr>';
+        rowsEl.innerHTML = `<tr><td colspan="${upcomingOnly ? 6 : 9}" class="empty">${upcomingOnly ? 'No active Pet Hotel bookings checking in today or later.' : 'No active reservations.'}</td></tr>`;
         return;
       }
       rowsEl.innerHTML = items
-        .map(
-          (r) => `
-        <tr>
-          <td><button class="record-id" type="button" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})' aria-label="View reservation ${escapeHtml(r.id)}">${escapeHtml(r.id)}</button></td>
-          <td>${fmtDate(r.checkIn)}</td>
-          <td>${fmtDate(r.checkOut)}</td>
-          <td>${roomSummary(r)}</td>
-          <td>${escapeHtml(Array.isArray(r.petNames) && r.petNames.length ? r.petNames.join(', ') : (r.Pet ? r.Pet.name : '—'))}</td>
-          <td>${r.Customer ? escapeHtml(r.Customer.name) : '—'}</td>
+        .map((r) => {
+          const managementColumns = upcomingOnly ? '' : `
           <td>${fmtMoney(r.totalPrice)}</td>
           <td>${statusBadge(r.status)}</td>
           <td class="hotel-actions-cell">
@@ -74,10 +84,18 @@
             ${r.status !== 'cancelled' && r.status !== 'checked-in' && r.status !== 'checked-out' ? `<button class="btn btn-danger btn-sm" onclick='rejectRes(${escapeHtml(JSON.stringify(r.id))}, ${escapeHtml(JSON.stringify(r.status))}, this)'>${r.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
             ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeRes(${escapeHtml(JSON.stringify(r.id))})'>Delete</button>` : ''}
             </div>
-          </td>
+          </td>`;
+          return `
+        <tr>
+          <td><button class="record-id" type="button" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})' aria-label="View reservation ${escapeHtml(r.id)}">${escapeHtml(r.id)}</button></td>
+          <td>${fmtDate(r.checkIn)}</td>
+          <td>${fmtDate(r.checkOut)}</td>
+          <td>${roomSummary(r)}</td>
+          <td>${escapeHtml(Array.isArray(r.petNames) && r.petNames.length ? r.petNames.join(', ') : (r.Pet ? r.Pet.name : '—'))}</td>
+          <td>${r.Customer ? escapeHtml(r.Customer.name) : '—'}</td>
+          ${managementColumns}
         </tr>`
-        )
-        .join('');
+        }).join('');
     }
 
     window.viewRes = async (id) => {

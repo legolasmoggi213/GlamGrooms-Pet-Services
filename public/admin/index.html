@@ -49,8 +49,8 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Check-in</th><th>Check-out</th><th>Customer</th><th>Pet(s)</th><th>Room</th><th>Status</th><th>Manage</th></tr></thead>
-            <tbody id="upcoming-hotel-arrivals-rows"><tr><td colspan="7" class="loading">Loading hotel arrivals…</td></tr></tbody>
+            <thead><tr><th>Check-in</th><th>Check-out</th><th>Customer</th><th>Pet(s)</th><th>Room</th></tr></thead>
+            <tbody id="upcoming-hotel-arrivals-rows"><tr><td colspan="5" class="loading">Loading hotel arrivals…</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -97,11 +97,11 @@
         <div class="revenue-chart-grid">
           <section class="revenue-chart-panel grooming-chart">
             <div class="flex-between"><h4>Sales by Grooming Service</h4><strong id="grooming-service-total">₱0.00</strong></div>
-            <div id="grooming-service-chart" class="revenue-bars service-revenue-bars"></div>
+            <div id="grooming-service-chart" class="revenue-line-host"></div>
           </section>
           <section class="revenue-chart-panel hotel-chart">
             <div class="flex-between"><h4>Sales by Hotel Room</h4><strong id="hotel-service-total">₱0.00</strong></div>
-            <div id="hotel-service-chart" class="revenue-bars service-revenue-bars"></div>
+            <div id="hotel-service-chart" class="revenue-line-host"></div>
           </section>
         </div>
       </section>
@@ -126,7 +126,7 @@
     </main>
   </div>
 
-  <script src="/js/revenue-chart.js?v=yearly-line-chart-20261028"></script>
+  <script src="/js/revenue-chart.js?v=service-line-chart-20261029"></script>
   <script src="/js/api.js?v=php-currency-20261027"></script>
   <script src="/js/admin.js?v=staff-dashboard-access-20261028"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -158,7 +158,7 @@
           statCard('Pets', s.pets, 'purple', '/admin/pets.html') +
           statCard("Today's Grooming", s.grooming.today, 'green', '/admin/grooming.html?filter=today') +
           statCard('Pending Grooming Arrivals', s.grooming.pendingToday, 'orange', '#pending-grooming-arrivals') +
-          statCard('Upcoming Arrivals', s.hotel.upcomingArrivals, 'orange', '/admin/hotel.html') +
+          statCard('Upcoming Arrivals', s.hotel.upcomingArrivals, 'orange', '/admin/hotel.html?filter=upcoming') +
           statCard('Grooming Revenue', fmtMoney(s.grooming.revenue), 'green', '#revenue') +
           statCard('Hotel Revenue', fmtMoney(s.hotel.revenue), 'green', '#revenue') +
           statCard('Walk-in Cash Sales', fmtMoney(s.overTheCounterRevenue), 'green', '/admin/pos.html') +
@@ -209,10 +209,8 @@
             <td>${escapeHtml(reservation.Customer?.name || reservation.customerDetails?.name || '—')}</td>
             <td>${escapeHtml(petNames)}</td>
             <td>${escapeHtml(rooms)}</td>
-            <td>${statusBadge(reservation.status)}</td>
-            <td><a class="btn btn-outline btn-sm" href="/admin/hotel.html">Manage</a></td>
           </tr>`;
-        }).join('') : '<tr><td colspan="7" class="empty">No active Pet Hotel arrivals today or upcoming.</td></tr>';
+        }).join('') : '<tr><td colspan="5" class="empty">No active Pet Hotel arrivals today or upcoming.</td></tr>';
       }
 
       pendingGroomingRows.addEventListener('click', async (event) => {
@@ -242,7 +240,7 @@
       });
       document.getElementById('refresh-upcoming-hotel-arrivals').addEventListener('click', () => {
         loadUpcomingHotelArrivals().catch((error) => {
-          upcomingHotelArrivalRows.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(error.message)}</td></tr>`;
+          upcomingHotelArrivalRows.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(error.message)}</td></tr>`;
         });
       });
 
@@ -386,26 +384,16 @@
         document.getElementById('hotel-revenue-total').textContent = fmtMoney(hotelTotal);
         document.getElementById('grooming-revenue-chart').innerHTML = window.renderRevenueLineChart(data.grooming);
         document.getElementById('hotel-revenue-chart').innerHTML = window.renderRevenueLineChart(data.hotel);
-        const renderServiceChart = (entries) => {
-          const active = (entries || []).filter((entry) => Number(entry.revenue) || Number(entry.count));
-          const maximum = Math.max(0, ...active.map((entry) => Number(entry.revenue) || 0));
-          return active.length ? active.map((entry) => {
-            const value = Number(entry.revenue) || 0;
-            const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
-            return `<div class="revenue-bar-column" title="${escapeHtml(`${entry.label}: ${fmtMoney(value)}, ${entry.count} bookings or pets served`)}">
-              <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
-              <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
-              <span class="revenue-bar-label revenue-service-label">${escapeHtml(entry.label)}</span>
-              <span class="revenue-bar-count">${Number(entry.count) || 0}</span>
-            </div>`;
-          }).join('') : '<div class="empty">No service sales in this period.</div>';
-        };
         const groomingServiceTotal = (data.groomingServices || []).reduce((sum, entry) => sum + Number(entry.revenue || 0), 0);
         const hotelServiceTotal = (data.hotelServices || []).reduce((sum, entry) => sum + Number(entry.revenue || 0), 0);
         document.getElementById('grooming-service-total').textContent = fmtMoney(groomingServiceTotal);
         document.getElementById('hotel-service-total').textContent = fmtMoney(hotelServiceTotal);
-        document.getElementById('grooming-service-chart').innerHTML = renderServiceChart(data.groomingServices);
-        document.getElementById('hotel-service-chart').innerHTML = renderServiceChart(data.hotelServices);
+        document.getElementById('grooming-service-chart').innerHTML = window.renderRevenueLineChart(data.groomingServices || [], {
+          countLabel: 'services', ariaLabel: 'Sales by grooming service', wrapLabels: true,
+        });
+        document.getElementById('hotel-service-chart').innerHTML = window.renderRevenueLineChart(data.hotelServices || [], {
+          countLabel: 'room assignments', ariaLabel: 'Sales by hotel room', wrapLabels: true,
+        });
       }
 
       async function loadServiceCatalog() {

@@ -30,21 +30,6 @@
   const revenuePeriods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months', yearly: 'Last 5 years' };
   let revenueAnalyticsData = null;
 
-  const renderServiceChart = (entries) => {
-    const active = (entries || []).filter((entry) => Number(entry.revenue) || Number(entry.count));
-    const maximum = Math.max(0, ...active.map((entry) => Number(entry.revenue) || 0));
-    return active.length ? active.map((entry) => {
-      const value = Number(entry.revenue) || 0;
-      const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
-      return `<div class="revenue-bar-column" title="${escapeHtml(`${entry.label}: ${fmtMoney(value)}, ${entry.count} bookings or pets served`)}">
-        <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
-        <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
-        <span class="revenue-bar-label revenue-service-label">${escapeHtml(entry.label)}</span>
-        <span class="revenue-bar-count">${Number(entry.count) || 0}</span>
-      </div>`;
-    }).join('') : '<div class="empty">No service sales in this period.</div>';
-  };
-
   const loadRevenue = async () => {
     const selectedPeriod = document.querySelector('#staff-revenue .revenue-periods button[aria-pressed="true"]')?.dataset.period || 'monthly';
     const data = await apiGet(`/admin/revenue-analytics?period=${selectedPeriod}`);
@@ -61,8 +46,12 @@
     const hotelServices = data.hotelServices || [];
     document.getElementById('staff-grooming-service-total').textContent = fmtMoney(groomingServices.reduce((sum, entry) => sum + Number(entry.revenue || 0), 0));
     document.getElementById('staff-hotel-service-total').textContent = fmtMoney(hotelServices.reduce((sum, entry) => sum + Number(entry.revenue || 0), 0));
-    document.getElementById('staff-grooming-service-chart').innerHTML = renderServiceChart(groomingServices);
-    document.getElementById('staff-hotel-service-chart').innerHTML = renderServiceChart(hotelServices);
+    document.getElementById('staff-grooming-service-chart').innerHTML = window.renderRevenueLineChart(groomingServices, {
+      countLabel: 'services', ariaLabel: 'Sales by grooming service', wrapLabels: true,
+    });
+    document.getElementById('staff-hotel-service-chart').innerHTML = window.renderRevenueLineChart(hotelServices, {
+      countLabel: 'room assignments', ariaLabel: 'Sales by hotel room', wrapLabels: true,
+    });
   };
 
   const exportRevenuePdf = () => {
@@ -120,7 +109,7 @@
       statCard("Today's Grooming", groomingToday.length, 'green', '/admin/grooming.html?filter=today'),
       statCard('Pending Grooming Arrivals', pendingGroomingToday.length, 'orange', '#staff-pending-grooming'),
       statCard('Upcoming Grooming', upcomingGrooming.length, 'green'),
-      statCard('Upcoming Hotel Stays', upcomingHotelArrivals.length, 'orange'),
+      statCard('Upcoming Hotel Stays', upcomingHotelArrivals.length, 'orange', '/admin/hotel.html?filter=upcoming'),
     ].join('');
 
     pendingGroomingRows.innerHTML = pendingGroomingToday.length
@@ -149,11 +138,9 @@
           <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
           <td>${escapeHtml(petNames(booking))}</td>
           <td>${escapeHtml(rooms)}</td>
-          <td>${statusBadge(booking.status)}</td>
-          <td><a class="btn btn-outline btn-sm" href="/admin/hotel.html">Manage</a></td>
         </tr>`;
       }).join('')
-      : '<tr><td colspan="7" class="empty">No active Pet Hotel arrivals today or upcoming.</td></tr>';
+      : '<tr><td colspan="5" class="empty">No active Pet Hotel arrivals today or upcoming.</td></tr>';
 
     groomingRows.innerHTML = nextGrooming.length
       ? nextGrooming.map((booking) => `
@@ -173,9 +160,8 @@
           <td>${fmtDate(booking.checkOut)}</td>
           <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
           <td>${escapeHtml(petNames(booking))}</td>
-          <td>${statusBadge(booking.status)}</td>
         </tr>`).join('')
-      : '<tr><td colspan="5" class="empty">No current guests or upcoming hotel stays.</td></tr>';
+      : '<tr><td colspan="4" class="empty">No current guests or upcoming hotel stays.</td></tr>';
     messageEl.textContent = `Schedule refreshed ${new Date().toLocaleTimeString()}.`;
   };
 

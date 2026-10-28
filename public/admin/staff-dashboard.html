@@ -41,12 +41,12 @@
             <h3 id="staff-upcoming-hotel-arrivals-heading">Upcoming Pet Hotel Arrivals</h3>
             <p class="text-muted">Active reservations checking in today or later.</p>
           </div>
-          <a class="btn btn-outline btn-sm" href="/admin/hotel.html">Manage reservations</a>
+          <a class="btn btn-outline btn-sm" href="/admin/hotel.html?filter=upcoming">Manage reservations</a>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Check-in</th><th>Check-out</th><th>Customer</th><th>Pet(s)</th><th>Room</th><th>Status</th><th>Manage</th></tr></thead>
-            <tbody id="staff-upcoming-hotel-arrivals-rows"><tr><td colspan="7" class="loading">Loading hotel arrivals…</td></tr></tbody>
+            <thead><tr><th>Check-in</th><th>Check-out</th><th>Customer</th><th>Pet(s)</th><th>Room</th></tr></thead>
+            <tbody id="staff-upcoming-hotel-arrivals-rows"><tr><td colspan="5" class="loading">Loading hotel arrivals…</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -81,11 +81,11 @@
         <div class="revenue-chart-grid">
           <section class="revenue-chart-panel grooming-chart">
             <div class="flex-between"><h4>Sales by Grooming Service</h4><strong id="staff-grooming-service-total">PHP 0.00</strong></div>
-            <div id="staff-grooming-service-chart" class="revenue-bars service-revenue-bars"></div>
+            <div id="staff-grooming-service-chart" class="revenue-line-host"></div>
           </section>
           <section class="revenue-chart-panel hotel-chart">
             <div class="flex-between"><h4>Sales by Hotel Room</h4><strong id="staff-hotel-service-total">PHP 0.00</strong></div>
-            <div id="staff-hotel-service-chart" class="revenue-bars service-revenue-bars"></div>
+            <div id="staff-hotel-service-chart" class="revenue-line-host"></div>
           </section>
         </div>
       </section>
@@ -103,8 +103,8 @@
           <h3>Hotel Check-ins &amp; Guests</h3>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Check-in</th><th>Check-out</th><th>Customer</th><th>Pet(s)</th><th>Status</th></tr></thead>
-              <tbody id="staff-hotel-rows"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
+              <thead><tr><th>Check-in</th><th>Check-out</th><th>Customer</th><th>Pet(s)</th></tr></thead>
+              <tbody id="staff-hotel-rows"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody>
             </table>
           </div>
         </section>
@@ -114,8 +114,8 @@
   </div>
   <script src="/js/api.js"></script>
   <script src="/js/admin.js"></script>
-  <script src="/js/revenue-chart.js?v=yearly-line-chart-20261028"></script>
+  <script src="/js/revenue-chart.js?v=service-line-chart-20261029"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="/js/staff-dashboard.js"></script>
+  <script src="/js/staff-dashboard.js?v=service-line-chart-20261029"></script>
 </body>
 </html>

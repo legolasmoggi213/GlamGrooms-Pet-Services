@@ -21,7 +21,7 @@
 
       <div class="table-wrap">
         <table class="grooming-table">
-          <thead>
+          <thead id="grooming-table-head">
             <tr><th>ID</th><th>Date</th><th>Time</th><th>Pickup</th><th>Service</th><th>Pet</th><th>Customer</th><th>Price</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody id="rows">
@@ -61,6 +61,7 @@
       document.title = "Today's Active Grooming — Glam Grooms Admin";
       document.getElementById('grooming-page-title').textContent = "Today's Active Grooming";
       document.getElementById('grooming-page-subtitle').textContent = `Active grooming schedule for ${new Date(`${today}T12:00:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}. Cancelled and completed appointments are excluded.`;
+      document.getElementById('grooming-table-head').innerHTML = '<tr><th>ID</th><th>Date</th><th>Time</th><th>Pickup</th><th>Service</th><th>Pet</th><th>Customer</th></tr>';
     }
 
     async function loadAppointments() {
@@ -74,20 +75,12 @@
       );
       const session = await fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json());
       if (!items.length) {
-        rowsEl.innerHTML = `<tr><td colspan="10" class="empty">${todayOnly ? 'No active grooming services scheduled for today.' : 'No active appointments.'}</td></tr>`;
+        rowsEl.innerHTML = `<tr><td colspan="${todayOnly ? 7 : 10}" class="empty">${todayOnly ? 'No active grooming services scheduled for today.' : 'No active appointments.'}</td></tr>`;
         return;
       }
       rowsEl.innerHTML = items
-        .map(
-          (a) => `
-        <tr>
-          <td><button class="record-id" type="button" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})' aria-label="View appointment ${escapeHtml(a.id)}">${escapeHtml(a.id)}</button></td>
-          <td>${fmtDate(a.date)}</td>
-          <td>${escapeHtml(a.time)}</td>
-          <td>${escapeHtml(a.pickupTime || '—')}</td>
-          <td>${bookingServices(a)}</td>
-          <td>${escapeHtml(Array.isArray(a.petNames) && a.petNames.length ? a.petNames.join(', ') : (a.Pet ? a.Pet.name : '—'))}</td>
-          <td>${a.Customer ? escapeHtml(a.Customer.name) : '—'}</td>
+        .map((a) => {
+          const managementColumns = todayOnly ? '' : `
           <td>${fmtMoney(a.price)}</td>
           <td>${statusBadge(a.status)}</td>
           <td class="grooming-actions-cell">
@@ -97,10 +90,19 @@
             ${a.status !== 'cancelled' && a.status !== 'completed' ? `<button class="btn btn-danger btn-sm" onclick='rejectAppt(${escapeHtml(JSON.stringify(a.id))}, ${escapeHtml(JSON.stringify(a.status))}, this)'>${a.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
             ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeAppt(${escapeHtml(JSON.stringify(a.id))})'>Delete</button>` : ''}
             </div>
-          </td>
+          </td>`;
+          return `
+        <tr>
+          <td><button class="record-id" type="button" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})' aria-label="View appointment ${escapeHtml(a.id)}">${escapeHtml(a.id)}</button></td>
+          <td>${fmtDate(a.date)}</td>
+          <td>${escapeHtml(a.time)}</td>
+          <td>${escapeHtml(a.pickupTime || '—')}</td>
+          <td>${bookingServices(a)}</td>
+          <td>${escapeHtml(Array.isArray(a.petNames) && a.petNames.length ? a.petNames.join(', ') : (a.Pet ? a.Pet.name : '—'))}</td>
+          <td>${a.Customer ? escapeHtml(a.Customer.name) : '—'}</td>
+          ${managementColumns}
         </tr>`
-        )
-        .join('');
+        }).join('');
     }
 
     function apptForm(a = {}) {

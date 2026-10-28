@@ -219,15 +219,6 @@
       if (event.target === serviceChoiceDialog) serviceChoiceDialog.close();
     });
 
-    const bookingCanChange = (item, type) => {
-      if (String(item.status || '').toLowerCase() !== 'pending'
-        || item.paymentStatus === 'paid'
-        || item.paymentMethod === 'qrph') return false;
-      const date = type === 'hotel' ? item.checkIn : item.date;
-      const time = type === 'hotel' ? item.checkInTime : item.time || '00:00';
-      return Boolean(date && new Date(`${date}T${time || '00:00'}:00`) > new Date());
-    };
-
     const bookingCanCancel = (item, type) => {
       const status = String(item.status || '').toLowerCase();
       const unavailableStatuses = type === 'hotel'
@@ -243,8 +234,6 @@
     const bookingCanRequestReschedule = (item, type) => {
       if (item.paymentMethod === 'qrph') return false;
       const status = String(item.status || '').toLowerCase();
-      const needsStaffApproval = item.paymentStatus === 'paid' || item.paymentMethod === 'qrph' || status !== 'pending';
-      if (!needsStaffApproval) return false;
       if (type === 'grooming' && ['completed', 'cancelled'].includes(status)) return false;
       if (type === 'hotel' && ['checked-in', 'checked-out', 'cancelled'].includes(status)) return false;
       const date = type === 'hotel' ? item.checkIn : item.date;
@@ -252,41 +241,36 @@
       return Boolean(date && new Date(`${date}T${time || '00:00'}:00`) > new Date());
     };
 
-    const bookingActions = (item, type) => {
-      if (item.paymentMethod === 'qrph') {
-        if (!bookingCanCancel(item, type)) return '';
-        return `<div class="transaction-meta">GCash bookings can be cancelled but not rescheduled. Refunds are subject to PayMongo processing.</div>
-          <div class="profile-actions"><button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}" data-cancel-paid-online="${item.paymentStatus === 'paid'}">Cancel booking</button></div>`;
-      }
-      if (String(item.status || '').toLowerCase() !== 'pending') return '';
-      if (!bookingCanChange(item, type)) return '';
-      return `
-        <div class="profile-actions">
-          <button class="btn btn-outline btn-sm" type="button" data-reschedule-type="${type}" data-reschedule-id="${escapeHtml(item.id)}">Reschedule booking</button>
-          <button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}">Cancel booking</button>
-        </div>
-      `;
-    };
-
-    const rescheduleRequestAction = (booking, type, requests) => {
-      if (!bookingCanRequestReschedule(booking, type)) return '';
+    const bookingActions = (item, type, requests = []) => {
+      const actions = [];
       const matchingRequests = requests.filter((request) => (
-        request.bookingType === type && String(request.bookingId) === String(booking.id)
+        request.bookingType === type && String(request.bookingId) === String(item.id)
       ));
       const pendingRequest = matchingRequests.find((request) => request.status === 'pending');
+
       if (pendingRequest) {
-        return '<p class="transaction-meta">Reschedule request sent. Waiting for staff approval.</p>';
+        actions.push('<p class="transaction-meta">Reschedule request sent. Waiting for staff approval.</p>');
+      } else if (bookingCanRequestReschedule(item, type)) {
+        const latestRequest = matchingRequests[0];
+        if (latestRequest?.status === 'declined') {
+          actions.push('<p class="transaction-meta">Your previous reschedule request was declined. You can send another request.</p>');
+        } else if (latestRequest?.status === 'approved') {
+          actions.push('<p class="transaction-meta">Your previous reschedule request was approved.</p>');
+        }
+        actions.push(`<div class="profile-actions"><button class="btn btn-outline btn-sm" type="button" data-request-reschedule-type="${type}" data-request-reschedule-id="${escapeHtml(item.id)}">Request reschedule</button></div>`);
       }
-      const latestRequest = matchingRequests[0];
-      const statusMessage = latestRequest?.status === 'declined'
-        ? '<p class="transaction-meta">Your previous reschedule request was declined. You can send another request.</p>'
-        : latestRequest?.status === 'approved'
-          ? '<p class="transaction-meta">Your previous reschedule request was approved.</p>'
-          : '';
-      return `${statusMessage}
-        <div class="profile-actions">
-          <button class="btn btn-outline btn-sm" type="button" data-request-reschedule-type="${type}" data-request-reschedule-id="${escapeHtml(booking.id)}">Request reschedule</button>
-        </div>`;
+
+      if (item.paymentMethod === 'qrph') {
+        if (bookingCanCancel(item, type)) {
+          actions.push('<p class="transaction-meta">GCash bookings can be cancelled but not rescheduled. Refunds are subject to PayMongo processing.</p>');
+          actions.push(`<div class="profile-actions"><button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}" data-cancel-paid-online="${item.paymentStatus === 'paid'}">Cancel booking</button></div>`);
+        }
+        return actions.join('');
+      }
+      if (bookingCanCancel(item, type)) {
+        actions.push(`<div class="profile-actions"><button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}">Cancel booking</button></div>`);
+      }
+      return actions.join('');
     };
 
     document.querySelector('.customer-account-content').addEventListener('click', async (event) => {
@@ -658,7 +642,7 @@
                 <div class="transaction-meta">${formatDate(item.date)} • ${escapeHtml(item.time || 'Time TBA')}${item.pickupTime ? ` • Pickup ${escapeHtml(item.pickupTime)}` : ''} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.price)}</div>
                 ${paymentReceiptMarkup(item, 'grooming', p)}
                 ${reservationTicketMarkup(item, 'grooming', pets, p)}
-                ${bookingActions(item, 'grooming')}
+                ${bookingActions(item, 'grooming', rescheduleRequests)}
               </div>
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
@@ -677,23 +661,38 @@
                 <div class="transaction-meta">Check-in: ${formatDate(item.checkIn)} at ${escapeHtml(item.checkInTime || 'Time TBA')} • Check-out: ${formatDate(item.checkOut)} at ${escapeHtml(item.checkOutTime || 'Time TBA')} • ${escapeHtml(item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet'))} • ${formatMoney(item.totalPrice)}</div>
                 ${paymentReceiptMarkup(item, 'hotel', p)}
                 ${reservationTicketMarkup(item, 'hotel', pets, p)}
-                ${bookingActions(item, 'hotel')}
+                ${bookingActions(item, 'hotel', rescheduleRequests)}
               </div>
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
           `;
         }).join('') || '<div class="empty-state">No hotel reservations yet.</div>';
 
-        const recent = [
+        const businessToday = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date());
+        const allTransactions = [
           ...groomingBookings.map(item => ({ type: 'Grooming', bookingType: 'grooming', booking: item, date: item.date, createdAt: item.createdAt, label: Array.isArray(item.petServices) && item.petServices.length ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ') : (item.service || 'Grooming'), details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
           ...hotelBookings.map(item => ({ type: 'Hotel', bookingType: 'hotel', booking: item, date: item.checkIn, createdAt: item.createdAt, label: Array.isArray(item.petRooms) && item.petRooms.length ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ') : `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
-        ].sort((a, b) => (bookingCreatedAt(b.booking) || 0) - (bookingCreatedAt(a.booking) || 0)).slice(0, 5);
-        const recentHtml = recent.length
-          ? `<ul class="transaction-list">${recent.map(item => {
+        ].sort((a, b) => (bookingCreatedAt(b.booking) || 0) - (bookingCreatedAt(a.booking) || 0));
+        const isPreviousTransaction = (item) => {
+          const endDate = item.bookingType === 'hotel' ? item.booking.checkOut : item.booking.date;
+          return ['cancelled', 'completed', 'checked-out'].includes(String(item.status || '').toLowerCase())
+            || Boolean(endDate && endDate < businessToday);
+        };
+        const recentTransactions = allTransactions.filter((item) => !isPreviousTransaction(item)).slice(0, 5);
+        const previousTransactions = allTransactions.filter(isPreviousTransaction);
+        const renderTransactionList = (transactions) => transactions.length
+          ? `<ul class="transaction-list">${transactions.map(item => {
               const statusClass = ['completed', 'checked-out'].includes(item.status) ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
               return recentBookingCardMarkup(item, pets, p, statusClass, rescheduleRequests);
             }).join('')}</ul>`
-          : '<div class="empty-state">No recent transactions yet.</div>';
+          : '<div class="empty-state">No transactions to show.</div>';
+        const recentHtml = `<div class="recent-transactions-list"><h3>Recent transactions</h3>${renderTransactionList(recentTransactions)}</div>
+          <div class="previous-transactions-list"><h3>Previous transactions</h3>${renderTransactionList(previousTransactions)}</div>`;
 
         document.getElementById('recent-transactions').innerHTML = recentHtml;
         document.getElementById('grooming-bookings').innerHTML = `<ul class="transaction-list">${grooming}</ul>`;
@@ -792,8 +791,7 @@
             <dl class="recent-booking-detail-list">
               ${detailRows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || 'Not provided')}</dd></div>`).join('')}
             </dl>
-            ${bookingActions(booking, item.bookingType)}
-            ${rescheduleRequestAction(booking, item.bookingType, rescheduleRequests)}
+            ${bookingActions(booking, item.bookingType, rescheduleRequests)}
             ${paymentReceiptMarkup(booking, item.bookingType, profile)}
             ${reservationTicketMarkup(booking, item.bookingType, pets, profile)}
           </div>

@@ -890,6 +890,7 @@ const createCashTransaction = async (req, res, next) => {
         return res.status(400).json({ error: 'Cash received must cover the sale total.' });
       }
       const changeDue = paymentMethod === 'cash' ? Math.round((tenderedAmount - amount) * 100) / 100 : 0;
+      const paidAt = paymentMethod === 'cash' ? new Date() : null;
       const transaction = await CashTransaction.create({
         type: 'walk-in',
         customerName,
@@ -901,7 +902,7 @@ const createCashTransaction = async (req, res, next) => {
         paymentStatus: paymentMethod === 'cash' ? 'paid' : 'pending',
         tenderedAmount,
         changeDue,
-        paidAt: paymentMethod === 'cash' ? new Date() : null,
+        paidAt,
         recordedBy: 'ADMIN',
         notes: String(body.notes || '').trim(),
         receipt: {

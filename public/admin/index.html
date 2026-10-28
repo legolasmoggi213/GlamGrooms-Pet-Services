@@ -102,102 +102,6 @@
       renderSidebar('Dashboard');
       let revenueAnalyticsData = null;
 
-      const addPdfPageHeading = (pdf, title, subtitle) => {
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        pdf.setFillColor(32, 45, 50);
-        pdf.rect(0, 0, pageWidth, 28, 'F');
-        pdf.setTextColor(255, 255, 255);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(17);
-        pdf.text(title, 12, 12);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(8);
-        pdf.setTextColor(238, 234, 220);
-        pdf.text(subtitle, 12, 20);
-        pdf.setTextColor(37, 50, 56);
-        return 34;
-      };
-
-      const drawPdfTable = (pdf, { headers, rows, widths, y, title, subtitle, fontSize = 7.5 }) => {
-        const pageHeight = pdf.internal.pageSize.getHeight();
-        const margin = 12;
-        const drawHeader = () => {
-          pdf.setFillColor(235, 232, 223);
-          pdf.setDrawColor(207, 211, 205);
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(fontSize);
-          let x = margin;
-          const rowHeight = 9;
-          headers.forEach((header, index) => {
-            pdf.rect(x, y, widths[index], rowHeight, 'FD');
-            pdf.setTextColor(37, 50, 56);
-            pdf.text(String(header), x + 2, y + 5.8, { maxWidth: widths[index] - 4 });
-            x += widths[index];
-          });
-          y += rowHeight;
-        };
-
-        if (title) {
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(10);
-          pdf.setTextColor(37, 50, 56);
-          pdf.text(title, margin, y);
-          y += 5;
-        }
-        if (subtitle) {
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(7.5);
-          pdf.setTextColor(102, 115, 122);
-          pdf.text(subtitle, margin, y);
-          y += 5;
-        }
-        drawHeader();
-
-        rows.forEach((row, rowIndex) => {
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(fontSize);
-          const cellLines = row.map((value, index) =>
-            pdf.splitTextToSize(String(value == null || value === '' ? '—' : value), widths[index] - 4));
-          const rowHeight = Math.max(8, ...cellLines.map((lines) => lines.length * (fontSize * 0.42) + 4));
-          if (y + rowHeight > pageHeight - 13) {
-            pdf.addPage();
-            y = addPdfPageHeading(pdf, title || 'Glam Grooms Report', subtitle || '');
-            drawHeader();
-          }
-
-          let x = margin;
-          pdf.setDrawColor(220, 223, 218);
-          row.forEach((_, index) => {
-            if (rowIndex % 2 === 0) {
-              pdf.setFillColor(250, 249, 245);
-              pdf.rect(x, y, widths[index], rowHeight, 'F');
-            }
-            pdf.rect(x, y, widths[index], rowHeight, 'S');
-            pdf.setTextColor(37, 50, 56);
-            pdf.text(cellLines[index], x + 2, y + 4.8, { lineHeightFactor: 1.15 });
-            x += widths[index];
-          });
-          y += rowHeight;
-        });
-
-        return y;
-      };
-
-      const addPdfPageNumbers = (pdf) => {
-        const totalPages = pdf.getNumberOfPages();
-        for (let page = 1; page <= totalPages; page += 1) {
-          pdf.setPage(page);
-          const pageWidth = pdf.internal.pageSize.getWidth();
-          const pageHeight = pdf.internal.pageSize.getHeight();
-          pdf.setDrawColor(220, 223, 218);
-          pdf.line(12, pageHeight - 9, pageWidth - 12, pageHeight - 9);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(7);
-          pdf.setTextColor(102, 115, 122);
-          pdf.text(`Glam Grooms Pet Spa & Hotel  •  Page ${page} of ${totalPages}`, 12, pageHeight - 5);
-        }
-      };
-
       const statCard = (label, value, color, href) => `
         <a class="stat-card stat-card-link" href="${href}" aria-label="View ${escapeHtml(label)}">
           <div class="label">${label}</div>
@@ -211,12 +115,9 @@
           statCard('Customers', s.customers, 'purple', '/admin/customers.html') +
           statCard('Pets', s.pets, 'purple', '/admin/pets.html') +
           statCard("Today's Grooming", s.grooming.today, 'green', '/admin/grooming.html') +
-          statCard('Active Grooming', s.grooming.active, 'green', '/admin/grooming.html') +
-          statCard('Current Guests', s.hotel.currentGuests, 'orange', '/admin/hotel.html') +
           statCard('Upcoming Arrivals', s.hotel.upcomingArrivals, 'orange', '/admin/hotel.html') +
           statCard('Grooming Revenue', fmtMoney(s.grooming.revenue), 'green', '#revenue') +
           statCard('Hotel Revenue', fmtMoney(s.hotel.revenue), 'green', '#revenue') +
-          statCard('Product Sales', fmtMoney(s.productSalesRevenue), 'green', '/admin/pos.html') +
           statCard('Walk-in Cash Sales', fmtMoney(s.overTheCounterRevenue), 'green', '/admin/pos.html') +
           statCard('Total Revenue', fmtMoney(s.totalRevenue), 'purple', '#revenue');
       }
@@ -334,96 +235,13 @@
       });
 
       async function exportRevenuePdf() {
-        if (!revenueAnalyticsData || !window.jspdf) {
+        if (!revenueAnalyticsData || !window.exportRevenueSalesPdf) {
           alert('PDF export is unavailable right now. Please refresh and try again.');
           return;
         }
 
         try {
-          const { jsPDF } = window.jspdf;
-          const pdf = new jsPDF('l', 'mm', 'a4');
-          const data = revenueAnalyticsData;
-          const periodNames = { daily: 'Daily · last 7 days', weekly: 'Weekly · last 8 weeks', monthly: 'Monthly · last 6 months', yearly: 'Yearly · last 5 years' };
-          const period = data.period || 'monthly';
-          const subtitle = `${periodNames[period] || period}  •  Generated ${new Date().toLocaleString()}`;
-          let y = addPdfPageHeading(pdf, 'Revenue & Sales Report', subtitle);
-          const summary = [
-            ['Grooming revenue', fmtMoney(data.totals.grooming)],
-            ['Hotel revenue', fmtMoney(data.totals.hotel)],
-            ['Combined revenue', fmtMoney(data.totals.combined)],
-          ];
-          const cardWidth = 82;
-          summary.forEach(([label, value], index) => {
-            const x = 12 + index * (cardWidth + 6);
-            pdf.setFillColor(index === 1 ? 237 : 250, index === 1 ? 246 : 247, index === 1 ? 244 : 238);
-            pdf.setDrawColor(220, 223, 218);
-            pdf.roundedRect(x, y, cardWidth, 18, 2, 2, 'FD');
-            pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(7);
-            pdf.setTextColor(102, 115, 122);
-            pdf.text(label, x + 4, y + 6);
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(11);
-            pdf.setTextColor(37, 50, 56);
-            pdf.text(value, x + 4, y + 13.5);
-          });
-          y += 25;
-          y = drawPdfTable(pdf, {
-            headers: ['Period', 'Grooming bookings', 'Grooming revenue', 'Hotel bookings', 'Hotel revenue', 'Combined revenue'],
-            rows: (data.grooming || []).map((bucket, index) => {
-              const hotelBucket = data.hotel?.[index] || {};
-              return [
-                bucket.label,
-                String(bucket.count || 0),
-                fmtMoney(bucket.revenue),
-                String(hotelBucket.count || 0),
-                fmtMoney(hotelBucket.revenue),
-                fmtMoney(Number(bucket.revenue || 0) + Number(hotelBucket.revenue || 0)),
-              ];
-            }),
-            widths: [51, 38, 43, 35, 43, 44],
-            y,
-            title: 'Revenue by period',
-            fontSize: 8,
-          });
-
-          const serviceTables = [
-            {
-              title: 'Grooming service sales',
-              entries: data.groomingServices || [],
-              total: Number(data.totals.grooming || 0),
-            },
-            {
-              title: 'Hotel room sales',
-              entries: data.hotelServices || [],
-              total: Number(data.totals.hotel || 0),
-            },
-          ];
-          serviceTables.forEach((table) => {
-            if (y > pdf.internal.pageSize.getHeight() - 48) {
-              pdf.addPage();
-              y = addPdfPageHeading(pdf, 'Revenue & Sales Report', subtitle);
-            }
-            y += 5;
-            y = drawPdfTable(pdf, {
-              headers: ['Service', 'Bookings / pets served', 'Revenue', 'Share of category revenue'],
-              rows: table.entries
-                .filter((entry) => Number(entry.count || 0) || Number(entry.revenue || 0))
-                .map((entry) => [
-                  entry.label || 'Other',
-                  String(entry.count || 0),
-                  fmtMoney(entry.revenue),
-                  table.total > 0 ? `${((Number(entry.revenue || 0) / table.total) * 100).toFixed(1)}%` : '0.0%',
-                ]),
-              widths: [105, 55, 55, 55],
-              y,
-              title: table.title,
-              subtitle: 'Includes service-level totals and counts for the selected reporting period.',
-              fontSize: 8,
-            });
-          });
-          addPdfPageNumbers(pdf);
-          pdf.save(`revenue-sales-report-${period}.pdf`);
+          window.exportRevenueSalesPdf(revenueAnalyticsData);
         } catch (error) {
           console.error('Unable to export revenue PDF:', error);
           alert('Unable to export the PDF at the moment. Please try again.');

@@ -7,7 +7,11 @@ const { parseToken: parseCustomerToken } = require('../util/customerAuth');
 const { parseToken: parseAdminToken } = require('../util/adminAuth');
 const {
   BookingConflictError,
+  GROOMING_HOURLY_CAPACITY,
   groomingLockIds,
+  groomingCapacityLockIds,
+  getGroomingAvailableSlotNumbers,
+  claimGroomingBookingSlot,
   hotelLockIdsForTypes,
   HOTEL_DAILY_CAPACITY,
   hotelLockIdsForSlots,
@@ -15,11 +19,10 @@ const {
   claimHotelSlots,
   hotelDateKeys,
   getUnavailableBookingSlotIds,
-  claimBookingSlots,
   claimReplacementBookingSlots,
-  areBookingSlotsAvailable,
   releaseBookingSlots,
   releaseBookingSlotsByIds,
+  releaseGroomingLockIds,
   releaseGroomingBookingSlots,
 } = require('../util/bookingLocks');
 const { validateTime, validatePickupTime, validateAppointmentDuration } = require('../util/businessHours');
@@ -284,7 +287,7 @@ const cleanupAbandonedPayMongoBookings = async () => {
     for (const appt of groomingPending) {
       const isExpired = appt.createdAt && (now - new Date(appt.createdAt).getTime() > EXPIRY_MS);
       if (isExpired && await expireStaleCheckout(appt)) {
-        await releaseGroomingBookingSlots(appt.date, appt.time, groomingRecordDuration(appt));
+        await releaseGroomingBookingSlots(appt.date, appt.time, groomingRecordDuration(appt), appt.groomingSlotNumber);
         await appt.destroy();
       }
     }
@@ -369,19 +372,23 @@ const cleanupAbandonedPayMongoBookings = async () => {
       return res.status(400).json({ error: `Pickup must be at or after ${durationCheck.pickupEarliest}, when the selected services are complete.` });
     }
 
-    const requestedStart = timeToMinutes(time);
-    const requestedEnd = requestedStart + durationMinutes;
     const existingAppointments = await GroomingAppointment.findAll({ where: { date } });
-    if (existingAppointments.some((appointment) => {
-      if (appointment.status === 'cancelled') return false;
-      const existingStart = timeToMinutes(appointment.time);
-      if (existingStart === null) return false;
-      return existingStart < requestedEnd && existingStart + groomingRecordDuration(appointment) > requestedStart;
-    })) {
-      throw new BookingConflictError('That schedule is already booked. The first customer to request it was prioritized. Please choose another time or date.');
-    }
-
-    const lockRefs = await claimBookingSlots(groomingLockIds(date, time, durationMinutes), { type: 'grooming', date, time, durationMinutes });
+    const activeAppointments = existingAppointments.filter((appointment) => appointment.status !== 'cancelled')
+      .map((appointment) => ({ ...appointment, durationMinutes: groomingRecordDuration(appointment) }));
+    const availableSlotNumbers = await getGroomingAvailableSlotNumbers({
+      date,
+      time,
+      durationMinutes,
+      bookings: activeAppointments,
+    });
+    const lockClaim = await claimGroomingBookingSlot({
+      date,
+      time,
+      durationMinutes,
+      details: { type: 'grooming', date, time },
+      blockedSlotNumbers: Array.from({ length: GROOMING_HOURLY_CAPACITY }, (_, index) => index + 1)
+        .filter((slotNumber) => !availableSlotNumbers.includes(slotNumber)),
+    });
     let appointmentCreated = false;
     let appointmentRecord = null;
     try {
@@ -407,6 +414,7 @@ const cleanupAbandonedPayMongoBookings = async () => {
         },
         date,
         time,
+        groomingSlotNumber: lockClaim.slotNumber,
         pickupTime: pickupTime || null,
         notes,
         customerId: customer.id,
@@ -438,7 +446,7 @@ const cleanupAbandonedPayMongoBookings = async () => {
       }
       res.status(201).json({ message: 'Grooming appointment booked', appointment, customer, pet: primaryPet, pets, checkout });
     } finally {
-      if (!appointmentCreated) await releaseBookingSlots(lockRefs);
+      if (!appointmentCreated) await releaseBookingSlotsByIds(lockClaim.createdLockIds);
       if (!appointmentCreated && appointmentRecord) await appointmentRecord.destroy();
     }
   } catch (error) {
@@ -781,7 +789,9 @@ const cancelPayment = async (req, res, next) => {
 
       const lockIds = bookingType === 'hotel'
         ? hotelReservationLockIds(booking)
-        : groomingLockIds(booking.date, booking.time);
+        : booking.groomingSlotNumber
+          ? groomingCapacityLockIds(booking.date, booking.time, groomingRecordDuration(booking), booking.groomingSlotNumber)
+          : groomingLockIds(booking.date, booking.time, groomingRecordDuration(booking));
       await releaseBookingSlotsByIds(lockIds);
       await booking.destroy();
       deleted = true;
@@ -897,21 +907,49 @@ const updateCustomerBooking = async (req, res, next) => {
         return res.status(400).json({ error: `Pickup must be at or after ${durationCheck.pickupEarliest}.` });
       }
       const oldSchedule = `${oldDate || ''} ${oldTime || ''}`.trim();
-      const oldLockIds = groomingLockIds(oldDate, oldTime, durationMinutes);
-      const newLockIds = groomingLockIds(date, time, durationMinutes);
+      const oldLockIds = booking.groomingSlotNumber
+        ? groomingCapacityLockIds(oldDate, oldTime, durationMinutes, booking.groomingSlotNumber)
+        : groomingLockIds(oldDate, oldTime, durationMinutes);
       const scheduleChanged = date !== booking.date || time !== booking.time;
       let claimedLockIds = [];
+      let newLockIds = oldLockIds;
+      let slotNumber = booking.groomingSlotNumber;
       if (scheduleChanged) {
-        claimedLockIds = await claimReplacementBookingSlots(oldLockIds, newLockIds, { type: 'grooming', date, time });
+        const existing = (await GroomingAppointment.findAll({ where: { date } }))
+          .map((item) => ({ ...item, durationMinutes: groomingRecordDuration(item) }));
+        const availableSlotNumbers = await getGroomingAvailableSlotNumbers({
+          date,
+          time,
+          durationMinutes,
+          bookings: existing,
+          excludeBookingId: booking.id,
+          oldLockIds,
+        });
+        if (!availableSlotNumbers.length) {
+          return res.status(409).json({ error: 'That Grooming time is fully booked. Choose another available time.' });
+        }
+        const claim = await claimGroomingBookingSlot({
+          date,
+          time,
+          durationMinutes,
+          details: { type: 'grooming', date, time },
+          blockedSlotNumbers: Array.from({ length: GROOMING_HOURLY_CAPACITY }, (_, index) => index + 1)
+            .filter((number) => !availableSlotNumbers.includes(number)),
+          preferredSlotNumber: booking.groomingSlotNumber,
+          oldLockIds,
+        });
+        slotNumber = claim.slotNumber;
+        claimedLockIds = claim.createdLockIds;
+        newLockIds = claim.lockIds;
       }
       try {
-        await booking.update({ date, time, pickupTime, notes });
+        await booking.update({ date, time, pickupTime, notes, ...(slotNumber ? { groomingSlotNumber: slotNumber } : {}) });
       } catch (error) {
         if (claimedLockIds.length) await releaseBookingSlotsByIds(claimedLockIds);
         throw error;
       }
       if (scheduleChanged) {
-        await releaseBookingSlotsByIds(oldLockIds.filter((id) => !newLockIds.includes(id)));
+        await releaseGroomingLockIds(oldLockIds.filter((id) => !newLockIds.includes(id)), oldDate, oldTime);
       }
       if (scheduleChanged) {
         const pets = await Promise.all((booking.petIds || (booking.petId ? [booking.petId] : [])).map((id) => Pet.findByPk(id)));
@@ -1031,9 +1069,6 @@ const requestCustomerBookingReschedule = async (req, res, next) => {
       return res.status(409).json({ error: 'GCash bookings cannot be rescheduled. Cancel the booking to request a refund.' });
     }
     const status = String(booking.status || '').toLowerCase();
-    if (status === 'pending' && booking.paymentStatus !== 'paid' && booking.paymentMethod !== 'qrph') {
-      return res.status(409).json({ error: 'Upcoming unpaid bookings can be rescheduled directly from Transactions.' });
-    }
     if (!isFutureBooking(booking, bookingType)
       || (bookingType === 'grooming' && ['completed', 'cancelled'].includes(status))
       || (bookingType === 'hotel' && ['checked-in', 'checked-out', 'cancelled'].includes(status))) {
@@ -1225,7 +1260,9 @@ const cancelCustomerBooking = async (req, res, next) => {
 
     const lockIds = bookingType === 'hotel'
       ? hotelReservationLockIds(booking)
-      : groomingLockIds(booking.date, booking.time, groomingRecordDuration(booking));
+      : booking.groomingSlotNumber
+        ? groomingCapacityLockIds(booking.date, booking.time, groomingRecordDuration(booking), booking.groomingSlotNumber)
+        : groomingLockIds(booking.date, booking.time, groomingRecordDuration(booking));
     await booking.update({ status: 'cancelled' });
     await releaseBookingSlotsByIds(lockIds);
     const bookingPetIds = Array.isArray(booking.petIds) && booking.petIds.length
@@ -1266,24 +1303,23 @@ const getGroomingAvailability = async (req, res, next) => {
     const existing = (await GroomingAppointment.findAll({ where: { date } })).filter((booking) => booking.status !== 'cancelled');
     const slots = await Promise.all(hours.map(async (hour) => {
       const time = fmtHour(hour);
-      const start = timeToMinutes(time);
       const schedule = validateAppointmentDuration(date, time, durationMinutes);
       const future = validateFutureBookingTime(date, time, 'Appointment');
-      const end = start + durationMinutes;
-      const overlaps = existing.some((booking) => {
-        const existingStart = timeToMinutes(booking.time);
-        return existingStart !== null
-          && existingStart < end
-          && existingStart + groomingRecordDuration(booking) > start;
-      });
-      const lockAvailable = schedule.ok
-        ? await areBookingSlotsAvailable(groomingLockIds(date, time, durationMinutes))
-        : false;
+      const availableSlotNumbers = schedule.ok && future.ok
+        ? await getGroomingAvailableSlotNumbers({
+          date,
+          time,
+          durationMinutes,
+          bookings: existing.map((booking) => ({ ...booking, durationMinutes: groomingRecordDuration(booking) })),
+        })
+        : [];
       return {
         time,
         endTime: schedule.ok ? schedule.endTime : null,
         pickupEarliest: schedule.ok ? schedule.pickupEarliest : null,
-        available: schedule.ok && future.ok && !overlaps && lockAvailable,
+        available: availableSlotNumbers.length > 0,
+        remainingSlots: availableSlotNumbers.length,
+        capacity: GROOMING_HOURLY_CAPACITY,
       };
     }));
 

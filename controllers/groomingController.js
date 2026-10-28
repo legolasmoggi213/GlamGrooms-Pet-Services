@@ -2,10 +2,11 @@ const { GroomingAppointment, Customer, Pet } = require('../models');
 const { sendReservationTicket, sendBookingCancellation } = require('../util/mailer');
 const { requestGcashBookingRefund } = require('../util/paymentRefund');
 const {
+  GROOMING_HOURLY_CAPACITY,
   groomingLockIds,
-  claimBookingSlots,
-  claimReplacementBookingSlots,
-  releaseBookingSlots,
+  groomingCapacityLockIds,
+  getGroomingAvailableSlotNumbers,
+  claimGroomingBookingSlot,
   releaseBookingSlotsByIds,
   releaseGroomingBookingSlots,
   releaseGroomingLockIds,
@@ -134,19 +135,26 @@ const createAppointment = async (req, res, next) => {
         return res.status(400).json({ error: `Pickup must be at or after ${durationCheck.pickupEarliest}.` });
       }
     }
-    const requestedStart = timeToMinutes(time);
-    const requestedEnd = requestedStart + durationMinutes;
     const existingAppointments = await GroomingAppointment.findAll({ where: { date } });
-    if (status !== 'cancelled' && existingAppointments.some((item) => {
-      const existingStart = timeToMinutes(item.time);
-      return item.status !== 'cancelled' && existingStart !== null
-        && existingStart < requestedEnd
-        && existingStart + groomingRecordDuration(item) > requestedStart;
-    })) {
-      return res.status(409).json({ error: 'That grooming time is already booked.' });
+    let slotClaim = null;
+    if (status !== 'cancelled') {
+      const availableSlotNumbers = await getGroomingAvailableSlotNumbers({
+        date,
+        time,
+        durationMinutes,
+        bookings: existingAppointments.filter((item) => item.status !== 'cancelled')
+          .map((item) => ({ ...item, durationMinutes: groomingRecordDuration(item) })),
+      });
+      if (!availableSlotNumbers.length) return res.status(409).json({ error: 'That grooming time is fully booked.' });
+      slotClaim = await claimGroomingBookingSlot({
+        date,
+        time,
+        durationMinutes,
+        details: { type: 'grooming', date, time },
+        blockedSlotNumbers: Array.from({ length: GROOMING_HOURLY_CAPACITY }, (_, index) => index + 1)
+          .filter((slotNumber) => !availableSlotNumbers.includes(slotNumber)),
+      });
     }
-
-    const lockRefs = status === 'cancelled' ? [] : await claimBookingSlots(groomingLockIds(date, time, durationMinutes), { type: 'grooming', date, time, durationMinutes });
     let created = false;
     let appointment;
     try {
@@ -154,6 +162,7 @@ const createAppointment = async (req, res, next) => {
         service,
         date,
         time,
+        ...(slotClaim ? { groomingSlotNumber: slotClaim.slotNumber } : {}),
         pickupTime: pickupTime || null,
         notes,
         customerId,
@@ -163,7 +172,7 @@ const createAppointment = async (req, res, next) => {
       });
       created = true;
     } finally {
-      if (!created) await releaseBookingSlots(lockRefs);
+      if (!created && slotClaim) await releaseBookingSlotsByIds(slotClaim.createdLockIds);
     }
     const full = await GroomingAppointment.findByPk(appointment.id, { include: includeAll });
     res.status(201).json(await addRelatedRecords(full));
@@ -250,6 +259,13 @@ const updateAppointment = async (req, res, next) => {
       petServices: updates.petServices || appointment.petServices,
     });
     scheduleChanged = scheduleChanged || oldDuration !== nextDuration;
+    const oldDate = appointment.date;
+    const oldTime = appointment.time;
+    const oldLockIds = appointment.groomingSlotNumber
+      ? groomingCapacityLockIds(oldDate, oldTime, oldDuration, appointment.groomingSlotNumber)
+      : groomingLockIds(oldDate, oldTime, oldDuration);
+    let newLockIds = oldLockIds;
+    let slotClaim = null;
     if (scheduleChanged && status !== 'cancelled') {
       const futureTimeCheck = validateFutureBookingTime(nextDate, nextTime, 'Appointment');
       if (!futureTimeCheck.ok) return res.status(400).json({ error: futureTimeCheck.error });
@@ -258,38 +274,40 @@ const updateAppointment = async (req, res, next) => {
       if (updates.pickupTime && timeToMinutes(updates.pickupTime) < timeToMinutes(durationCheck.pickupEarliest)) {
         return res.status(400).json({ error: `Pickup must be at or after ${durationCheck.pickupEarliest}.` });
       }
-      const start = timeToMinutes(nextTime);
-      const end = start + nextDuration;
       const conflicts = await GroomingAppointment.findAll({ where: { date: nextDate } });
-      if (conflicts.some((item) => {
-        if (String(item.id) === String(appointment.id) || item.status === 'cancelled') return false;
-        const otherStart = timeToMinutes(item.time);
-        return otherStart !== null && otherStart < end && otherStart + groomingRecordDuration(item) > start;
-      })) return res.status(409).json({ error: 'That grooming time is already booked.' });
+      const availableSlotNumbers = await getGroomingAvailableSlotNumbers({
+        date: nextDate,
+        time: nextTime,
+        durationMinutes: nextDuration,
+        bookings: conflicts.filter((item) => item.status !== 'cancelled')
+          .map((item) => ({ ...item, durationMinutes: groomingRecordDuration(item) })),
+        excludeBookingId: appointment.id,
+        oldLockIds,
+      });
+      if (!availableSlotNumbers.length) return res.status(409).json({ error: 'That grooming time is fully booked.' });
+      slotClaim = await claimGroomingBookingSlot({
+        date: nextDate,
+        time: nextTime,
+        durationMinutes: nextDuration,
+        details: { type: 'grooming', date: nextDate, time: nextTime },
+        blockedSlotNumbers: Array.from({ length: GROOMING_HOURLY_CAPACITY }, (_, index) => index + 1)
+          .filter((slotNumber) => !availableSlotNumbers.includes(slotNumber)),
+        preferredSlotNumber: appointment.groomingSlotNumber,
+        oldLockIds,
+      });
+      updates.groomingSlotNumber = slotClaim.slotNumber;
+      newLockIds = slotClaim.lockIds;
     }
     const needsAdminConfirmation = status === 'confirmed' && !appointment.confirmedAt;
     if (needsAdminConfirmation) updates.confirmedAt = new Date();
-    const oldDate = appointment.date;
-    const oldTime = appointment.time;
-    const oldLockIds = groomingLockIds(oldDate, oldTime, oldDuration);
-    const newLockIds = groomingLockIds(nextDate, nextTime, nextDuration);
-    let claimedNewLockIds = [];
-    if (scheduleChanged && updates.status !== 'cancelled') {
-      claimedNewLockIds = await claimReplacementBookingSlots(
-        oldLockIds,
-        newLockIds,
-        { type: 'grooming', date: nextDate, time: nextTime, durationMinutes: nextDuration },
-        { type: 'grooming', date: oldDate, time: oldTime },
-      );
-    }
     try {
       await appointment.update(updates);
     } catch (error) {
-      if (claimedNewLockIds.length) await releaseBookingSlotsByIds(claimedNewLockIds);
+      if (slotClaim?.createdLockIds.length) await releaseBookingSlotsByIds(slotClaim.createdLockIds);
       throw error;
     }
     if (updates.status === 'cancelled') {
-      await releaseGroomingBookingSlots(oldDate, oldTime, oldDuration);
+      await releaseGroomingBookingSlots(oldDate, oldTime, oldDuration, appointment.groomingSlotNumber);
     } else if (scheduleChanged) {
       await releaseGroomingLockIds(oldLockIds.filter((id) => !newLockIds.includes(id)), oldDate, oldTime);
     }
@@ -364,7 +382,7 @@ const deleteAppointment = async (req, res, next) => {
       return res.status(404).json({ error: 'Appointment not found' });
     }
     await appointment.destroy();
-    await releaseGroomingBookingSlots(appointment.date, appointment.time, groomingRecordDuration(appointment));
+    await releaseGroomingBookingSlots(appointment.date, appointment.time, groomingRecordDuration(appointment), appointment.groomingSlotNumber);
     res.json({ message: 'Appointment deleted' });
   } catch (error) {
     next(error);

@@ -64,81 +64,16 @@
   };
 
   const exportRevenuePdf = () => {
-    if (!revenueAnalyticsData || !window.jspdf) {
+    if (!revenueAnalyticsData || !window.exportRevenueSalesPdf) {
       alert('PDF export is unavailable right now. Please refresh and try again.');
       return;
     }
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF('l', 'mm', 'a4');
-    const period = revenueAnalyticsData.period || 'monthly';
-    const margin = 14;
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    let y = 16;
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(18);
-    pdf.text('Revenue & Sales Report', margin, y);
-    y += 7;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(9);
-    pdf.text(`${revenuePeriods[period] || period} · Generated ${new Date().toLocaleString()}`, margin, y);
-    y += 9;
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(11);
-    pdf.text(`Grooming: ${fmtMoney(revenueAnalyticsData.totals.grooming)}    Hotel: ${fmtMoney(revenueAnalyticsData.totals.hotel)}    Combined: ${fmtMoney(revenueAnalyticsData.totals.combined)}`, margin, y);
-    y += 10;
-
-    const drawTable = (title, rows) => {
-      const widths = [pageWidth - margin * 2 - 100, 30, 70];
-      const drawHeader = () => {
-        pdf.setFillColor(32, 45, 50);
-        pdf.rect(margin, y - 5, pageWidth - margin * 2, 8, 'F');
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(8);
-        pdf.setTextColor(255, 255, 255);
-        pdf.text('Service / period', margin + 2, y);
-        pdf.text('Count', margin + widths[0] + 2, y);
-        pdf.text('Revenue', margin + widths[0] + widths[1] + 2, y);
-        pdf.setTextColor(37, 50, 56);
-        pdf.setFont('helvetica', 'normal');
-        y += 7;
-      };
-      const newPage = () => {
-        pdf.addPage();
-        y = 16;
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(12);
-        pdf.text(title, margin, y);
-        y += 8;
-        drawHeader();
-      };
-      if (y + 22 > pageHeight - margin) newPage();
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(12);
-      pdf.text(title, margin, y);
-      y += 8;
-      drawHeader();
-      rows.forEach((row) => {
-        const labelLines = pdf.splitTextToSize(String(row[0]), widths[0] - 4);
-        const rowHeight = Math.max(7, labelLines.length * 4 + 2);
-        if (y + rowHeight > pageHeight - margin) newPage();
-        pdf.setFontSize(8);
-        pdf.text(labelLines, margin + 2, y);
-        pdf.text(String(row[1]), margin + widths[0] + 2, y);
-        pdf.text(String(row[2]), margin + widths[0] + widths[1] + 2, y);
-        y += rowHeight;
-      });
-      y += 6;
-    };
-
-    const periods = (revenueAnalyticsData.grooming || []).map((bucket, index) => {
-      const hotel = revenueAnalyticsData.hotel?.[index] || {};
-      return [bucket.label, `${Number(bucket.count || 0)} / ${Number(hotel.count || 0)}`, fmtMoney(Number(bucket.revenue || 0) + Number(hotel.revenue || 0))];
-    });
-    drawTable('Revenue by period (Grooming / Hotel counts)', periods);
-    drawTable('Grooming service sales', (revenueAnalyticsData.groomingServices || []).map((entry) => [entry.label, entry.count, fmtMoney(entry.revenue)]));
-    drawTable('Hotel room sales', (revenueAnalyticsData.hotelServices || []).map((entry) => [entry.label, entry.count, fmtMoney(entry.revenue)]));
-    pdf.save(`revenue-sales-report-${period}.pdf`);
+    try {
+      window.exportRevenueSalesPdf(revenueAnalyticsData);
+    } catch (error) {
+      console.error('Unable to export revenue PDF:', error);
+      alert('Unable to export the PDF at the moment. Please try again.');
+    }
   };
 
   const revenuePeriodControls = document.querySelector('#staff-revenue .revenue-periods');
@@ -172,14 +107,9 @@
       .filter((booking) => String(booking.checkOut || '') >= businessDate)
       .sort((left, right) => String(left.checkIn).localeCompare(String(right.checkIn)))
       .slice(0, 8);
-    const hotelGuests = hotelBookings.filter((booking) => booking.status === 'checked-in'
-      && String(booking.checkIn || '') <= businessDate
-      && String(booking.checkOut || '') >= businessDate);
-
     statsEl.innerHTML = [
       statCard("Today's Grooming", groomingToday.length, 'green'),
       statCard('Upcoming Grooming', upcomingGrooming.length, 'green'),
-      statCard('Current Hotel Guests', hotelGuests.length, 'orange'),
       statCard('Upcoming Hotel Stays', hotelBookings.filter((booking) => ['pending', 'reserved', 'confirmed'].includes(booking.status)
         && String(booking.checkIn || '') >= businessDate).length, 'orange'),
     ].join('');

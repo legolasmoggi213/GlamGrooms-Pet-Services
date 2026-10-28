@@ -12,8 +12,24 @@
   let isAdmin = false;
   let bookings = [];
   let rescheduleRequests = [];
+  const recentCustomerActivity = new Map();
   const groomingServices = ['bath', 'nail-trim', 'haircut', 'deshedding', 'full-groom'];
   const groomingStatuses = ['pending', 'scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled'];
+
+  const noteCustomerActivity = (customerId) => {
+    if (customerId != null) recentCustomerActivity.set(String(customerId), Date.now());
+  };
+
+  const noteBookingActivity = (type, bookingId) => {
+    const item = bookings.find((entry) => entry.type === type && String(entry.booking.id) === String(bookingId));
+    if (item) noteCustomerActivity(item.booking.customerId || item.booking.Customer?.id);
+  };
+
+  const activityTime = (item) => {
+    const customerId = String(item.booking.customerId || item.booking.Customer?.id || '');
+    const updatedAt = Date.parse(item.booking.updatedAt || '') || 0;
+    return Math.max(recentCustomerActivity.get(customerId) || 0, updatedAt);
+  };
 
   const petsFor = (booking) => Array.isArray(booking.petNames) && booking.petNames.length
     ? booking.petNames.join(', ')
@@ -150,6 +166,7 @@
           pickupTime: form.elements.namedItem('pickupTime').value || null,
           notes: form.elements.namedItem('notes').value.trim() || null,
         });
+        noteCustomerActivity(customerSelect.value);
         closeModal();
         await loadAppointments();
         messageEl.className = 'text-success';
@@ -273,6 +290,11 @@
     }).join('');
   };
 
+  const loadPendingRescheduleRequests = async () => {
+    rescheduleRequests = await apiGet('/admin/reschedule-requests');
+    renderRescheduleRequests();
+  };
+
   const sameSchedule = (booking, requested, type) => {
     const fields = type === 'grooming' ? ['date', 'time', 'pickupTime'] : ['checkIn', 'checkInTime', 'checkOut', 'checkOutTime'];
     return fields.every((field) => String(booking[field] || '') === String(requested[field] || ''));
@@ -302,6 +324,7 @@
         }
       }
       await apiPost(`/admin/reschedule-requests/${encodeURIComponent(request.id)}/decision`, { decision });
+      noteBookingActivity(request.bookingType, request.bookingId);
       await loadAppointments();
       messageEl.className = 'text-success';
       messageEl.textContent = decision === 'approved' ? 'Reschedule request approved and applied.' : 'Reschedule request declined.';
@@ -332,6 +355,8 @@
       ...hotel.filter((booking) => !terminalStatuses.hotel.has(booking.status))
         .map((booking) => ({ type: 'hotel', booking })),
     ].sort((left, right) => {
+      const activityOrder = activityTime(right) - activityTime(left);
+      if (activityOrder) return activityOrder;
       const leftDate = left.type === 'grooming' ? left.booking.date : left.booking.checkIn;
       const rightDate = right.type === 'grooming' ? right.booking.date : right.booking.checkIn;
       const dateOrder = String(rightDate || '').localeCompare(String(leftDate || ''));
@@ -387,6 +412,7 @@
       submit.disabled = true;
       try {
         await apiPut(`/${type}/${encodeURIComponent(booking.id)}`, body);
+        noteBookingActivity(type, booking.id);
         closeModal();
         await loadAppointments();
         messageEl.className = 'text-success';
@@ -440,6 +466,7 @@
         const result = sendingTicket
           ? await apiPost(`/${type}/${encodeURIComponent(id)}/ticket`, {})
           : await apiPut(`/${type}/${encodeURIComponent(id)}`, { status: 'confirmed' });
+        noteBookingActivity(type, id);
         closeModal();
         await loadAppointments();
         messageEl.className = result && sendingTicket && !result.emailSent ? 'text-error' : 'text-success';
@@ -459,6 +486,7 @@
       button.disabled = true;
       try {
         await apiPut(`/${type}/${encodeURIComponent(id)}`, { status });
+        noteBookingActivity(type, id);
         closeModal();
         await loadAppointments();
         messageEl.className = 'text-success';
@@ -475,6 +503,7 @@
       button.disabled = true;
       try {
         await apiPut(`/${type}/${encodeURIComponent(id)}`, { paymentStatus });
+        noteBookingActivity(type, id);
         closeModal();
         await loadAppointments();
         messageEl.className = 'text-success';
@@ -493,6 +522,7 @@
       button.disabled = true;
       try {
         await apiPut(`/${type}/${encodeURIComponent(id)}`, { status: 'cancelled' });
+        noteBookingActivity(type, id);
         closeModal();
         await loadAppointments();
         messageEl.className = 'text-success';
@@ -510,6 +540,7 @@
     button.disabled = true;
     try {
       await apiDelete(`/${type}/${encodeURIComponent(id)}`);
+      noteBookingActivity(type, id);
       closeModal();
       await loadAppointments();
       messageEl.className = 'text-success';
@@ -528,7 +559,20 @@
   });
 
   document.getElementById('refresh-reschedule-requests').addEventListener('click', () => {
-    loadAppointments().catch(showLoadError);
+    loadPendingRescheduleRequests().catch((error) => {
+      rescheduleRowsEl.innerHTML = `<tr><td colspan="8" class="empty">${escapeHtml(error.message)}</td></tr>`;
+    });
+  });
+
+  window.setInterval(() => {
+    if (!document.hidden) {
+      loadPendingRescheduleRequests().catch((error) => console.error('Unable to refresh reschedule requests:', error));
+    }
+  }, 10000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      loadPendingRescheduleRequests().catch((error) => console.error('Unable to refresh reschedule requests:', error));
+    }
   });
 
   document.getElementById('new-grooming-appointment').addEventListener('click', () => {

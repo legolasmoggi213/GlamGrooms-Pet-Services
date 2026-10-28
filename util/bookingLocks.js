@@ -10,6 +10,7 @@ class BookingConflictError extends Error {
 
 const lockCollection = firestore.collection('bookingSlots');
 const HOTEL_DAILY_CAPACITY = 35;
+const GROOMING_HOURLY_CAPACITY = 3;
 
 const groomingLockIds = (date, time, durationMinutes = 60) => {
   const [hour, minute] = String(time || '').split(':').map(Number);
@@ -20,6 +21,40 @@ const groomingLockIds = (date, time, durationMinutes = 60) => {
   const lastHour = Math.ceil(endMinute / 60);
   return Array.from({ length: Math.max(1, lastHour - firstHour) }, (_, index) =>
     `grooming_${date}_${String(firstHour + index).padStart(2, '0')}:00`);
+};
+
+const groomingCapacityLockIds = (date, time, durationMinutes, slotNumber) => groomingLockIds(date, time, durationMinutes)
+  .map((id) => `${id}_slot_${slotNumber}`);
+
+const groomingOccupiedSlotsFromBookings = (bookings, date, time, durationMinutes, excludeBookingId = null) => {
+  const requestedStart = Number(String(time || '').slice(0, 2)) * 60 + Number(String(time || '').slice(3, 5));
+  const requestedEnd = requestedStart + Math.max(1, Number(durationMinutes) || 60);
+  const intervals = (bookings || [])
+    .filter((booking) => booking.status !== 'cancelled'
+      && String(booking.date || '') === String(date)
+      && String(booking.id) !== String(excludeBookingId))
+    .map((booking) => {
+      const start = Number(String(booking.time || '').slice(0, 2)) * 60 + Number(String(booking.time || '').slice(3, 5));
+      return {
+        start,
+        end: start + Math.max(1, Number(booking.durationMinutes) || 60),
+        slotNumber: Number(booking.groomingSlotNumber) || null,
+      };
+    })
+    .filter((booking) => Number.isFinite(booking.start) && booking.start >= 0)
+    .sort((left, right) => left.start - right.start || left.end - right.end);
+  const laneIntervals = Array.from({ length: GROOMING_HOURLY_CAPACITY }, () => []);
+  intervals.forEach((booking) => {
+    const laneIndex = Number.isInteger(booking.slotNumber)
+      && booking.slotNumber >= 1
+      && booking.slotNumber <= GROOMING_HOURLY_CAPACITY
+      ? booking.slotNumber - 1
+      : laneIntervals.findIndex((lane) => lane.every((interval) => interval.end <= booking.start || interval.start >= booking.end));
+    if (laneIndex >= 0) laneIntervals[laneIndex].push(booking);
+  });
+  return new Set(laneIntervals.flatMap((lane, index) => (
+    lane.some((booking) => booking.start < requestedEnd && booking.end > requestedStart) ? [index + 1] : []
+  )));
 };
 
 const releaseGroomingLockIds = async (lockIds, date, time) => {
@@ -34,8 +69,12 @@ const releaseGroomingLockIds = async (lockIds, date, time) => {
   if (ownedRefs.length) await releaseBookingSlots(ownedRefs);
 };
 
-const releaseGroomingBookingSlots = (date, time, durationMinutes = 60) =>
-  releaseGroomingLockIds(groomingLockIds(date, time, durationMinutes), date, time);
+const releaseGroomingBookingSlots = (date, time, durationMinutes = 60, slotNumber = null) =>
+  releaseGroomingLockIds(
+    slotNumber ? groomingCapacityLockIds(date, time, durationMinutes, slotNumber) : groomingLockIds(date, time, durationMinutes),
+    date,
+    time,
+  );
 
 const hotelLockIds = (roomType, checkIn, checkOut) => {
   const locks = [];
@@ -68,6 +107,7 @@ const withFirestoreFallback = async (operation, fallbackValue, label) => {
   try {
     return await operation();
   } catch (error) {
+    if (error instanceof BookingConflictError) throw error;
     console.warn(`[bookingLocks] ${label} failed; continuing without Firestore locks.`, error.message || error);
     return fallbackValue;
   }
@@ -144,6 +184,98 @@ const getUnavailableBookingSlotIds = async (lockIds) => {
   }, new Set(), 'Checking booking slot availability');
 };
 
+const getGroomingAvailableSlotNumbers = async ({
+  date,
+  time,
+  durationMinutes = 60,
+  bookings = [],
+  excludeBookingId = null,
+  oldLockIds = [],
+}) => {
+  const legacyLockIds = groomingLockIds(date, time, durationMinutes);
+  const laneLockIds = Array.from({ length: GROOMING_HOURLY_CAPACITY }, (_, index) =>
+    groomingCapacityLockIds(date, time, durationMinutes, index + 1));
+  const unavailable = await getUnavailableBookingSlotIds([...legacyLockIds, ...laneLockIds.flat()]);
+  const oldLocks = new Set(oldLockIds);
+  const occupiedByRecords = groomingOccupiedSlotsFromBookings(bookings, date, time, durationMinutes, excludeBookingId);
+  const legacyLaneOccupied = legacyLockIds.some((id) => unavailable.has(id) && !oldLocks.has(id));
+
+  return laneLockIds.flatMap((lockIds, index) => {
+    const slotNumber = index + 1;
+    const lockOccupied = lockIds.some((id) => unavailable.has(id) && !oldLocks.has(id));
+    if (occupiedByRecords.has(slotNumber) || lockOccupied || (slotNumber === 1 && legacyLaneOccupied)) return [];
+    return [slotNumber];
+  });
+};
+
+const claimGroomingBookingSlot = async ({
+  date,
+  time,
+  durationMinutes = 60,
+  details = {},
+  blockedSlotNumbers = [],
+  preferredSlotNumber = null,
+  oldLockIds = [],
+}) => {
+  const oldLocks = new Set(oldLockIds);
+  const legacyLockIds = groomingLockIds(date, time, durationMinutes);
+  const laneLockIds = Array.from({ length: GROOMING_HOURLY_CAPACITY }, (_, index) =>
+    groomingCapacityLockIds(date, time, durationMinutes, index + 1));
+  const allLockIds = [...legacyLockIds, ...laneLockIds.flat()];
+  const refs = allLockIds.map((id) => lockCollection.doc(id));
+  const slotOrder = [preferredSlotNumber, ...Array.from({ length: GROOMING_HOURLY_CAPACITY }, (_, index) => index + 1)]
+    .filter((slotNumber, index, slots) => Number.isInteger(slotNumber)
+      && slotNumber >= 1
+      && slotNumber <= GROOMING_HOURLY_CAPACITY
+      && slots.indexOf(slotNumber) === index);
+  const fallbackSlotNumber = slotOrder.find((slotNumber) => !blockedSlotNumbers.includes(slotNumber)) || 1;
+
+  return withFirestoreFallback(async () => firestore.runTransaction(async (transaction) => {
+    const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)));
+    const snapshotsById = new Map(allLockIds.map((id, index) => [id, snapshots[index]]));
+
+    for (const slotNumber of slotOrder) {
+      if (blockedSlotNumbers.includes(slotNumber)) continue;
+      const laneIds = laneLockIds[slotNumber - 1];
+      const laneOccupied = laneIds.some((id) => snapshotsById.get(id).exists && !oldLocks.has(id));
+      const legacyOccupied = slotNumber === 1
+        && legacyLockIds.some((id) => snapshotsById.get(id).exists && !oldLocks.has(id));
+      if (laneOccupied || legacyOccupied) continue;
+
+      const createdLockIds = laneIds.filter((id) => !snapshotsById.get(id).exists);
+      createdLockIds.forEach((id) => {
+        transaction.create(lockCollection.doc(id), {
+          ...details,
+          type: 'grooming',
+          date,
+          time,
+          durationMinutes,
+          slotNumber,
+          createdAt: new Date(),
+        });
+      });
+      laneIds.filter((id) => snapshotsById.get(id).exists && oldLocks.has(id)).forEach((id) => {
+        transaction.update(lockCollection.doc(id), {
+          ...details,
+          type: 'grooming',
+          date,
+          time,
+          durationMinutes,
+          slotNumber,
+          updatedAt: new Date(),
+        });
+      });
+      return { slotNumber, lockIds: laneIds, createdLockIds };
+    }
+
+    throw new BookingConflictError('That time is fully booked. Please choose another time.');
+  }), {
+    slotNumber: fallbackSlotNumber,
+    lockIds: groomingCapacityLockIds(date, time, durationMinutes, fallbackSlotNumber),
+    createdLockIds: [],
+  }, 'Claiming Grooming capacity');
+};
+
 const claimBookingSlots = async (lockIds, details) => {
   const refs = lockIds.map((id) => lockCollection.doc(id));
   await withFirestoreFallback(async () => {
@@ -207,7 +339,12 @@ const claimReplacementBookingSlots = async (oldLockIds, newLockIds, details, old
 module.exports = {
   BookingConflictError,
   HOTEL_DAILY_CAPACITY,
+  GROOMING_HOURLY_CAPACITY,
   groomingLockIds,
+  groomingCapacityLockIds,
+  groomingOccupiedSlotsFromBookings,
+  getGroomingAvailableSlotNumbers,
+  claimGroomingBookingSlot,
   hotelLockIds,
   hotelLockIdsForTypes,
   hotelDateKeys,

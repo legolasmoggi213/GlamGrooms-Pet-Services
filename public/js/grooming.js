@@ -409,8 +409,12 @@
       const availableSlots = slots.filter((slot) => slot.available);
       const previousTime = timeSelect.value;
       const slotOptions = slots.map((slot) => {
+        const remainingSlots = Number(slot.remainingSlots) || 0;
+        const availabilityLabel = slot.available
+          ? ` — ${remainingSlots} slot${remainingSlots === 1 ? '' : 's'} available`
+          : ' — Unavailable';
         const option = new Option(
-          `${formatSlotLabel(slot.time, slot.endTime)}${slot.available ? '' : ' — Unavailable'}`,
+          `${formatSlotLabel(slot.time, slot.endTime)}${availabilityLabel}`,
           slot.time,
           false,
           false,

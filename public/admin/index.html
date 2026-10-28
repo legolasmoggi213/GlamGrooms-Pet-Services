@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
+  <link rel="stylesheet" href="/css/style.css?v=revenue-sales-20261028" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -44,6 +44,7 @@
               <button type="button" data-period="daily" aria-pressed="false">Daily</button>
               <button type="button" data-period="weekly" aria-pressed="false">Weekly</button>
               <button type="button" data-period="monthly" aria-pressed="true">Monthly</button>
+              <button type="button" data-period="yearly" aria-pressed="false">Yearly</button>
             </div>
             <button type="button" class="btn btn-primary" id="export-revenue-pdf">Export PDF</button>
           </div>
@@ -52,11 +53,11 @@
         <div class="revenue-chart-grid">
           <section class="revenue-chart-panel grooming-chart">
             <div class="flex-between"><h4>Grooming Revenue</h4><strong id="grooming-revenue-total">₱0.00</strong></div>
-            <div id="grooming-revenue-chart" class="revenue-bars"></div>
+            <div id="grooming-revenue-chart" class="revenue-line-host"></div>
           </section>
           <section class="revenue-chart-panel hotel-chart">
             <div class="flex-between"><h4>Hotel Revenue</h4><strong id="hotel-revenue-total">₱0.00</strong></div>
-            <div id="hotel-revenue-chart" class="revenue-bars"></div>
+            <div id="hotel-revenue-chart" class="revenue-line-host"></div>
           </section>
         </div>
         <h4 class="revenue-breakdown-title">Service Sales Breakdown</h4>
@@ -92,6 +93,7 @@
     </main>
   </div>
 
+  <script src="/js/revenue-chart.js?v=yearly-line-chart-20261028"></script>
   <script src="/js/api.js?v=php-currency-20261027"></script>
   <script src="/js/admin.js?v=staff-dashboard-access-20261028"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -341,7 +343,7 @@
           const { jsPDF } = window.jspdf;
           const pdf = new jsPDF('l', 'mm', 'a4');
           const data = revenueAnalyticsData;
-          const periodNames = { daily: 'Daily · last 7 days', weekly: 'Weekly · last 8 weeks', monthly: 'Monthly · last 6 months' };
+          const periodNames = { daily: 'Daily · last 7 days', weekly: 'Weekly · last 8 weeks', monthly: 'Monthly · last 6 months', yearly: 'Yearly · last 5 years' };
           const period = data.period || 'monthly';
           const subtitle = `${periodNames[period] || period}  •  Generated ${new Date().toLocaleString()}`;
           let y = addPdfPageHeading(pdf, 'Revenue & Sales Report', subtitle);
@@ -432,58 +434,26 @@
         const period = document.querySelector('.revenue-periods button[aria-pressed="true"]').dataset.period;
         const data = await apiGet(`/admin/revenue-analytics?period=${period}`);
         revenueAnalyticsData = data;
-        const periods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months' };
+        const periods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months', yearly: 'Last 5 years' };
         document.getElementById('revenue-period-label').textContent = periods[data.period];
         document.getElementById('revenue-combined').textContent = `Combined revenue: ${fmtMoney(data.totals.combined)}`;
-
-        const formatBucketLabel = (label) => {
-          const daily = label.match(/^([A-Za-z]{3}),\s+([A-Za-z]{3})\s+(\d{1,2})$/);
-          if (daily) return [daily[1], `${daily[2]} ${daily[3]}`];
-          const weekly = label.match(/^([A-Za-z]{3})\s+(\d{1,2})–([A-Za-z]{3})\s+(\d{1,2})$/);
-          if (weekly) {
-            return weekly[1] === weekly[3]
-              ? [weekly[1], `${weekly[2]}–${weekly[4]}`]
-              : [`${weekly[1]} ${weekly[2]}–`, `${weekly[3]} ${weekly[4]}`];
-          }
-          const monthly = label.match(/^([A-Za-z]{3})\s+(\d{4})$/);
-          if (monthly) return [monthly[1], monthly[2]];
-          return [label];
-        };
-
-        const renderChart = (buckets) => {
-          const maximum = Math.max(0, ...buckets.map((bucket) => Number(bucket.revenue) || 0));
-          return buckets.map((bucket) => {
-            const value = Number(bucket.revenue) || 0;
-            const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
-            const dateLabel = formatBucketLabel(bucket.label)
-              .map((part) => `<span>${escapeHtml(part)}</span>`)
-              .join('');
-            return `
-              <div class="revenue-bar-column" title="${escapeHtml(`${bucket.label}: ${fmtMoney(value)}, ${bucket.count} bookings`)}">
-                <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
-                <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
-                <span class="revenue-bar-label">${dateLabel}</span>
-                <span class="revenue-bar-count">${bucket.count}</span>
-              </div>`;
-          }).join('');
-        };
 
         const groomingTotal = data.grooming.reduce((total, bucket) => total + bucket.revenue, 0);
         const hotelTotal = data.hotel.reduce((total, bucket) => total + bucket.revenue, 0);
         document.getElementById('grooming-revenue-total').textContent = fmtMoney(groomingTotal);
         document.getElementById('hotel-revenue-total').textContent = fmtMoney(hotelTotal);
-        document.getElementById('grooming-revenue-chart').innerHTML = renderChart(data.grooming);
-        document.getElementById('hotel-revenue-chart').innerHTML = renderChart(data.hotel);
+        document.getElementById('grooming-revenue-chart').innerHTML = window.renderRevenueLineChart(data.grooming);
+        document.getElementById('hotel-revenue-chart').innerHTML = window.renderRevenueLineChart(data.hotel);
         const renderServiceChart = (entries) => {
           const active = (entries || []).filter((entry) => Number(entry.revenue) || Number(entry.count));
           const maximum = Math.max(0, ...active.map((entry) => Number(entry.revenue) || 0));
           return active.length ? active.map((entry) => {
             const value = Number(entry.revenue) || 0;
             const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
-            return `<div class="revenue-bar-column" title="${escapeHtml(`${entry.label}: ${fmtMoney(value)}, ${entry.count} bookings`)}">
+            return `<div class="revenue-bar-column" title="${escapeHtml(`${entry.label}: ${fmtMoney(value)}, ${entry.count} bookings or pets served`)}">
               <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
               <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
-              <span class="revenue-bar-label"><span>${escapeHtml(entry.label)}</span></span>
+              <span class="revenue-bar-label revenue-service-label">${escapeHtml(entry.label)}</span>
               <span class="revenue-bar-count">${Number(entry.count) || 0}</span>
             </div>`;
           }).join('') : '<div class="empty">No service sales in this period.</div>';

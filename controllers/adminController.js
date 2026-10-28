@@ -52,6 +52,13 @@ const createRevenueBuckets = (period, today) => {
       };
     });
   }
+  if (period === 'yearly') {
+    const currentYear = Number(today.slice(0, 4));
+    return Array.from({ length: 5 }, (_, index) => {
+      const year = String(currentYear - 4 + index);
+      return { key: year, label: year };
+    });
+  }
   const [year, month] = today.slice(0, 7).split('-').map(Number);
   return Array.from({ length: 6 }, (_, index) => {
     const date = new Date(Date.UTC(year, month - 6 + index, 1));
@@ -91,6 +98,7 @@ const revenuePeriodKey = (dateKey, period) => {
     date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
     return date.toISOString().slice(0, 10);
   }
+  if (period === 'yearly') return dateKey.slice(0, 4);
   return period === 'monthly' ? dateKey.slice(0, 7) : dateKey;
 };
 
@@ -411,7 +419,7 @@ const getOccupancy = async (req, res, next) => {
 
 const getRevenueAnalytics = async (req, res, next) => {
   try {
-    const period = ['daily', 'weekly', 'monthly'].includes(req.query.period) ? req.query.period : 'monthly';
+    const period = ['daily', 'weekly', 'monthly', 'yearly'].includes(req.query.period) ? req.query.period : 'monthly';
     const [grooming, hotel] = await Promise.all([
       findRevenueRecords(GroomingAppointment, REVENUE_GROOMING_STATUSES),
       findRevenueRecords(HotelReservation, REVENUE_HOTEL_STATUSES),

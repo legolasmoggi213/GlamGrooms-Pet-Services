@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Staff Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
+  <link rel="stylesheet" href="/css/style.css?v=revenue-sales-20261028" />
 </head>
 <body>
   <div class="admin-layout">
@@ -20,6 +20,45 @@
       <div class="stat-grid" id="staff-stats">
         <div class="loading">Loading schedule…</div>
       </div>
+      <section class="panel" id="staff-revenue" aria-label="Revenue analytics">
+        <div class="analytics-heading">
+          <div>
+            <h3>Revenue Analytics</h3>
+            <p class="text-muted" id="staff-revenue-period-label">Last 6 months</p>
+          </div>
+          <div class="analytics-actions">
+            <div class="revenue-periods" role="group" aria-label="Revenue period">
+              <button type="button" data-period="daily" aria-pressed="false">Daily</button>
+              <button type="button" data-period="weekly" aria-pressed="false">Weekly</button>
+              <button type="button" data-period="monthly" aria-pressed="true">Monthly</button>
+              <button type="button" data-period="yearly" aria-pressed="false">Yearly</button>
+            </div>
+            <button type="button" class="btn btn-primary" id="staff-export-revenue">Export PDF</button>
+          </div>
+        </div>
+        <div id="staff-revenue-combined" class="revenue-combined" aria-live="polite">Loading revenue…</div>
+        <div class="revenue-chart-grid">
+          <section class="revenue-chart-panel grooming-chart">
+            <div class="flex-between"><h4>Grooming Revenue</h4><strong id="staff-grooming-revenue-total">PHP 0.00</strong></div>
+            <div id="staff-grooming-revenue-chart" class="revenue-line-host"></div>
+          </section>
+          <section class="revenue-chart-panel hotel-chart">
+            <div class="flex-between"><h4>Hotel Revenue</h4><strong id="staff-hotel-revenue-total">PHP 0.00</strong></div>
+            <div id="staff-hotel-revenue-chart" class="revenue-line-host"></div>
+          </section>
+        </div>
+        <h4 class="revenue-breakdown-title">Service Sales Breakdown</h4>
+        <div class="revenue-chart-grid">
+          <section class="revenue-chart-panel grooming-chart">
+            <div class="flex-between"><h4>Sales by Grooming Service</h4><strong id="staff-grooming-service-total">PHP 0.00</strong></div>
+            <div id="staff-grooming-service-chart" class="revenue-bars service-revenue-bars"></div>
+          </section>
+          <section class="revenue-chart-panel hotel-chart">
+            <div class="flex-between"><h4>Sales by Hotel Room</h4><strong id="staff-hotel-service-total">PHP 0.00</strong></div>
+            <div id="staff-hotel-service-chart" class="revenue-bars service-revenue-bars"></div>
+          </section>
+        </div>
+      </section>
       <div class="panel-grid">
         <section class="panel">
           <h3>Upcoming Grooming</h3>
@@ -45,6 +84,8 @@
   </div>
   <script src="/js/api.js"></script>
   <script src="/js/admin.js"></script>
+  <script src="/js/revenue-chart.js?v=yearly-line-chart-20261028"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="/js/staff-dashboard.js"></script>
 </body>
 </html>

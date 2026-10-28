@@ -25,6 +25,138 @@
       <div class="value ${color}">${value}</div>
       <span class="stat-card-hint" aria-hidden="true">View appointments →</span>
     </a>`;
+  const revenuePeriods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months', yearly: 'Last 5 years' };
+  let revenueAnalyticsData = null;
+
+  const renderServiceChart = (entries) => {
+    const active = (entries || []).filter((entry) => Number(entry.revenue) || Number(entry.count));
+    const maximum = Math.max(0, ...active.map((entry) => Number(entry.revenue) || 0));
+    return active.length ? active.map((entry) => {
+      const value = Number(entry.revenue) || 0;
+      const height = maximum ? Math.max(value ? 4 : 0, (value / maximum) * 100) : 0;
+      return `<div class="revenue-bar-column" title="${escapeHtml(`${entry.label}: ${fmtMoney(value)}, ${entry.count} bookings or pets served`)}">
+        <span class="revenue-bar-value">${value ? fmtMoney(value) : '—'}</span>
+        <div class="revenue-bar-track"><div class="revenue-bar" style="height:${height}%"></div></div>
+        <span class="revenue-bar-label revenue-service-label">${escapeHtml(entry.label)}</span>
+        <span class="revenue-bar-count">${Number(entry.count) || 0}</span>
+      </div>`;
+    }).join('') : '<div class="empty">No service sales in this period.</div>';
+  };
+
+  const loadRevenue = async () => {
+    const selectedPeriod = document.querySelector('#staff-revenue .revenue-periods button[aria-pressed="true"]')?.dataset.period || 'monthly';
+    const data = await apiGet(`/admin/revenue-analytics?period=${selectedPeriod}`);
+    revenueAnalyticsData = data;
+    document.getElementById('staff-revenue-period-label').textContent = revenuePeriods[data.period] || revenuePeriods.monthly;
+    document.getElementById('staff-revenue-combined').textContent = `Combined revenue: ${fmtMoney(data.totals.combined)}`;
+    const groomingTotal = (data.grooming || []).reduce((total, bucket) => total + Number(bucket.revenue || 0), 0);
+    const hotelTotal = (data.hotel || []).reduce((total, bucket) => total + Number(bucket.revenue || 0), 0);
+    document.getElementById('staff-grooming-revenue-total').textContent = fmtMoney(groomingTotal);
+    document.getElementById('staff-hotel-revenue-total').textContent = fmtMoney(hotelTotal);
+    document.getElementById('staff-grooming-revenue-chart').innerHTML = window.renderRevenueLineChart(data.grooming || []);
+    document.getElementById('staff-hotel-revenue-chart').innerHTML = window.renderRevenueLineChart(data.hotel || []);
+    const groomingServices = data.groomingServices || [];
+    const hotelServices = data.hotelServices || [];
+    document.getElementById('staff-grooming-service-total').textContent = fmtMoney(groomingServices.reduce((sum, entry) => sum + Number(entry.revenue || 0), 0));
+    document.getElementById('staff-hotel-service-total').textContent = fmtMoney(hotelServices.reduce((sum, entry) => sum + Number(entry.revenue || 0), 0));
+    document.getElementById('staff-grooming-service-chart').innerHTML = renderServiceChart(groomingServices);
+    document.getElementById('staff-hotel-service-chart').innerHTML = renderServiceChart(hotelServices);
+  };
+
+  const exportRevenuePdf = () => {
+    if (!revenueAnalyticsData || !window.jspdf) {
+      alert('PDF export is unavailable right now. Please refresh and try again.');
+      return;
+    }
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('l', 'mm', 'a4');
+    const period = revenueAnalyticsData.period || 'monthly';
+    const margin = 14;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    let y = 16;
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(18);
+    pdf.text('Revenue & Sales Report', margin, y);
+    y += 7;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.text(`${revenuePeriods[period] || period} · Generated ${new Date().toLocaleString()}`, margin, y);
+    y += 9;
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(11);
+    pdf.text(`Grooming: ${fmtMoney(revenueAnalyticsData.totals.grooming)}    Hotel: ${fmtMoney(revenueAnalyticsData.totals.hotel)}    Combined: ${fmtMoney(revenueAnalyticsData.totals.combined)}`, margin, y);
+    y += 10;
+
+    const drawTable = (title, rows) => {
+      const widths = [pageWidth - margin * 2 - 100, 30, 70];
+      const drawHeader = () => {
+        pdf.setFillColor(32, 45, 50);
+        pdf.rect(margin, y - 5, pageWidth - margin * 2, 8, 'F');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(8);
+        pdf.setTextColor(255, 255, 255);
+        pdf.text('Service / period', margin + 2, y);
+        pdf.text('Count', margin + widths[0] + 2, y);
+        pdf.text('Revenue', margin + widths[0] + widths[1] + 2, y);
+        pdf.setTextColor(37, 50, 56);
+        pdf.setFont('helvetica', 'normal');
+        y += 7;
+      };
+      const newPage = () => {
+        pdf.addPage();
+        y = 16;
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12);
+        pdf.text(title, margin, y);
+        y += 8;
+        drawHeader();
+      };
+      if (y + 22 > pageHeight - margin) newPage();
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.text(title, margin, y);
+      y += 8;
+      drawHeader();
+      rows.forEach((row) => {
+        const labelLines = pdf.splitTextToSize(String(row[0]), widths[0] - 4);
+        const rowHeight = Math.max(7, labelLines.length * 4 + 2);
+        if (y + rowHeight > pageHeight - margin) newPage();
+        pdf.setFontSize(8);
+        pdf.text(labelLines, margin + 2, y);
+        pdf.text(String(row[1]), margin + widths[0] + 2, y);
+        pdf.text(String(row[2]), margin + widths[0] + widths[1] + 2, y);
+        y += rowHeight;
+      });
+      y += 6;
+    };
+
+    const periods = (revenueAnalyticsData.grooming || []).map((bucket, index) => {
+      const hotel = revenueAnalyticsData.hotel?.[index] || {};
+      return [bucket.label, `${Number(bucket.count || 0)} / ${Number(hotel.count || 0)}`, fmtMoney(Number(bucket.revenue || 0) + Number(hotel.revenue || 0))];
+    });
+    drawTable('Revenue by period (Grooming / Hotel counts)', periods);
+    drawTable('Grooming service sales', (revenueAnalyticsData.groomingServices || []).map((entry) => [entry.label, entry.count, fmtMoney(entry.revenue)]));
+    drawTable('Hotel room sales', (revenueAnalyticsData.hotelServices || []).map((entry) => [entry.label, entry.count, fmtMoney(entry.revenue)]));
+    pdf.save(`revenue-sales-report-${period}.pdf`);
+  };
+
+  const revenuePeriodControls = document.querySelector('#staff-revenue .revenue-periods');
+  revenuePeriodControls.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-period]');
+    if (!button) return;
+    revenuePeriodControls.querySelectorAll('button').forEach((option) => {
+      option.setAttribute('aria-pressed', String(option === button));
+    });
+    loadRevenue().catch((error) => {
+      messageEl.className = 'text-error';
+      messageEl.textContent = `Unable to load revenue analytics: ${error.message}`;
+    });
+  });
+  document.getElementById('staff-export-revenue').addEventListener('click', exportRevenuePdf);
+  loadRevenue().catch((error) => {
+    document.getElementById('staff-revenue-combined').textContent = `Unable to load revenue analytics: ${error.message}`;
+  });
 
   const loadDashboard = async () => {
     const [grooming, hotel] = await Promise.all([apiGet('/grooming'), apiGet('/hotel')]);

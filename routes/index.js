@@ -146,6 +146,7 @@ router.get('/grooming/:id', groomingController.getAppointment);
 router.post('/grooming', groomingController.createAppointment);
 router.post('/grooming/:id/resend-ticket', groomingController.resendAppointmentTicket);
 router.put('/grooming/:id', adminOrStaff, groomingController.updateAppointment);
+router.post('/grooming/:id/checkout', adminOrStaff, groomingController.checkOutAppointment);
 router.post('/grooming/:id/ticket', groomingController.sendAppointmentTicket);
 router.delete('/grooming/:id', adminOnly, groomingController.deleteAppointment);
 

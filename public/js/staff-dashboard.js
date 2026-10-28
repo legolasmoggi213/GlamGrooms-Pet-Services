@@ -4,7 +4,7 @@
   const groomingRows = document.getElementById('staff-grooming-rows');
   const hotelRows = document.getElementById('staff-hotel-rows');
   const pendingGroomingRows = document.getElementById('staff-pending-grooming-rows');
-  const upcomingHotelArrivalRows = document.getElementById('staff-upcoming-hotel-arrivals-rows');
+  const upcomingArrivalRows = document.getElementById('staff-upcoming-arrivals-rows');
   const statsEl = document.getElementById('staff-stats');
   const messageEl = document.getElementById('staff-dashboard-message');
   const businessDate = new Intl.DateTimeFormat('en-CA', {
@@ -89,8 +89,8 @@
     const groomingBookings = activeGrooming(grooming);
     const hotelBookings = activeHotel(hotel);
     const pendingGroomingToday = grooming.filter((booking) => booking.date === businessDate && booking.status === 'pending');
-    const groomingToday = groomingBookings.filter((booking) => booking.date === businessDate
-      && ['scheduled', 'confirmed', 'in-progress'].includes(booking.status));
+    const groomingToday = grooming.filter((booking) => booking.date === businessDate
+      && ['pending', 'scheduled', 'confirmed', 'in-progress'].includes(String(booking.status || '').toLowerCase()));
     const upcomingGrooming = groomingBookings
       .filter((booking) => String(booking.date || '') >= businessDate)
       .sort((left, right) => String(left.date).localeCompare(String(right.date))
@@ -105,11 +105,11 @@
         && String(booking.checkIn || '') >= businessDate)
       .sort((left, right) => String(left.checkIn || '').localeCompare(String(right.checkIn || ''))
         || String(left.checkInTime || '').localeCompare(String(right.checkInTime || '')));
+      const todaysHotelArrivals = upcomingHotelArrivals.filter((booking) => booking.checkIn === businessDate);
     statsEl.innerHTML = [
-      statCard("Today's Grooming", groomingToday.length, 'green', '/admin/grooming.html?filter=today'),
+      statCard("Today's Active Arrivals", groomingToday.length + todaysHotelArrivals.length, 'green', '/admin/grooming.html?filter=today'),
       statCard('Pending Grooming Arrivals', pendingGroomingToday.length, 'orange', '#staff-pending-grooming'),
-      statCard('Upcoming Grooming', upcomingGrooming.length, 'green'),
-      statCard('Upcoming Hotel Stays', upcomingHotelArrivals.length, 'orange', '/admin/hotel.html?filter=upcoming'),
+      statCard('Upcoming Arrivals', upcomingGrooming.length + upcomingHotelArrivals.length, 'orange'),
     ].join('');
 
     pendingGroomingRows.innerHTML = pendingGroomingToday.length
@@ -127,20 +127,36 @@
           </tr>`).join('')
       : '<tr><td colspan="7" class="empty">No pending Grooming arrivals today.</td></tr>';
 
-    upcomingHotelArrivalRows.innerHTML = upcomingHotelArrivals.length
-      ? upcomingHotelArrivals.map((booking) => {
-        const rooms = Array.isArray(booking.petRooms) && booking.petRooms.length
+    const upcomingArrivals = [
+      ...upcomingGrooming.map((booking) => ({
+        type: 'Grooming',
+        date: String(booking.date || ''),
+        time: String(booking.time || ''),
+        customer: booking.Customer?.name || booking.customerDetails?.name || '—',
+        pets: petNames(booking),
+        detail: groomingService(booking),
+        schedule: `${fmtDate(booking.date)} at ${booking.time || 'Time not set'}${booking.pickupTime ? ` · Pickup ${booking.pickupTime}` : ''}`,
+      })),
+      ...upcomingHotelArrivals.map((booking) => ({
+        type: 'Pet Hotel',
+        date: String(booking.checkIn || ''),
+        time: String(booking.checkInTime || ''),
+        customer: booking.Customer?.name || booking.customerDetails?.name || '—',
+        pets: petNames(booking),
+        detail: Array.isArray(booking.petRooms) && booking.petRooms.length
           ? booking.petRooms.map((item) => `${item.petName || 'Pet'}: ${String(item.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join('; ')
-          : String(booking.roomType || 'Pet Hotel').replace(/^staycation-/, '').replace(/-/g, ' ');
-        return `<tr>
-          <td>${fmtDate(booking.checkIn)} ${escapeHtml(booking.checkInTime || '')}</td>
-          <td>${fmtDate(booking.checkOut)} ${escapeHtml(booking.checkOutTime || '')}</td>
-          <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
-          <td>${escapeHtml(petNames(booking))}</td>
-          <td>${escapeHtml(rooms)}</td>
-        </tr>`;
-      }).join('')
-      : '<tr><td colspan="5" class="empty">No active Pet Hotel arrivals today or upcoming.</td></tr>';
+          : String(booking.roomType || 'Pet Hotel').replace(/^staycation-/, '').replace(/-/g, ' '),
+        schedule: `Check-in: ${fmtDate(booking.checkIn)} ${booking.checkInTime || ''} · Check-out: ${fmtDate(booking.checkOut)} ${booking.checkOutTime || ''}`,
+      })),
+    ].sort((left, right) => left.date.localeCompare(right.date) || left.time.localeCompare(right.time));
+    upcomingArrivalRows.innerHTML = upcomingArrivals.length
+      ? upcomingArrivals.map((arrival) => `<tr>
+        <td>${arrival.type}</td>
+        <td>${escapeHtml(arrival.customer)}</td>
+        <td><span class="appointment-primary">${escapeHtml(arrival.pets)}</span><span class="appointment-detail">${escapeHtml(arrival.detail)}</span></td>
+        <td>${escapeHtml(arrival.schedule)}</td>
+      </tr>`).join('')
+      : '<tr><td colspan="4" class="empty">No upcoming grooming appointments or pet hotel arrivals.</td></tr>';
 
     groomingRows.innerHTML = nextGrooming.length
       ? nextGrooming.map((booking) => `

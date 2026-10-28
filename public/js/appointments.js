@@ -79,6 +79,14 @@
         actions.push(`<span class="appointment-payment-status">Payment: ${paymentStatus.toUpperCase()}</span>`);
         actions.push(actionButton(booking, type, 'payment', paymentStatus === 'paid' ? 'Mark Unpaid' : 'Mark Paid', paymentStatus === 'paid' ? 'btn-outline' : 'btn-success'));
       }
+      if (booking.status === 'in-progress' && booking.paymentStatus === 'paid') {
+        actions.push(actionButton(booking, type, 'check-out', 'Check Out', 'btn-success'));
+      }
+      if (booking.status === 'completed' && booking.paymentStatus === 'paid') {
+        actions.push(booking.paymentReceiptEmailSentAt
+          ? '<span class="appointment-payment-status">Receipt sent</span>'
+          : actionButton(booking, type, 'send-receipt', 'Send Receipt', 'btn-outline'));
+      }
       actions.push(actionButton(booking, type, 'view', 'View', 'btn-outline'));
       if (canReschedule(booking, type)) actions.push(actionButton(booking, type, 'reschedule', 'Reschedule', 'btn-outline'));
       if (booking.status !== 'cancelled' && booking.status !== 'completed') {
@@ -485,6 +493,27 @@
       } catch (error) {
         button.disabled = false;
         button.textContent = sendingTicket ? 'Send Ticket' : 'Confirm';
+        messageEl.className = 'text-error';
+        messageEl.textContent = error.message;
+      }
+      return;
+    }
+    if (type === 'grooming' && (action === 'check-out' || action === 'send-receipt')) {
+      const checkingOut = action === 'check-out';
+      button.disabled = true;
+      button.textContent = checkingOut ? 'Checking Out…' : 'Sending Receipt…';
+      try {
+        const result = await apiPost(`/grooming/${encodeURIComponent(id)}/checkout`, {});
+        noteBookingActivity(type, id);
+        closeModal();
+        await loadAppointments();
+        messageEl.className = result.emailSent ? 'text-success' : 'text-error';
+        messageEl.textContent = result.emailSent
+          ? checkingOut ? 'Grooming appointment checked out and receipt sent.' : 'Payment receipt sent.'
+          : (result.message || 'The appointment was checked out, but the receipt email was not sent. Retry from Manage.');
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = checkingOut ? 'Check Out' : 'Send Receipt';
         messageEl.className = 'text-error';
         messageEl.textContent = error.message;
       }

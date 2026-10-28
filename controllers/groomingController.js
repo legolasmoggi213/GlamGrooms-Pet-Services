@@ -1,5 +1,5 @@
 const { GroomingAppointment, Customer, Pet } = require('../models');
-const { sendReservationTicket, sendBookingCancellation } = require('../util/mailer');
+const { sendReservationTicket, sendPaymentReceipt, sendBookingCancellation } = require('../util/mailer');
 const { requestGcashBookingRefund } = require('../util/paymentRefund');
 const {
   GROOMING_HOURLY_CAPACITY,
@@ -342,6 +342,59 @@ const updateAppointment = async (req, res, next) => {
   }
 };
 
+const checkOutAppointment = async (req, res, next) => {
+  try {
+    const appointment = await GroomingAppointment.findByPk(req.params.id);
+    if (!appointment) return res.status(404).json({ error: 'Appointment not found.' });
+    if (!['in-progress', 'completed'].includes(String(appointment.status || '').toLowerCase())) {
+      return res.status(409).json({ error: 'Only in-progress grooming appointments can be checked out.' });
+    }
+    if (String(appointment.paymentStatus || '').toLowerCase() !== 'paid') {
+      return res.status(409).json({ error: 'Record payment before checking out this appointment.' });
+    }
+
+    const [customer, pets] = await Promise.all([
+      Customer.findByPk(appointment.customerId),
+      Promise.all((appointment.petIds || (appointment.petId ? [appointment.petId] : [])).map((id) => Pet.findByPk(id))),
+    ]);
+    const recipient = customer?.email || appointment.customerDetails?.email;
+    if (!recipient) return res.status(400).json({ error: 'The customer record has no email address for the receipt.' });
+
+    if (appointment.status !== 'completed') {
+      await appointment.update({ status: 'completed', checkedOutAt: new Date() });
+    }
+
+    try {
+      const emailSent = await sendPaymentReceipt({
+        bookingRecord: appointment,
+        type: 'grooming',
+        to: recipient,
+        customer: appointment.customerDetails || customer || {},
+        pets: pets.filter(Boolean),
+      });
+      if (emailSent || appointment.paymentReceiptEmailSentAt) {
+        return res.json({ success: true, status: 'completed', emailSent: true });
+      }
+      return res.json({
+        success: true,
+        status: 'completed',
+        emailSent: false,
+        message: 'The appointment was checked out, but the receipt email was not sent. Retry from Manage.',
+      });
+    } catch (emailError) {
+      console.error(`Grooming payment receipt email failed for appointment ${appointment.id}:`, emailError);
+      return res.json({
+        success: true,
+        status: 'completed',
+        emailSent: false,
+        message: 'The appointment was checked out, but the receipt email failed. Retry from Manage.',
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
 const sendAppointmentTicket = async (req, res, next) => {
   try {
     const appointment = await GroomingAppointment.findByPk(req.params.id);
@@ -430,6 +483,7 @@ module.exports = {
   getAppointment,
   createAppointment,
   updateAppointment,
+  checkOutAppointment,
   sendAppointmentTicket,
   resendAppointmentTicket,
   deleteAppointment,

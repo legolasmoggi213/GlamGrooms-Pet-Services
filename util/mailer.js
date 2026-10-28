@@ -246,7 +246,9 @@ const renderBookingEmail = ({ type, booking, customer, pets, paid, receipt }) =>
       <td style="padding:11px 12px;text-align:right;border-bottom:1px solid #e5e7eb;color:#111827;font-weight:700">${formatCurrency(item.amount)}</td>
     </tr>`).join('');
   const intro = receipt
-    ? 'Your online payment through GCash has been processed. This email is your paid receipt.'
+    ? booking.paymentMethod === 'qrph'
+      ? 'Your online payment through GCash has been processed. This email is your paid receipt.'
+      : 'Your payment has been recorded. This email is your paid receipt.'
     : 'Your booking has been confirmed by our team. Please present this reservation ticket when you arrive.';
   const text = [
     `Hello ${customer.name || 'Customer'},`,
@@ -345,7 +347,8 @@ const sendReservationTicket = (details) => sendBookingEmailOnce({
   ...details,
   paid: details.bookingRecord.paymentStatus === 'paid',
 });
-const sendPayMongoReceipt = (details) => sendBookingEmailOnce({ ...details, paid: true, receipt: true });
+const sendPaymentReceipt = (details) => sendBookingEmailOnce({ ...details, paid: true, receipt: true });
+const sendPayMongoReceipt = (details) => sendPaymentReceipt(details);
 
 const sendServiceReminder = async ({ to, customerName, type, service, date, time, petName }) => {
   const isGrooming = type === 'grooming';
@@ -376,6 +379,7 @@ const sendBookingCancellation = async ({ to, customerName, type, bookingId, date
 module.exports = {
   sendLoginVerificationCode,
   sendBookingConfirmation,
+  sendPaymentReceipt,
   sendPayMongoReceipt,
   sendReservationTicket,
   sendServiceReminder,

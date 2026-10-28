@@ -58,24 +58,67 @@
       : escapeHtml(serviceLabel(appointment.service));
 
     if (todayOnly) {
-      document.title = "Today's Active Grooming — Glam Grooms Admin";
-      document.getElementById('grooming-page-title').textContent = "Today's Active Grooming";
-      document.getElementById('grooming-page-subtitle').textContent = `Active grooming schedule for ${new Date(`${today}T12:00:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}. Cancelled and completed appointments are excluded.`;
-      document.getElementById('grooming-table-head').innerHTML = '<tr><th>ID</th><th>Date</th><th>Time</th><th>Pickup</th><th>Service</th><th>Pet</th><th>Customer</th></tr>';
+      document.title = "Today's Active Arrivals — Glam Grooms Admin";
+      document.getElementById('grooming-page-title').textContent = "Today's Active Arrivals";
+      document.getElementById('grooming-page-subtitle').textContent = `Active grooming appointments and pet hotel check-ins for ${new Date(`${today}T12:00:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`;
+      document.getElementById('grooming-table-head').innerHTML = '<tr><th>Type</th><th>Customer</th><th>Pet &amp; Service / Room</th><th>Schedule</th></tr>';
     }
 
     async function loadAppointments() {
+      if (todayOnly) {
+        const [appointments, reservations] = await Promise.all([apiGet('/grooming'), apiGet('/hotel')]);
+        const petsFor = (booking) => Array.isArray(booking.petNames) && booking.petNames.length
+          ? booking.petNames.join(', ')
+          : (booking.Pets || (booking.Pet ? [booking.Pet] : [])).map((pet) => pet.name).filter(Boolean).join(', ') || '—';
+        const arrivals = [
+          ...appointments
+            .filter((appointment) => appointment.date === today && activeStatuses.has(String(appointment.status || '').toLowerCase()))
+            .map((appointment) => ({
+              type: 'Grooming',
+              date: String(appointment.date || ''),
+              time: String(appointment.time || ''),
+              customer: appointment.Customer?.name || appointment.customerDetails?.name || '—',
+              pets: petsFor(appointment),
+              detail: Array.isArray(appointment.petServices) && appointment.petServices.length
+                ? appointment.petServices.map((item) => `${item.petName || 'Pet'}: ${serviceLabel(item.service)}`).join('; ')
+                : serviceLabel(appointment.service),
+              schedule: `${fmtDate(appointment.date)} at ${appointment.time || 'Time not set'}${appointment.pickupTime ? ` · Pickup ${appointment.pickupTime}` : ''}`,
+            })),
+          ...reservations
+            .filter((reservation) => reservation.checkIn === today
+              && ['pending', 'reserved', 'confirmed'].includes(String(reservation.status || '').toLowerCase()))
+            .map((reservation) => ({
+              type: 'Pet Hotel',
+              date: String(reservation.checkIn || ''),
+              time: String(reservation.checkInTime || ''),
+              customer: reservation.Customer?.name || reservation.customerDetails?.name || '—',
+              pets: petsFor(reservation),
+              detail: Array.isArray(reservation.petRooms) && reservation.petRooms.length
+                ? reservation.petRooms.map((item) => `${item.petName || 'Pet'}: ${String(item.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join('; ')
+                : String(reservation.roomType || 'Pet Hotel').replace(/^staycation-/, '').replace(/-/g, ' '),
+              schedule: `Check-in: ${fmtDate(reservation.checkIn)} ${reservation.checkInTime || ''} · Check-out: ${fmtDate(reservation.checkOut)} ${reservation.checkOutTime || ''}`,
+            })),
+        ].sort((left, right) => left.date.localeCompare(right.date) || left.time.localeCompare(right.time));
+        rowsEl.innerHTML = arrivals.length
+          ? arrivals.map((arrival) => `<tr>
+              <td>${arrival.type}</td>
+              <td>${escapeHtml(arrival.customer)}</td>
+              <td><span class="appointment-primary">${escapeHtml(arrival.pets)}</span><span class="appointment-detail">${escapeHtml(arrival.detail)}</span></td>
+              <td>${escapeHtml(arrival.schedule)}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="4" class="empty">No active grooming appointments or pet hotel check-ins today.</td></tr>';
+        return;
+      }
+
       const appointments = await apiGet('/grooming');
       const items = sortByNewestDate(
-        appointments.filter((appointment) => todayOnly
-          ? appointment.date === today && activeStatuses.has(String(appointment.status || '').toLowerCase())
-          : appointment.status !== 'completed'),
+        appointments.filter((appointment) => appointment.status !== 'completed'),
         'date',
         'time',
       );
       const session = await fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json());
       if (!items.length) {
-        rowsEl.innerHTML = `<tr><td colspan="${todayOnly ? 7 : 10}" class="empty">${todayOnly ? 'No active grooming services scheduled for today.' : 'No active appointments.'}</td></tr>`;
+        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">No active appointments.</td></tr>';
         return;
       }
       rowsEl.innerHTML = items

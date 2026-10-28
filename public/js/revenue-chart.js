@@ -27,7 +27,7 @@
     maximumFractionDigits: 2,
   })}`;
 
-  window.renderRevenueLineChart = (buckets = []) => {
+  window.renderRevenueLineChart = (buckets = [], { countLabel = 'bookings', ariaLabel = 'Revenue over time' } = {}) => {
     if (!buckets.length) return '<div class="empty">No revenue for this period.</div>';
 
     const values = buckets.map((bucket) => Number(bucket.revenue) || 0);
@@ -61,7 +61,7 @@
       const valueY = Math.max(16, y - 11);
       const valueLabel = value > 0 ? formatExactValue(value) : '';
       return `<g class="revenue-line-point">
-        <title>${escapeXml(`${bucket.label}: ${formatExactValue(value)}, ${count} bookings`)}</title>
+        <title>${escapeXml(`${bucket.label}: ${formatExactValue(value)}, ${count} ${countLabel}`)}</title>
         <circle cx="${x}" cy="${y}" r="5" />
         ${valueLabel ? `<text class="revenue-line-value-label" x="${x}" y="${valueY}" text-anchor="middle">${escapeXml(valueLabel)}</text>` : ''}
         <text class="revenue-line-axis-label revenue-line-date-label" x="${x}" y="${plot.bottom + 22}" text-anchor="middle">
@@ -73,8 +73,8 @@
     }).join('');
 
     return `<div class="revenue-line-scroll">
-      <svg class="revenue-line-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" style="min-width:${chartWidth}px" role="img" aria-label="Revenue over time">
-        <title>Revenue over time</title>
+      <svg class="revenue-line-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" style="min-width:${chartWidth}px" role="img" aria-label="${escapeXml(ariaLabel)}">
+        <title>${escapeXml(ariaLabel)}</title>
         ${grid}
         <polyline class="revenue-line" points="${line}" />
         ${dots}

@@ -7,7 +7,7 @@ const ADMIN_PAGES = [
   { href: '/admin/index.html', label: 'Dashboard' },
   { href: '/admin/customers.html', label: 'Customers' },
   { href: '/admin/pets.html', label: 'Pets' },
-  { href: '/admin/pos.html', label: 'Point of Sale' },
+  { href: '/admin/pos.html', label: 'Counter Checkout' },
   { href: '/admin/staff.html', label: 'Employees' },
   { href: '/admin/change-password.html', label: 'Change Password' },
 ];

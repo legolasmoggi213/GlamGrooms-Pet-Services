@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Point of Sale — Glam Grooms Admin</title>
-  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
+  <title>Counter Checkout — Glam Grooms Admin</title>
+  <link rel="stylesheet" href="/css/style.css?v=counter-checkout-line-chart-20261029" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -17,8 +17,8 @@
     <main class="admin-main">
       <div class="flex-between">
         <div>
-          <h1>Point of Sale</h1>
-          <p class="page-sub">Counter checkout</p>
+          <h1>Counter Checkout</h1>
+          <p class="page-sub">Walk-in product and service sales.</p>
         </div>
       </div>
 
@@ -87,7 +87,7 @@
           <div><span>All-time sales</span><strong id="pos-sales-all-time">PHP 0.00</strong></div>
           <div><span>All-time transactions</span><strong id="pos-sales-transaction-count">0</strong></div>
         </div>
-        <div id="pos-sales-chart" class="pos-sales-chart" role="img" aria-label="Walk-in sales chart"><div class="loading">Loading sales…</div></div>
+        <div id="pos-sales-chart" class="pos-sales-chart pos-sales-line-chart"><div class="loading">Loading sales…</div></div>
         <p id="pos-sales-message" class="text-muted" role="status" aria-live="polite" hidden></p>
       </section>
 
@@ -102,10 +102,11 @@
   </div>
 
   <script src="/js/mobile-number.js"></script>
+  <script src="/js/revenue-chart.js?v=pos-sales-line-20261029"></script>
   <script src="/js/api.js?v=php-currency-20261027"></script>
-  <script src="/js/admin.js"></script>
+  <script src="/js/admin.js?v=counter-checkout-20261029"></script>
   <script>
-    renderSidebar('Point of Sale');
+    renderSidebar('Counter Checkout');
 
     const productContainer = document.getElementById('pos-products');
     const cartRows = document.getElementById('cart-rows');
@@ -235,17 +236,13 @@
         document.getElementById('pos-sales-all-time').textContent = receiptMoney(result.allTimeSales);
         document.getElementById('pos-sales-transaction-count').textContent = Number(result.allTimeTransactions || 0).toLocaleString('en-PH');
         const buckets = Array.isArray(result.buckets) ? result.buckets : [];
-        const maximum = Math.max(0, ...buckets.map((bucket) => Number(bucket.sales || 0)));
-        salesChart.innerHTML = buckets.length ? buckets.map((bucket) => {
-          const sales = Number(bucket.sales || 0);
-          const height = maximum ? Math.max(sales ? 3 : 0, sales / maximum * 100) : 0;
-          return `<div class="pos-sales-column" title="${escapeHtml(`${bucket.label}: ${receiptMoney(sales)}, ${bucket.count} sales`)}">
-            <strong>${sales ? receiptMoney(sales) : '—'}</strong>
-            <div class="pos-sales-track"><span style="height:${height}%"></span></div>
-            <span class="pos-sales-label">${escapeHtml(bucket.label)}</span>
-            <small>${Number(bucket.count || 0).toLocaleString('en-PH')} sales</small>
-          </div>`;
-        }).join('') : '<div class="empty">No walk-in sales in this period.</div>';
+        salesChart.innerHTML = buckets.length
+          ? window.renderRevenueLineChart(buckets.map((bucket) => ({
+            label: bucket.label,
+            revenue: Number(bucket.sales || 0),
+            count: Number(bucket.count || 0),
+          })), { countLabel: 'sales', ariaLabel: 'Walk-in sales by period' })
+          : '<div class="empty">No walk-in sales in this period.</div>';
       } catch (error) {
         if (requestId !== salesRequest) return;
         salesChart.innerHTML = '<div class="empty">Unable to load POS sales.</div>';

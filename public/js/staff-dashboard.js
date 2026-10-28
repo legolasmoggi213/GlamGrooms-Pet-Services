@@ -3,6 +3,8 @@
 
   const groomingRows = document.getElementById('staff-grooming-rows');
   const hotelRows = document.getElementById('staff-hotel-rows');
+  const pendingGroomingRows = document.getElementById('staff-pending-grooming-rows');
+  const upcomingHotelArrivalRows = document.getElementById('staff-upcoming-hotel-arrivals-rows');
   const statsEl = document.getElementById('staff-stats');
   const messageEl = document.getElementById('staff-dashboard-message');
   const businessDate = new Intl.DateTimeFormat('en-CA', {
@@ -19,8 +21,8 @@
   const groomingService = (booking) => Array.isArray(booking.petServices) && booking.petServices.length
     ? booking.petServices.map((service) => `${service.petName || 'Pet'}: ${String(service.service || '').replace(/^grooming-/, '').replace(/-/g, ' ')}`).join('; ')
     : String(booking.service || 'Grooming').replace(/^grooming-/, '').replace(/-/g, ' ');
-  const statCard = (label, value, color) => `
-    <a class="stat-card stat-card-link" href="/admin/appointments.html" aria-label="View ${escapeHtml(label)} in appointments">
+  const statCard = (label, value, color, href = '/admin/appointments.html') => `
+    <a class="stat-card stat-card-link" href="${href}" aria-label="View ${escapeHtml(label)} in appointments">
       <div class="label">${escapeHtml(label)}</div>
       <div class="value ${color}">${value}</div>
       <span class="stat-card-hint" aria-hidden="true">View appointments →</span>
@@ -97,7 +99,9 @@
     const [grooming, hotel] = await Promise.all([apiGet('/grooming'), apiGet('/hotel')]);
     const groomingBookings = activeGrooming(grooming);
     const hotelBookings = activeHotel(hotel);
-    const groomingToday = groomingBookings.filter((booking) => booking.date === businessDate);
+    const pendingGroomingToday = grooming.filter((booking) => booking.date === businessDate && booking.status === 'pending');
+    const groomingToday = groomingBookings.filter((booking) => booking.date === businessDate
+      && ['scheduled', 'confirmed', 'in-progress'].includes(booking.status));
     const upcomingGrooming = groomingBookings
       .filter((booking) => String(booking.date || '') >= businessDate)
       .sort((left, right) => String(left.date).localeCompare(String(right.date))
@@ -107,12 +111,49 @@
       .filter((booking) => String(booking.checkOut || '') >= businessDate)
       .sort((left, right) => String(left.checkIn).localeCompare(String(right.checkIn)))
       .slice(0, 8);
+    const upcomingHotelArrivals = hotelBookings
+      .filter((booking) => ['pending', 'reserved', 'confirmed'].includes(booking.status)
+        && String(booking.checkIn || '') >= businessDate)
+      .sort((left, right) => String(left.checkIn || '').localeCompare(String(right.checkIn || ''))
+        || String(left.checkInTime || '').localeCompare(String(right.checkInTime || '')));
     statsEl.innerHTML = [
-      statCard("Today's Grooming", groomingToday.length, 'green'),
+      statCard("Today's Grooming", groomingToday.length, 'green', '/admin/grooming.html?filter=today'),
+      statCard('Pending Grooming Arrivals', pendingGroomingToday.length, 'orange', '#staff-pending-grooming'),
       statCard('Upcoming Grooming', upcomingGrooming.length, 'green'),
-      statCard('Upcoming Hotel Stays', hotelBookings.filter((booking) => ['pending', 'reserved', 'confirmed'].includes(booking.status)
-        && String(booking.checkIn || '') >= businessDate).length, 'orange'),
+      statCard('Upcoming Hotel Stays', upcomingHotelArrivals.length, 'orange'),
     ].join('');
+
+    pendingGroomingRows.innerHTML = pendingGroomingToday.length
+      ? pendingGroomingToday
+        .sort((left, right) => String(left.time || '').localeCompare(String(right.time || '')))
+        .map((booking) => `
+          <tr>
+            <td>${escapeHtml(booking.time || '—')}</td>
+            <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
+            <td>${escapeHtml(petNames(booking))}</td>
+            <td>${escapeHtml(groomingService(booking))}</td>
+            <td>${escapeHtml(booking.pickupTime || '—')}</td>
+            <td>${escapeHtml(booking.Customer?.phone || booking.customerDetails?.phone || '—')}</td>
+            <td><button class="btn btn-success btn-sm" type="button" data-confirm-grooming="${escapeHtml(booking.id)}">Confirm</button></td>
+          </tr>`).join('')
+      : '<tr><td colspan="7" class="empty">No pending Grooming arrivals today.</td></tr>';
+
+    upcomingHotelArrivalRows.innerHTML = upcomingHotelArrivals.length
+      ? upcomingHotelArrivals.map((booking) => {
+        const rooms = Array.isArray(booking.petRooms) && booking.petRooms.length
+          ? booking.petRooms.map((item) => `${item.petName || 'Pet'}: ${String(item.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join('; ')
+          : String(booking.roomType || 'Pet Hotel').replace(/^staycation-/, '').replace(/-/g, ' ');
+        return `<tr>
+          <td>${fmtDate(booking.checkIn)} ${escapeHtml(booking.checkInTime || '')}</td>
+          <td>${fmtDate(booking.checkOut)} ${escapeHtml(booking.checkOutTime || '')}</td>
+          <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
+          <td>${escapeHtml(petNames(booking))}</td>
+          <td>${escapeHtml(rooms)}</td>
+          <td>${statusBadge(booking.status)}</td>
+          <td><a class="btn btn-outline btn-sm" href="/admin/hotel.html">Manage</a></td>
+        </tr>`;
+      }).join('')
+      : '<tr><td colspan="7" class="empty">No active Pet Hotel arrivals today or upcoming.</td></tr>';
 
     groomingRows.innerHTML = nextGrooming.length
       ? nextGrooming.map((booking) => `
@@ -137,6 +178,32 @@
       : '<tr><td colspan="5" class="empty">No current guests or upcoming hotel stays.</td></tr>';
     messageEl.textContent = `Schedule refreshed ${new Date().toLocaleTimeString()}.`;
   };
+
+  pendingGroomingRows.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-confirm-grooming]');
+    if (!button) return;
+    const bookingId = button.dataset.confirmGrooming;
+    button.disabled = true;
+    button.textContent = 'Confirming…';
+    try {
+      await apiPut(`/grooming/${encodeURIComponent(bookingId)}`, { status: 'confirmed' });
+      await loadDashboard();
+      messageEl.className = 'text-success';
+      messageEl.textContent = 'Grooming appointment confirmed and added to today’s active schedule.';
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = 'Confirm';
+      messageEl.className = 'text-error';
+      messageEl.textContent = error.message;
+    }
+  });
+
+  document.getElementById('staff-refresh-pending-grooming').addEventListener('click', () => {
+    loadDashboard().catch((error) => {
+      messageEl.className = 'text-error';
+      messageEl.textContent = `Unable to refresh pending Grooming arrivals: ${error.message}`;
+    });
+  });
 
   loadDashboard().catch((error) => {
     statsEl.innerHTML = `<div class="alert alert-error show">${escapeHtml(error.message)}</div>`;

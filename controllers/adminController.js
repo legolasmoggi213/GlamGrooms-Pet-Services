@@ -6,7 +6,8 @@ const { isDigitsOnly, isDecimalNumber, isOptionalPhoneNumber } = require('../uti
 const { SERVICE_PRICES } = require('./groomingController');
 const { ROOM_PRICES } = require('./hotelController');
 
-const ACTIVE_GROOMING_STATUSES = ['scheduled', 'in-progress'];
+const ACTIVE_GROOMING_STATUSES = ['pending', 'scheduled', 'confirmed', 'in-progress'];
+const TODAY_GROOMING_STATUSES = ['scheduled', 'confirmed', 'in-progress'];
 const ACTIVE_HOTEL_STATUSES = ['pending', 'reserved', 'confirmed', 'checked-in'];
 const REVENUE_GROOMING_STATUSES = ['scheduled', 'confirmed', 'in-progress', 'completed'];
 const REVENUE_HOTEL_STATUSES = ['reserved', 'confirmed', 'checked-in', 'checked-out'];
@@ -211,7 +212,7 @@ const getStats = async (req, res, next) => {
       customers,
       pets,
       groomingTotal,
-      groomingToday,
+      groomingTodayAppointments,
       groomingActive,
       hotelTotal,
       currentGuests,
@@ -223,17 +224,20 @@ const getStats = async (req, res, next) => {
       Customer.count(),
       Pet.count(),
       GroomingAppointment.count(),
-      GroomingAppointment.count({ where: { date: today } }),
+      GroomingAppointment.findAll({ where: { date: today } }),
       GroomingAppointment.count({ where: { status: ACTIVE_GROOMING_STATUSES } }),
       HotelReservation.count(),
       HotelReservation.count({
         where: { status: 'checked-in', checkIn: { lte: today }, checkOut: { gte: today } },
       }),
-      HotelReservation.count({ where: { status: ['reserved', 'confirmed'], checkIn: { gte: today } } }),
+      HotelReservation.count({ where: { status: ['pending', 'reserved', 'confirmed'], checkIn: { gte: today } } }),
       findRevenueRecords(GroomingAppointment, REVENUE_GROOMING_STATUSES),
       findRevenueRecords(HotelReservation, REVENUE_HOTEL_STATUSES),
       CashTransaction.findAll({ where: { type: 'walk-in' } }),
     ]);
+
+    const groomingToday = groomingTodayAppointments.filter((appointment) => TODAY_GROOMING_STATUSES.includes(appointment.status)).length;
+    const groomingPendingToday = groomingTodayAppointments.filter((appointment) => appointment.status === 'pending').length;
 
     const groomingRevenue = groomingRecords
       .reduce((total, record) => total + Number(record.price || 0), 0);
@@ -254,6 +258,7 @@ const getStats = async (req, res, next) => {
       grooming: {
         total: groomingTotal,
         today: groomingToday,
+        pendingToday: groomingPendingToday,
         active: groomingActive,
         revenue: groomingRevenue || 0,
       },

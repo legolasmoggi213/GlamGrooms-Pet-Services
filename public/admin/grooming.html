@@ -13,8 +13,8 @@
     <main class="admin-main">
       <div class="flex-between">
         <div>
-          <h1>Grooming Appointments</h1>
-          <p class="page-sub">Track and manage grooming bookings.</p>
+          <h1 id="grooming-page-title">Grooming Appointments</h1>
+          <p class="page-sub" id="grooming-page-subtitle">Track and manage grooming bookings.</p>
         </div>
         <button class="btn btn-primary" id="add-btn">+ New Appointment</button>
       </div>
@@ -38,6 +38,14 @@
     renderSidebar('Grooming');
 
     const rowsEl = document.getElementById('rows');
+    const todayOnly = new URLSearchParams(location.search).get('filter') === 'today';
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const activeStatuses = new Set(['pending', 'scheduled', 'confirmed', 'in-progress']);
     let customersCache = [];
     let petsCache = [];
     const bookingActionsInProgress = new Set();
@@ -49,15 +57,24 @@
       ? appointment.petServices.map((item) => `${escapeHtml(item.petName || 'Pet')}: ${escapeHtml(serviceLabel(item.service))}`).join('<br>')
       : escapeHtml(serviceLabel(appointment.service));
 
+    if (todayOnly) {
+      document.title = "Today's Active Grooming — Glam Grooms Admin";
+      document.getElementById('grooming-page-title').textContent = "Today's Active Grooming";
+      document.getElementById('grooming-page-subtitle').textContent = `Active grooming schedule for ${new Date(`${today}T12:00:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}. Cancelled and completed appointments are excluded.`;
+    }
+
     async function loadAppointments() {
+      const appointments = await apiGet('/grooming');
       const items = sortByNewestDate(
-        (await apiGet('/grooming')).filter((appointment) => appointment.status !== 'completed'),
+        appointments.filter((appointment) => todayOnly
+          ? appointment.date === today && activeStatuses.has(String(appointment.status || '').toLowerCase())
+          : appointment.status !== 'completed'),
         'date',
         'time',
       );
       const session = await fetch('/admin/nav-status', { credentials: 'include' }).then((response) => response.json());
       if (!items.length) {
-        rowsEl.innerHTML = '<tr><td colspan="10" class="empty">No active appointments.</td></tr>';
+        rowsEl.innerHTML = `<tr><td colspan="10" class="empty">${todayOnly ? 'No active grooming services scheduled for today.' : 'No active appointments.'}</td></tr>`;
         return;
       }
       rowsEl.innerHTML = items

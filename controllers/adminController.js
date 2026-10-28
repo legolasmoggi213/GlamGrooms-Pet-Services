@@ -115,7 +115,7 @@ const walkInSalesDateKey = (transaction) => {
 
 const getWalkInSalesAnalytics = async (req, res, next) => {
   try {
-    const period = ['daily', 'weekly', 'monthly'].includes(req.query.period) ? req.query.period : 'daily';
+    const period = ['daily', 'weekly', 'monthly', 'yearly'].includes(req.query.period) ? req.query.period : 'daily';
     const transactions = (await CashTransaction.findAll({ where: { type: 'walk-in' } }))
       .filter(isPaidWalkInTransaction);
     const buckets = createRevenueBuckets(period, businessDateKey());

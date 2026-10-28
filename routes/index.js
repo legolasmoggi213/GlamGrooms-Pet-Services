@@ -112,6 +112,7 @@ router.use('/notifications', staffOrAdmin);
 const staffReadableAdminPaths = new Set([
   '/activity',
   '/occupancy',
+  '/pos-sales',
   '/reports',
   '/reschedule-requests',
   '/revenue-analytics',

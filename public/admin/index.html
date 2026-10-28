@@ -90,7 +90,7 @@
           </div>
         </div>
         <div id="revenue-combined" class="revenue-combined" aria-live="polite">Loading revenue…</div>
-        <div class="revenue-chart-grid">
+        <div class="revenue-chart-grid revenue-overview-grid">
           <section class="revenue-chart-panel grooming-chart">
             <div class="flex-between"><h4>Grooming Revenue</h4><strong id="grooming-revenue-total">₱0.00</strong></div>
             <div id="grooming-revenue-chart" class="revenue-line-host"></div>
@@ -98,6 +98,10 @@
           <section class="revenue-chart-panel hotel-chart">
             <div class="flex-between"><h4>Hotel Revenue</h4><strong id="hotel-revenue-total">₱0.00</strong></div>
             <div id="hotel-revenue-chart" class="revenue-line-host"></div>
+          </section>
+          <section class="revenue-chart-panel walk-in-chart">
+            <div class="flex-between"><h4>Walk-in Sales</h4><strong id="walk-in-revenue-total">₱0.00</strong></div>
+            <div id="walk-in-revenue-chart" class="revenue-line-host"></div>
           </section>
         </div>
         <h4 class="revenue-breakdown-title">Service Sales Breakdown</h4>
@@ -408,11 +412,14 @@
 
       async function loadRevenue() {
         const period = document.querySelector('.revenue-periods button[aria-pressed="true"]').dataset.period;
-        const data = await apiGet(`/admin/revenue-analytics?period=${period}`);
+        const [data, walkInData] = await Promise.all([
+          apiGet(`/admin/revenue-analytics?period=${period}`),
+          apiGet(`/admin/pos-sales?period=${period}`),
+        ]);
         revenueAnalyticsData = data;
         const periods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months', yearly: 'Last 5 years' };
         document.getElementById('revenue-period-label').textContent = periods[data.period];
-        document.getElementById('revenue-combined').textContent = `Combined revenue: ${fmtMoney(data.totals.combined)}`;
+        document.getElementById('revenue-combined').textContent = `Grooming + hotel revenue: ${fmtMoney(data.totals.combined)}`;
 
         const groomingTotal = data.grooming.reduce((total, bucket) => total + bucket.revenue, 0);
         const hotelTotal = data.hotel.reduce((total, bucket) => total + bucket.revenue, 0);
@@ -420,6 +427,15 @@
         document.getElementById('hotel-revenue-total').textContent = fmtMoney(hotelTotal);
         document.getElementById('grooming-revenue-chart').innerHTML = window.renderRevenueLineChart(data.grooming);
         document.getElementById('hotel-revenue-chart').innerHTML = window.renderRevenueLineChart(data.hotel);
+        const walkInBuckets = (walkInData.buckets || []).map((bucket) => ({
+          label: bucket.label,
+          revenue: bucket.sales,
+          count: bucket.count,
+        }));
+        document.getElementById('walk-in-revenue-total').textContent = fmtMoney(walkInBuckets.reduce((sum, bucket) => sum + Number(bucket.revenue || 0), 0));
+        document.getElementById('walk-in-revenue-chart').innerHTML = window.renderRevenueLineChart(walkInBuckets, {
+          countLabel: 'sales', ariaLabel: 'Walk-in sales by period',
+        });
         const groomingServiceTotal = (data.groomingServices || []).reduce((sum, entry) => sum + Number(entry.revenue || 0), 0);
         const hotelServiceTotal = (data.hotelServices || []).reduce((sum, entry) => sum + Number(entry.revenue || 0), 0);
         document.getElementById('grooming-service-total').textContent = fmtMoney(groomingServiceTotal);

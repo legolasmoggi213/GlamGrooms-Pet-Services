@@ -692,7 +692,10 @@
             }).join('')}</ul>`
           : '<div class="empty-state">No transactions to show.</div>';
         const recentHtml = `<div class="recent-transactions-list"><h3>Recent transactions</h3>${renderTransactionList(recentTransactions)}</div>
-          <div class="previous-transactions-list"><h3>Previous transactions</h3>${renderTransactionList(previousTransactions)}</div>`;
+          <details class="previous-transactions-disclosure">
+            <summary><span>Previous transactions</span><span class="previous-transactions-count">${previousTransactions.length}</span><span class="previous-transactions-toggle" aria-hidden="true"></span></summary>
+            <div class="previous-transactions-content">${renderTransactionList(previousTransactions)}</div>
+          </details>`;
 
         document.getElementById('recent-transactions').innerHTML = recentHtml;
         document.getElementById('grooming-bookings').innerHTML = `<ul class="transaction-list">${grooming}</ul>`;

@@ -39,7 +39,6 @@ function renderSidebar(activeLabel) {
       sidebar.innerHTML = `
         <a class="brand" href="${home}">Glam Grooms Pet Spa & Hotel</a>
         ${links}
-        <a href="/" style="margin-top:1rem;">← Back to site</a>
         <a href="/admin/logout" style="margin-top:0.6rem;color:var(--danger);">Logout</a>
       `;
       if (pages.some((page) => page.label === 'Notifications')) {

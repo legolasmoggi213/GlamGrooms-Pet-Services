@@ -32,16 +32,28 @@
 
   const loadRevenue = async () => {
     const selectedPeriod = document.querySelector('#staff-revenue .revenue-periods button[aria-pressed="true"]')?.dataset.period || 'monthly';
-    const data = await apiGet(`/admin/revenue-analytics?period=${selectedPeriod}`);
+    const [data, walkInData] = await Promise.all([
+      apiGet(`/admin/revenue-analytics?period=${selectedPeriod}`),
+      apiGet(`/admin/pos-sales?period=${selectedPeriod}`),
+    ]);
     revenueAnalyticsData = data;
     document.getElementById('staff-revenue-period-label').textContent = revenuePeriods[data.period] || revenuePeriods.monthly;
-    document.getElementById('staff-revenue-combined').textContent = `Combined revenue: ${fmtMoney(data.totals.combined)}`;
+    document.getElementById('staff-revenue-combined').textContent = `Grooming + hotel revenue: ${fmtMoney(data.totals.combined)}`;
     const groomingTotal = (data.grooming || []).reduce((total, bucket) => total + Number(bucket.revenue || 0), 0);
     const hotelTotal = (data.hotel || []).reduce((total, bucket) => total + Number(bucket.revenue || 0), 0);
     document.getElementById('staff-grooming-revenue-total').textContent = fmtMoney(groomingTotal);
     document.getElementById('staff-hotel-revenue-total').textContent = fmtMoney(hotelTotal);
     document.getElementById('staff-grooming-revenue-chart').innerHTML = window.renderRevenueLineChart(data.grooming || []);
     document.getElementById('staff-hotel-revenue-chart').innerHTML = window.renderRevenueLineChart(data.hotel || []);
+    const walkInBuckets = (walkInData.buckets || []).map((bucket) => ({
+      label: bucket.label,
+      revenue: bucket.sales,
+      count: bucket.count,
+    }));
+    document.getElementById('staff-walk-in-revenue-total').textContent = fmtMoney(walkInBuckets.reduce((sum, bucket) => sum + Number(bucket.revenue || 0), 0));
+    document.getElementById('staff-walk-in-revenue-chart').innerHTML = window.renderRevenueLineChart(walkInBuckets, {
+      countLabel: 'sales', ariaLabel: 'Walk-in sales by period',
+    });
     const groomingServices = data.groomingServices || [];
     const hotelServices = data.hotelServices || [];
     document.getElementById('staff-grooming-service-total').textContent = fmtMoney(groomingServices.reduce((sum, entry) => sum + Number(entry.revenue || 0), 0));

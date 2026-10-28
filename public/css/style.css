@@ -1521,6 +1521,9 @@ tr:hover td { background: #f5f1e5; }
 .panel:hover { box-shadow: 0 8px 22px rgba(28, 38, 40, 0.075); border-color: #d6dbd5; }
 .panel h3 { margin-bottom: 1rem; font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; }
 .panel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem; }
+.activity-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+.activity-group { min-width: 0; }
+.activity-group h4 { margin: 0 0 0.35rem; padding-bottom: 0.55rem; border-bottom: 1px solid var(--admin-border); font-size: 0.92rem; }
 
 .analytics-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.2rem; }
 .analytics-heading h3 { margin-bottom: 0.25rem; }
@@ -2671,7 +2674,7 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; overflow: visible; }
   .stat-card { padding: 1rem; }
   .stat-card .value { font-size: 1.35rem; overflow-wrap: anywhere; }
-  .panel-grid, .revenue-chart-grid { grid-template-columns: minmax(0, 1fr); }
+  .panel-grid, .revenue-chart-grid, .activity-columns { grid-template-columns: minmax(0, 1fr); }
   .pos-products { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
   .pos-product { min-height: 205px; padding: 0.75rem; }
   .pos-product-details > span { font-size: 0.6rem; }

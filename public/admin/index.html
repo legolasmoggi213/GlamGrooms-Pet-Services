@@ -55,16 +55,23 @@
         </div>
       </section>
 
-      <div class="panel-grid">
-        <div class="panel">
-          <h3>Hotel Occupancy — This Month</h3>
-          <div id="occupancy"><div class="loading">Loading…</div></div>
+      <section class="panel">
+        <h3>Hotel Occupancy — This Month</h3>
+        <div id="occupancy"><div class="loading">Loading…</div></div>
+      </section>
+      <section class="panel" aria-labelledby="recent-activity-heading">
+        <h3 id="recent-activity-heading">Recent Activities</h3>
+        <div id="activity" class="activity-columns">
+          <section class="activity-group" aria-labelledby="grooming-activity-heading">
+            <h4 id="grooming-activity-heading">Grooming</h4>
+            <div id="grooming-activity"><div class="loading">Loading grooming activity…</div></div>
+          </section>
+          <section class="activity-group" aria-labelledby="hotel-activity-heading">
+            <h4 id="hotel-activity-heading">Pet Hotel</h4>
+            <div id="hotel-activity"><div class="loading">Loading hotel activity…</div></div>
+          </section>
         </div>
-        <div class="panel">
-          <h3>Recent Activity</h3>
-          <div id="activity"><div class="loading">Loading…</div></div>
-        </div>
-      </div>
+      </section>
 
       <section class="panel" id="revenue" aria-label="Revenue analytics">
         <div class="analytics-heading">
@@ -303,23 +310,24 @@
 
       async function loadActivity() {
         const items = await apiGet('/admin/activity');
-        const el = document.getElementById('activity');
-        if (!items.length) {
-          el.innerHTML = '<div class="empty">No activity yet.</div>';
-          return;
-        }
-        el.innerHTML = items
-          .map(
-            (a) => `
+        const renderActivity = (activityItems, typeLabel) => activityItems.length
+          ? activityItems.map((a) => `
               <button type="button" class="activity-item activity-booking-button" data-booking-id="${escapeHtml(a.id)}" data-booking-type="${escapeHtml(a.type)}" aria-label="View full ${escapeHtml(a.type)} booking details">
-                <span class="dot">${a.paymentStatus === 'paid' ? 'Advance paid' : (a.type === 'grooming' ? 'Grooming' : 'Hotel')}</span>
+                <span class="dot">${a.paymentStatus === 'paid' ? 'Advance paid' : typeLabel}</span>
                 <div>
                   <div>${escapeHtml(a.summary)} ${statusBadge(a.status)}</div>
                   <div class="meta">${fmtDateTime(a.createdAt)}</div>
                 </div>
               </button>`
           )
-          .join('');
+          .join('')
+          : `<div class="empty">No recent ${typeLabel.toLowerCase()} activity.</div>`;
+        document.getElementById('grooming-activity').innerHTML = renderActivity(
+          items.filter((item) => item.type === 'grooming'), 'Grooming',
+        );
+        document.getElementById('hotel-activity').innerHTML = renderActivity(
+          items.filter((item) => item.type === 'hotel'), 'Pet Hotel',
+        );
       }
 
       async function showBookingDetails(type, id) {

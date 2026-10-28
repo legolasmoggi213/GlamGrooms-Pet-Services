@@ -21,10 +21,10 @@
   const groomingService = (booking) => Array.isArray(booking.petServices) && booking.petServices.length
     ? booking.petServices.map((service) => `${service.petName || 'Pet'}: ${String(service.service || '').replace(/^grooming-/, '').replace(/-/g, ' ')}`).join('; ')
     : String(booking.service || 'Grooming').replace(/^grooming-/, '').replace(/-/g, ' ');
-  const statCard = (label, value, color, href = '/admin/appointments.html') => `
+  const statCard = (label, value, color, href = '/admin/appointments.html', valueId = '') => `
     <a class="stat-card stat-card-link" href="${href}" aria-label="View ${escapeHtml(label)} in appointments">
       <div class="label">${escapeHtml(label)}</div>
-      <div class="value ${color}">${value}</div>
+      <div class="value ${color}"${valueId ? ` id="${valueId}"` : ''}>${value}</div>
       <span class="stat-card-hint" aria-hidden="true">View appointments →</span>
     </a>`;
   const revenuePeriods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months', yearly: 'Last 5 years' };
@@ -108,7 +108,7 @@
       const todaysHotelArrivals = upcomingHotelArrivals.filter((booking) => booking.checkIn === businessDate);
     statsEl.innerHTML = [
       statCard("Today's Active Arrivals", groomingToday.length + todaysHotelArrivals.length, 'green', '/admin/grooming.html?filter=today'),
-      statCard('Pending Grooming Arrivals', pendingGroomingToday.length, 'orange', '#staff-pending-grooming'),
+      statCard('Pending Grooming Arrivals', pendingGroomingToday.length, 'orange', '#staff-pending-grooming', 'staff-pending-grooming-count'),
       statCard('Upcoming Arrivals', upcomingGrooming.length + upcomingHotelArrivals.length, 'orange'),
     ].join('');
 
@@ -189,7 +189,12 @@
     button.textContent = 'Confirming…';
     try {
       await apiPut(`/grooming/${encodeURIComponent(bookingId)}`, { status: 'confirmed' });
-      await loadDashboard();
+      button.closest('tr')?.remove();
+      if (!pendingGroomingRows.querySelector('tr')) {
+        pendingGroomingRows.innerHTML = '<tr><td colspan="7" class="empty">No pending Grooming arrivals today.</td></tr>';
+      }
+      const pendingCount = document.getElementById('staff-pending-grooming-count');
+      if (pendingCount) pendingCount.textContent = String(Math.max(0, Number(pendingCount.textContent) - 1));
       messageEl.className = 'text-success';
       messageEl.textContent = 'Grooming appointment confirmed and added to today’s active schedule.';
     } catch (error) {

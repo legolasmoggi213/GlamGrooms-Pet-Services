@@ -270,6 +270,50 @@
     renderRows('hotel', hotelRowsEl, 'No active pet hotel reservations.');
   };
 
+  const isVisibleBooking = (type, booking) => !terminalStatuses[type].has(String(booking.status || '').toLowerCase())
+    || (type === 'grooming'
+      && String(booking.status || '').toLowerCase() === 'completed'
+      && String(booking.paymentStatus || '').toLowerCase() === 'paid'
+      && !booking.paymentReceiptEmailSentAt);
+
+  const sortBookings = () => bookings.sort((left, right) => {
+    const bookingActivityOrder = bookingActivityTime(right) - bookingActivityTime(left);
+    if (bookingActivityOrder) return bookingActivityOrder;
+    const customerActivityOrder = customerActivityTime(right) - customerActivityTime(left);
+    if (customerActivityOrder) return customerActivityOrder;
+    const leftDate = left.type === 'grooming' ? left.booking.date : left.booking.checkIn;
+    const rightDate = right.type === 'grooming' ? right.booking.date : right.booking.checkIn;
+    const dateOrder = String(rightDate || '').localeCompare(String(leftDate || ''));
+    if (dateOrder) return dateOrder;
+    const leftTime = left.type === 'grooming' ? left.booking.time : left.booking.checkInTime;
+    const rightTime = right.type === 'grooming' ? right.booking.time : right.booking.checkInTime;
+    return String(rightTime || '').localeCompare(String(leftTime || ''));
+  });
+
+  const renderBookingType = (type) => renderRows(
+    type,
+    type === 'grooming' ? groomingRowsEl : hotelRowsEl,
+    type === 'grooming' ? 'No active grooming appointments.' : 'No active pet hotel reservations.',
+  );
+
+  const storeBooking = (type, booking) => {
+    bookings = bookings.filter((item) => item.type !== type || String(item.booking.id) !== String(booking.id));
+    if (isVisibleBooking(type, booking)) bookings.push({ type, booking });
+    sortBookings();
+    renderBookingType(type);
+  };
+
+  const refreshBooking = async (type, id) => {
+    const booking = await apiGet(`/${type}/${encodeURIComponent(id)}`);
+    storeBooking(type, booking);
+    return booking;
+  };
+
+  const removeBooking = (type, id) => {
+    bookings = bookings.filter((item) => item.type !== type || String(item.booking.id) !== String(id));
+    renderBookingType(type);
+  };
+
   const showLoadError = (error) => {
     const message = escapeHtml(error.message);
     groomingRowsEl.innerHTML = `<tr><td colspan="5" class="empty">${message}</td></tr>`;
@@ -340,7 +384,9 @@
       }
       await apiPost(`/admin/reschedule-requests/${encodeURIComponent(request.id)}/decision`, { decision });
       noteBookingActivity(request.bookingType, request.bookingId);
-      await loadAppointments();
+      rescheduleRequests = rescheduleRequests.filter((item) => String(item.id) !== String(request.id));
+      renderRescheduleRequests();
+      if (decision === 'approved') await refreshBooking(request.bookingType, request.bookingId);
       messageEl.className = 'text-success';
       messageEl.textContent = decision === 'approved' ? 'Reschedule request approved and applied.' : 'Reschedule request declined.';
     } catch (error) {
@@ -351,9 +397,6 @@
   };
 
   const loadAppointments = async () => {
-    groomingRowsEl.innerHTML = '<tr><td colspan="5" class="loading">Loading grooming appointments…</td></tr>';
-    hotelRowsEl.innerHTML = '<tr><td colspan="5" class="loading">Loading pet hotel reservations…</td></tr>';
-    messageEl.textContent = '';
     const [grooming, hotel, sessionResponse, requests] = await Promise.all([
       apiGet('/grooming'),
       apiGet('/hotel'),
@@ -365,23 +408,12 @@
     isAdmin = session.role === 'ADMIN';
     rescheduleRequests = requests;
     bookings = [
-      ...grooming.filter((booking) => !terminalStatuses.grooming.has(booking.status))
+      ...grooming.filter((booking) => isVisibleBooking('grooming', booking))
         .map((booking) => ({ type: 'grooming', booking })),
-      ...hotel.filter((booking) => !terminalStatuses.hotel.has(booking.status))
+      ...hotel.filter((booking) => isVisibleBooking('hotel', booking))
         .map((booking) => ({ type: 'hotel', booking })),
-    ].sort((left, right) => {
-      const bookingActivityOrder = bookingActivityTime(right) - bookingActivityTime(left);
-      if (bookingActivityOrder) return bookingActivityOrder;
-      const customerActivityOrder = customerActivityTime(right) - customerActivityTime(left);
-      if (customerActivityOrder) return customerActivityOrder;
-      const leftDate = left.type === 'grooming' ? left.booking.date : left.booking.checkIn;
-      const rightDate = right.type === 'grooming' ? right.booking.date : right.booking.checkIn;
-      const dateOrder = String(rightDate || '').localeCompare(String(leftDate || ''));
-      if (dateOrder) return dateOrder;
-      const leftTime = left.type === 'grooming' ? left.booking.time : left.booking.checkInTime;
-      const rightTime = right.type === 'grooming' ? right.booking.time : right.booking.checkInTime;
-      return String(rightTime || '').localeCompare(String(leftTime || ''));
-    });
+    ];
+    sortBookings();
     renderAppointments();
     renderRescheduleRequests();
   };
@@ -431,7 +463,7 @@
         await apiPut(`/${type}/${encodeURIComponent(booking.id)}`, body);
         noteBookingActivity(type, booking.id);
         closeModal();
-        await loadAppointments();
+        await refreshBooking(type, booking.id);
         messageEl.className = 'text-success';
         messageEl.textContent = 'Appointment schedule updated.';
       } catch (error) {
@@ -485,7 +517,7 @@
           : await apiPut(`/${type}/${encodeURIComponent(id)}`, { status: 'confirmed' });
         noteBookingActivity(type, id);
         closeModal();
-        await loadAppointments();
+        await refreshBooking(type, id);
         messageEl.className = result && sendingTicket && !result.emailSent ? 'text-error' : 'text-success';
         messageEl.textContent = result && sendingTicket && !result.emailSent
           ? 'The ticket email was not sent. Check the email configuration.'
@@ -506,7 +538,7 @@
         const result = await apiPost(`/grooming/${encodeURIComponent(id)}/checkout`, {});
         noteBookingActivity(type, id);
         closeModal();
-        await loadAppointments();
+        await refreshBooking(type, id);
         messageEl.className = result.emailSent ? 'text-success' : 'text-error';
         messageEl.textContent = result.emailSent
           ? checkingOut ? 'Grooming appointment checked out and receipt sent.' : 'Payment receipt sent.'
@@ -526,7 +558,7 @@
         await apiPut(`/${type}/${encodeURIComponent(id)}`, { status });
         noteBookingActivity(type, id);
         closeModal();
-        await loadAppointments();
+        await refreshBooking(type, id);
         messageEl.className = 'text-success';
         messageEl.textContent = type === 'grooming' ? 'Grooming appointment checked in.' : status === 'checked-in' ? 'Pet checked in.' : 'Pet checked out.';
       } catch (error) {
@@ -543,7 +575,7 @@
         await apiPut(`/${type}/${encodeURIComponent(id)}`, { paymentStatus });
         noteBookingActivity(type, id);
         closeModal();
-        await loadAppointments();
+        await refreshBooking(type, id);
         messageEl.className = 'text-success';
         messageEl.textContent = `${type === 'grooming' ? 'Appointment' : 'Reservation'} marked ${paymentStatus}.`;
       } catch (error) {
@@ -562,7 +594,7 @@
         await apiPut(`/${type}/${encodeURIComponent(id)}`, { status: 'cancelled' });
         noteBookingActivity(type, id);
         closeModal();
-        await loadAppointments();
+        await refreshBooking(type, id);
         messageEl.className = 'text-success';
         messageEl.textContent = `${type === 'grooming' ? 'Grooming appointment' : 'Hotel reservation'} ${verb === 'Reject' ? 'rejected' : 'cancelled'}.`;
       } catch (error) {
@@ -580,7 +612,7 @@
       await apiDelete(`/${type}/${encodeURIComponent(id)}`);
       noteBookingActivity(type, id);
       closeModal();
-      await loadAppointments();
+      removeBooking(type, id);
       messageEl.className = 'text-success';
       messageEl.textContent = `${type === 'grooming' ? 'Grooming appointment' : 'Hotel reservation'} deleted.`;
     } catch (error) {

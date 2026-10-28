@@ -290,7 +290,7 @@ const getRecentActivity = async (req, res, next) => {
     const customerMap = Object.fromEntries(customers.map((c) => [String(c.id), c]));
     const petMap = Object.fromEntries(pets.map((p) => [String(p.id), p]));
 
-    const activity = [
+    const sortedActivity = [
       ...grooming.filter((a) => a.status !== 'completed').map((a) => {
         const pet = petMap[String(a.petId)];
         const customer = customerMap[String(a.customerId)];
@@ -328,8 +328,11 @@ const getRecentActivity = async (req, res, next) => {
         };
       }),
     ]
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, 10);
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const activity = [
+      ...sortedActivity.filter((item) => item.type === 'grooming').slice(0, 10),
+      ...sortedActivity.filter((item) => item.type === 'hotel').slice(0, 10),
+    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     res.json(activity);
   } catch (error) {

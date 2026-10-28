@@ -249,7 +249,7 @@ app.post('/customer/register-profile', async (req, res) => {
     const address = String(profile.address || '').trim();
     if (!email || email !== profileEmail) return res.status(403).json({ error: 'Registration email does not match the Firebase account' });
     if (!name || !phone || !address) return res.status(400).json({ error: 'Name, phone, and address are required' });
-    if (!isValidMobileNumber(phone)) return res.status(400).json({ error: 'Phone number must contain exactly 11 digits.' });
+    if (!/^09[0-9]{9}$/.test(phone)) return res.status(400).json({ error: 'Enter an 11-digit mobile number starting with 09.' });
 
     let customer = await db.Customer.findOne({ where: { email } });
     const customerProfile = { name, email, phone, address, uid: decoded.uid };
@@ -539,17 +539,22 @@ const getAdminFromRequest = async (req) => {
 // Admin login handler (placed before admin protection)
 app.post('/admin/login', async (req, res) => {
     const password = String(req.body && req.body.password || '');
-    const username = String(req.body && req.body.username || '').trim().toUpperCase();
+    const submittedUsername = String(req.body && req.body.username || '').trim();
+    const username = submittedUsername.toUpperCase();
+    const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
 
     if (!password) return res.redirect('/admin/login.html?error=1');
     try {
       let role = null;
       let staffEmail = '';
-      if (username === ADMIN_USERNAME) {
+      const isAdminLogin = adminEmail
+        ? submittedUsername.toLowerCase() === adminEmail
+        : username === ADMIN_USERNAME;
+      if (isAdminLogin) {
         const envPass = String(process.env.ADMIN_PASS || '');
         const envMatch = Boolean(envPass && password === envPass);
-        const admin = envMatch ? null : await findAdminAccount();
-        const dbMatch = admin && admin.passwordHash && bcrypt.compareSync(password, admin.passwordHash);
+        const admin = envPass ? null : await findAdminAccount();
+        const dbMatch = !envPass && admin && admin.passwordHash && bcrypt.compareSync(password, admin.passwordHash);
         if (dbMatch || envMatch) role = ADMIN_USERNAME;
       } else {
         const staff = await db.StaffAccount.findOne({ where: { username } });
@@ -564,6 +569,25 @@ app.post('/admin/login', async (req, res) => {
       }
 
       if (role) {
+        if (role === ADMIN_USERNAME) {
+          if (!/^[^@\s]+@gmail\.com$/.test(adminEmail)) {
+            console.warn('Admin sign-in blocked because ADMIN_EMAIL is not a valid Gmail address.');
+            return res.redirect('/admin/login.html?error=email');
+          }
+          const { challengeId } = await createVerificationChallenge({
+            email: adminEmail,
+            purpose: 'admin',
+            metadata: { role: ADMIN_USERNAME, email: adminEmail },
+          });
+          res.cookie('admin_login_challenge', challengeId, {
+            path: '/admin/login',
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 10 * 60 * 1000,
+          });
+          return res.redirect('/admin/login.html?verify=1');
+        }
         if (isStaffRole(role)) {
           if (!/^[^@\s]+@gmail\.com$/.test(staffEmail)) {
             console.warn(`Staff sign-in blocked because no valid Gmail address is configured for ${username}.`);
@@ -597,20 +621,37 @@ app.post('/admin/login', async (req, res) => {
 });
 
 app.post('/admin/login/verify-code', async (req, res) => {
-  const challengeId = String(req.headers.cookie || '').split(';')
+  const rawCookies = String(req.headers.cookie || '').split(';')
     .map((part) => part.trim())
-    .find((part) => part.startsWith('staff_login_challenge='))
+  const adminChallengeId = rawCookies.find((part) => part.startsWith('admin_login_challenge='))
     ?.split('=').slice(1).join('=');
-  if (!challengeId) return res.redirect('/admin/login.html?error=expired');
+  const staffChallengeId = rawCookies.find((part) => part.startsWith('staff_login_challenge='))
+    ?.split('=').slice(1).join('=');
+  if (!adminChallengeId && !staffChallengeId) return res.redirect('/admin/login.html?error=expired');
 
   try {
     const metadata = await verifyChallengeById({
-      purpose: 'staff',
-      challengeId: decodeURIComponent(challengeId),
+      purpose: adminChallengeId ? 'admin' : 'staff',
+      challengeId: decodeURIComponent(adminChallengeId || staffChallengeId),
       code: req.body?.verificationCode,
     });
     const role = metadata.role;
     const email = String(metadata.email || '').toLowerCase();
+    if (adminChallengeId) {
+      const configuredAdminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+      if (role !== ADMIN_USERNAME || email !== configuredAdminEmail
+        || !/^[^@\s]+@gmail\.com$/.test(configuredAdminEmail)) {
+        return res.redirect('/admin/login.html?error=expired');
+      }
+      res.clearCookie('admin_login_challenge', { path: '/admin/login' });
+      res.cookie('admin_token', createToken(ADMIN_USERNAME), {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+      });
+      return res.redirect('/admin/index.html');
+    }
     if (!isStaffRole(role) || !/^[^@\s]+@gmail\.com$/.test(email)) {
       return res.redirect('/admin/login.html?error=expired');
     }
@@ -684,8 +725,8 @@ app.post('/admin/change-password', (req, res) => {
   });
 });
 
-// Admin registration is disabled. The admin password is configured via the
-// ADMIN_PASS environment variable or changed on first login.
+// Admin registration is disabled. Admin credentials and verification email are
+// configured through ADMIN_PASS and ADMIN_EMAIL.
 // Require visitors to accept the privacy terms before serving site pages.
 app.use((req, res, next) => {
   if (!['GET', 'HEAD'].includes(req.method)) return next();

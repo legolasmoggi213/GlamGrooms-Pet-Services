@@ -69,9 +69,30 @@ document.addEventListener('DOMContentLoaded', () => {
   const codeInput = document.getElementById('verification-code');
   const resendCodeButton = document.getElementById('resend-code-button');
   const backButton = document.getElementById('back-to-login-button');
+  const isRegistrationForm = form.action.endsWith('/customer/register');
+  const passwordInput = isRegistrationForm ? form.elements.password : null;
+  const confirmPasswordInput = isRegistrationForm ? form.elements.confirmPassword : null;
+  const confirmPasswordError = isRegistrationForm ? document.getElementById('confirm-password-error') : null;
   let pendingUser = null;
   let pendingProfile = null;
   let challengeId = null;
+
+  const updatePasswordMatch = () => {
+    if (!passwordInput || !confirmPasswordInput || !confirmPasswordError) return false;
+    const hasConfirmation = Boolean(confirmPasswordInput.value);
+    const passwordsMatch = passwordInput.value === confirmPasswordInput.value;
+    const mismatch = hasConfirmation && !passwordsMatch;
+    confirmPasswordInput.setCustomValidity(mismatch ? 'Passwords do not match.' : '');
+    confirmPasswordInput.classList.toggle('is-invalid', mismatch);
+    confirmPasswordInput.setAttribute('aria-invalid', String(mismatch));
+    confirmPasswordError.hidden = !mismatch;
+    return !mismatch;
+  };
+
+  if (passwordInput && confirmPasswordInput) {
+    passwordInput.addEventListener('input', updatePasswordMatch);
+    confirmPasswordInput.addEventListener('input', updatePasswordMatch);
+  }
 
   const requestLoginCode = async (user) => {
     const response = await fetch('/customer/login/send-code', {
@@ -153,7 +174,7 @@ form.addEventListener('submit', async (event) => {
       }
       return;
     }
-    const isRegistration = form.action.endsWith('/customer/register');
+    const isRegistration = isRegistrationForm;
     const termsCheckbox = isRegistration ? document.getElementById('privacy-panel-accept') : null;
     if (isRegistration && (!termsCheckbox || !termsCheckbox.checked)) {
       showAuthError({ message: 'Please accept the terms and conditions before continuing.' });
@@ -189,10 +210,20 @@ form.addEventListener('submit', async (event) => {
       showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">Checking your credentials...</span>');
     }
     if (form.action.endsWith('/customer/register')) {
+      if (!updatePasswordMatch()) {
+        confirmPasswordInput.focus();
+        return;
+      }
+      delete data.confirmPassword;
       const phoneInput = form.elements.phone;
       if (phoneInput && /[^0-9]/.test(phoneInput.value)) {
         phoneInput.focus();
         showAuthError({ message: 'Phone number must contain digits only.' });
+        return;
+      }
+      if (phoneInput && !/^09[0-9]{9}$/.test(phoneInput.value)) {
+        phoneInput.focus();
+        showAuthError({ message: 'Enter an 11-digit mobile number starting with 09.' });
         return;
       }
       if (!isGmailOnly(data.email)) {

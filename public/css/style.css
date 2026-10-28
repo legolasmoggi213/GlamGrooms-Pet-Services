@@ -1961,6 +1961,7 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
 .password-strength.is-weak .password-strength-label { color: #b42318; }
 .password-strength.is-medium .password-strength-label { color: #8a4b00; }
 .password-strength.is-strong .password-strength-label { color: #18794e; }
+.confirm-password-error { margin: 0.35rem 0 0; color: #b42318; font-size: 0.85rem; }
 
 /* Admin table row actions */
 .admin-layout .btn-sm { padding: 0.5rem 0.9rem; font-size: 0.82rem; }

@@ -92,10 +92,10 @@ const sendEmail = async ({ to, subject, text, html, from }) => {
 
 const sendLoginVerificationCode = ({ to, code, purpose }) => {
   const isPasswordChange = purpose === 'customer-password-change';
+  const audience = purpose === 'staff' ? 'staff' : purpose === 'admin' ? 'admin' : 'customer';
   const subject = isPasswordChange
     ? 'Your Glam Grooms password change verification code'
-    : 'Your Glam Grooms sign-in verification code';
-  const audience = purpose === 'staff' ? 'staff' : 'customer';
+    : `Your Glam Grooms ${audience} sign-in verification code`;
   const action = isPasswordChange ? 'change your password' : 'finish signing in';
   return sendEmail({
     to,

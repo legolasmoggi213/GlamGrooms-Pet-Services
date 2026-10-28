@@ -31,7 +31,14 @@
           <button type="button" class="toggle-password" data-target="password" aria-label="Show password">👁</button>
         </div>
       </div>
-      <div class="field"><label for="phone">Phone *</label><input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number pattern="[0-9]{11}" title="Enter exactly 11 digits." required placeholder="09175550123" /></div>
+      <div class="field"><label for="confirm-password">Confirm Password</label>
+        <div class="password-field">
+          <input id="confirm-password" name="confirmPassword" type="password" required placeholder="Confirm Password" autocomplete="new-password" aria-describedby="confirm-password-error" />
+          <button type="button" class="toggle-password" data-target="confirm-password" aria-label="Show password">👁</button>
+        </div>
+        <p id="confirm-password-error" class="confirm-password-error" role="status" hidden>Passwords do not match</p>
+      </div>
+      <div class="field"><label for="phone">Phone *</label><input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number pattern="09[0-9]{9}" title="Enter an 11-digit mobile number starting with 09." required placeholder="09615153112" /></div>
       <div class="field"><label for="address">Address *</label><input id="address" name="address" required placeholder="Street, City" /></div>
       <div class="field terms">
         <button class="terms-link" id="toggle-privacy-terms" type="button" aria-expanded="false" aria-controls="privacy-terms-panel">Review privacy terms and conditions</button>

@@ -1,9 +1,9 @@
 const firebaseApp = firebase.initializeApp(window.firebaseConfig);
 const firebaseAuth = firebase.auth(firebaseApp);
 
-const isGmailOnly = (email) => {
+const isAcceptedRegistrationEmail = (email) => {
     const trimmed = String(email || '').trim().toLowerCase();
-    return /^[^@\s]+@gmail\.com$/.test(trimmed);
+  return /^[^@\s]+@(gmail\.com|yahoo\.com|outlook\.com)$/.test(trimmed);
   };
 
   const showAuthError = (error) => {
@@ -154,7 +154,7 @@ form.addEventListener('submit', async (event) => {
     if (pendingUser) {
       const verificationCode = codeInput.value.trim();
       if (!/^[0-9]{6}$/.test(verificationCode)) {
-        showAuthStatus('error', '<span style="color:#9c3a2e; font-weight:700;">Enter the 6-digit code from your Gmail.</span>');
+        showAuthStatus('error', '<span style="color:#9c3a2e; font-weight:700;">Enter the 6-digit code sent to your email.</span>');
         codeInput.focus();
         return;
       }
@@ -226,8 +226,8 @@ form.addEventListener('submit', async (event) => {
         showAuthError({ message: 'Enter an 11-digit mobile number starting with 09.' });
         return;
       }
-      if (!isGmailOnly(data.email)) {
-        showAuthError({ message: 'Only Gmail addresses (@gmail.com) are accepted for registration.' });
+      if (!isAcceptedRegistrationEmail(data.email)) {
+        showAuthError({ message: 'Use a Gmail, Yahoo, or Outlook email address (@gmail.com, @yahoo.com, or @outlook.com).' });
         return;
       }
       const pw = data.password;
@@ -297,12 +297,12 @@ form.addEventListener('submit', async (event) => {
         pendingProfile = { ...data };
         delete pendingProfile.password;
         const verifyButton = document.getElementById('verify-code-button');
-        showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">Credentials accepted. Sending a verification code to your Gmail...</span>');
+        showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">Credentials accepted. Sending a verification code to your email...</span>');
         try {
           challengeId = await requestLoginCode(user);
           codeInput.disabled = false;
           codeInput.focus();
-          showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">A verification code was sent to your Gmail. Enter it to finish signing in.</span>');
+          showAuthStatus('success', '<span style="color:#1a6b4a; font-weight:700;">A verification code was sent to your email. Enter it to finish signing in.</span>');
         } catch (error) {
           showAuthStatus('error', `<span style="color:#9c3a2e; font-weight:700;">✗ ${error.message}</span>`);
         } finally {

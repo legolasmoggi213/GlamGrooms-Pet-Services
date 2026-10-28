@@ -247,6 +247,9 @@ app.post('/customer/register-profile', async (req, res) => {
     const phone = String(profile.phone || '');
     const address = String(profile.address || '').trim();
     if (!email || email !== profileEmail) return res.status(403).json({ error: 'Registration email does not match the Firebase account' });
+    if (!/^[^@\s]+@(gmail\.com|yahoo\.com|outlook\.com)$/.test(email)) {
+      return res.status(400).json({ error: 'Use a Gmail, Yahoo, or Outlook email address (@gmail.com, @yahoo.com, or @outlook.com).' });
+    }
     if (!name || !phone || !address) return res.status(400).json({ error: 'Name, phone, and address are required' });
     if (!/^09[0-9]{9}$/.test(phone)) return res.status(400).json({ error: 'Enter an 11-digit mobile number starting with 09.' });
 

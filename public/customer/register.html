@@ -24,7 +24,7 @@
     <form method="POST" action="/customer/register">
       <input type="hidden" name="return" value="" id="return-field" />
       <div class="field"><label for="name">Full name</label><input id="name" name="name" required placeholder="Juan Dela Cruz" /></div>
-      <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required placeholder="you@gmail.com" pattern="^[^@\s]+@gmail\.com$" title="Please use a Gmail address (@gmail.com)" /></div>
+      <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required placeholder="you@gmail.com" pattern="^[^@\s]+@(gmail\.com|yahoo\.com|outlook\.com)$" title="Use a Gmail, Yahoo, or Outlook email address (@gmail.com, @yahoo.com, or @outlook.com)." /></div>
       <div class="field"><label for="password">Password</label>
         <div class="password-field">
           <input id="password" name="password" type="password" required placeholder="8-24 characters with letters, a number, and a symbol" minlength="8" maxlength="24" autocomplete="new-password" />

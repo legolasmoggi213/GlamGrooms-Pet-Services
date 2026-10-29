@@ -123,8 +123,14 @@
   const openManage = (booking, type) => {
     const title = type === 'grooming' ? 'Manage Grooming Appointment' : 'Manage Pet Hotel Reservation';
     const actions = manageActionsFor(booking, type).join('');
-    openModal(title, `<div class="appointment-manage-actions">${actions}<button type="button" class="btn btn-outline btn-sm" data-close-modal>Close</button></div>`);
+    openModal(title, `<p class="appointment-manage-status">Status: ${escapeHtml(booking.status || 'pending')}</p><div class="appointment-manage-actions">${actions}<button type="button" class="btn btn-outline btn-sm" data-close-modal>Close</button></div>`);
     document.getElementById('modal-body').querySelector('[data-close-modal]').addEventListener('click', closeModal);
+  };
+
+  const refreshManageBooking = async (type, id) => {
+    const booking = await refreshBooking(type, id);
+    openManage(booking, type);
+    return booking;
   };
 
   const openNewGroomingAppointment = async () => {
@@ -466,8 +472,7 @@
       try {
         await apiPut(`/${type}/${encodeURIComponent(booking.id)}`, body);
         noteBookingActivity(type, booking.id);
-        closeModal();
-        await refreshBooking(type, booking.id);
+        await refreshManageBooking(type, booking.id);
         messageEl.className = 'text-success';
         messageEl.textContent = 'Appointment schedule updated.';
       } catch (error) {
@@ -520,8 +525,7 @@
           ? await apiPost(`/${type}/${encodeURIComponent(id)}/ticket`, {})
           : await apiPut(`/${type}/${encodeURIComponent(id)}`, { status: 'confirmed' });
         noteBookingActivity(type, id);
-        closeModal();
-        await refreshBooking(type, id);
+        await refreshManageBooking(type, id);
         messageEl.className = result && sendingTicket && !result.emailSent ? 'text-error' : 'text-success';
         messageEl.textContent = result && sendingTicket && !result.emailSent
           ? 'The ticket email was not sent. Check the email configuration.'
@@ -541,8 +545,7 @@
       try {
         const result = await apiPost(`/grooming/${encodeURIComponent(id)}/checkout`, {});
         noteBookingActivity(type, id);
-        closeModal();
-        await refreshBooking(type, id);
+        await refreshManageBooking(type, id);
         messageEl.className = result.emailSent ? 'text-success' : 'text-error';
         messageEl.textContent = result.emailSent
           ? checkingOut ? 'Grooming appointment checked out and receipt sent.' : 'Payment receipt sent.'
@@ -561,8 +564,7 @@
       try {
         await apiPut(`/${type}/${encodeURIComponent(id)}`, { status });
         noteBookingActivity(type, id);
-        closeModal();
-        await refreshBooking(type, id);
+        await refreshManageBooking(type, id);
         messageEl.className = 'text-success';
         messageEl.textContent = type === 'grooming' ? 'Grooming appointment checked in.' : status === 'checked-in' ? 'Pet checked in.' : 'Pet checked out.';
       } catch (error) {
@@ -578,8 +580,7 @@
       try {
         await apiPut(`/${type}/${encodeURIComponent(id)}`, { paymentStatus });
         noteBookingActivity(type, id);
-        closeModal();
-        await refreshBooking(type, id);
+        await refreshManageBooking(type, id);
         messageEl.className = 'text-success';
         messageEl.textContent = `${type === 'grooming' ? 'Appointment' : 'Reservation'} marked ${paymentStatus}.`;
       } catch (error) {
@@ -597,8 +598,7 @@
       try {
         await apiPut(`/${type}/${encodeURIComponent(id)}`, { status: 'cancelled' });
         noteBookingActivity(type, id);
-        closeModal();
-        await refreshBooking(type, id);
+        await refreshManageBooking(type, id);
         messageEl.className = 'text-success';
         messageEl.textContent = `${type === 'grooming' ? 'Grooming appointment' : 'Hotel reservation'} ${verb === 'Reject' ? 'rejected' : 'cancelled'}.`;
       } catch (error) {

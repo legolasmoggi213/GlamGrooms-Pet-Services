@@ -20,7 +20,17 @@ const STAFF_PAGES = [
 
 function renderSidebar(activeLabel) {
   const sidebar = document.getElementById('sidebar');
-  sidebar.innerHTML = '<div class="loading">Loading navigation…</div>';
+  const renderLinks = (pages) => {
+    const links = pages.map((page) =>
+      `<a href="${page.href}" class="${page.label === activeLabel ? 'active' : ''}">${page.label === 'Notifications' ? 'Notifications <span class="admin-notification-count" data-notification-count hidden></span>' : page.label}</a>`
+    ).join('');
+    sidebar.innerHTML = `
+      <a class="brand" href="/admin/index.html">Glam Grooms Pet Spa & Hotel</a>
+      ${links}
+      <a href="/admin/logout" style="margin-top:0.6rem;color:var(--danger);">Logout</a>
+    `;
+  };
+  renderLinks(STAFF_PAGES);
   fetch('/admin/nav-status', { credentials: 'include', cache: 'no-store' })
     .then((response) => {
       if (!response.ok) throw new Error(`Navigation authorization failed (${response.status}).`);
@@ -32,15 +42,7 @@ function renderSidebar(activeLabel) {
         return;
       }
       const pages = role === 'STAFF' ? STAFF_PAGES : ADMIN_PAGES;
-      const home = '/admin/index.html';
-      const links = pages.map((page) =>
-        `<a href="${page.href}" class="${page.label === activeLabel ? 'active' : ''}">${page.label === 'Notifications' ? 'Notifications <span class="admin-notification-count" data-notification-count hidden></span>' : page.label}</a>`
-      ).join('');
-      sidebar.innerHTML = `
-        <a class="brand" href="${home}">Glam Grooms Pet Spa & Hotel</a>
-        ${links}
-        <a href="/admin/logout" style="margin-top:0.6rem;color:var(--danger);">Logout</a>
-      `;
+      renderLinks(pages);
       if (pages.some((page) => page.label === 'Notifications')) {
         const refreshNotificationCount = async () => {
           try {

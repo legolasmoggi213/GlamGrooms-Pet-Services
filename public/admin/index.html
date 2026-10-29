@@ -157,6 +157,13 @@
       const pendingGroomingRows = document.getElementById('pending-grooming-rows');
       const pendingGroomingMessage = document.getElementById('pending-grooming-message');
       const upcomingArrivalRows = document.getElementById('upcoming-arrivals-rows');
+      let dashboardBookingsPromise;
+      const loadDashboardBookings = () => {
+        if (!dashboardBookingsPromise) {
+          dashboardBookingsPromise = Promise.all([apiGet('/grooming'), apiGet('/hotel')]);
+        }
+        return dashboardBookingsPromise;
+      };
       const isUpcomingGrooming = (booking) => String(booking.date || '') >= businessToday
         && !['cancelled', 'completed'].includes(String(booking.status || '').toLowerCase());
       const isUpcomingHotel = (booking) => ['pending', 'reserved', 'confirmed'].includes(String(booking.status || '').toLowerCase())
@@ -174,10 +181,9 @@
         </a>`;
 
       async function loadStats() {
-        const [s, grooming, hotel] = await Promise.all([
+        const [s, [grooming, hotel]] = await Promise.all([
           apiGet('/admin/stats'),
-          apiGet('/grooming'),
-          apiGet('/hotel'),
+          loadDashboardBookings(),
         ]);
         const upcomingArrivalCount = grooming.filter(isUpcomingGrooming).length
           + hotel.filter(isUpcomingHotel).length;
@@ -195,7 +201,7 @@
       }
 
       async function loadPendingGrooming() {
-        const appointments = await apiGet('/grooming');
+        const [appointments] = await loadDashboardBookings();
         const pending = appointments
           .filter((appointment) => appointment.date === businessToday && appointment.status === 'pending')
           .sort((left, right) => String(left.time || '').localeCompare(String(right.time || '')));
@@ -219,7 +225,7 @@
       }
 
       async function loadUpcomingArrivals() {
-        const [grooming, hotel] = await Promise.all([apiGet('/grooming'), apiGet('/hotel')]);
+        const [grooming, hotel] = await loadDashboardBookings();
         const petNamesFor = (booking) => Array.isArray(booking.petNames) && booking.petNames.length
           ? booking.petNames.join(', ')
           : (booking.Pets || (booking.Pet ? [booking.Pet] : [])).map((pet) => pet.name).filter(Boolean).join(', ') || '—';
@@ -282,6 +288,7 @@
         pendingGroomingMessage.textContent = '';
         try {
           await apiPut(`/grooming/${encodeURIComponent(id)}`, { status: 'confirmed' });
+          dashboardBookingsPromise = null;
           await Promise.all([loadPendingGrooming(), loadStats()]);
           pendingGroomingMessage.className = 'text-success';
           pendingGroomingMessage.textContent = 'Grooming appointment confirmed and added to today’s active schedule.';
@@ -293,12 +300,14 @@
         }
       });
       document.getElementById('refresh-pending-grooming').addEventListener('click', () => {
+        dashboardBookingsPromise = null;
         loadPendingGrooming().catch((error) => {
           pendingGroomingMessage.className = 'text-error';
           pendingGroomingMessage.textContent = error.message;
         });
       });
       document.getElementById('refresh-upcoming-arrivals').addEventListener('click', () => {
+        dashboardBookingsPromise = null;
         loadUpcomingArrivals().catch((error) => {
           upcomingArrivalRows.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(error.message)}</td></tr>`;
         });
@@ -562,7 +571,6 @@
         if (target) target.innerHTML = '<div class="alert alert-error">Unable to load this dashboard section. Please sign in again.</div>';
       });
 
-      loadServiceCatalog();
       document.querySelector('.revenue-periods').addEventListener('click', (event) => {
         const button = event.target.closest('[data-period]');
         if (!button) return;
@@ -572,22 +580,30 @@
         runDashboardLoader(loadRevenue, 'revenue');
       });
       document.getElementById('export-revenue-pdf')?.addEventListener('click', exportRevenuePdf);
-      runDashboardLoader(loadStats, 'stats');
-      runDashboardLoader(loadPendingGrooming, 'pending-grooming-rows');
-      runDashboardLoader(loadUpcomingArrivals, 'upcoming-arrivals-rows');
-      runDashboardLoader(loadOccupancy, 'occupancy');
-      runDashboardLoader(loadActivity, 'activity');
-      runDashboardLoader(loadRevenue, 'revenue');
-
-      const refreshLiveDashboard = () => {
-        runDashboardLoader(loadStats, 'stats');
-        runDashboardLoader(loadPendingGrooming, 'pending-grooming-rows');
-        runDashboardLoader(loadUpcomingArrivals, 'upcoming-arrivals-rows');
+      const scheduleIdle = (callback) => {
+        if (window.requestIdleCallback) window.requestIdleCallback(callback, { timeout: 1500 });
+        else window.setTimeout(callback, 300);
+      };
+      const loadCoreDashboard = () => Promise.all([
+        runDashboardLoader(loadStats, 'stats'),
+        runDashboardLoader(loadPendingGrooming, 'pending-grooming-rows'),
+        runDashboardLoader(loadUpcomingArrivals, 'upcoming-arrivals-rows'),
+      ]);
+      const loadSecondaryDashboard = () => {
         runDashboardLoader(loadOccupancy, 'occupancy');
         runDashboardLoader(loadActivity, 'activity');
         runDashboardLoader(loadRevenue, 'revenue');
+        loadServiceCatalog();
       };
-      window.setInterval(refreshLiveDashboard, 30000);
+      const refreshLiveDashboard = () => {
+        dashboardBookingsPromise = null;
+        loadCoreDashboard().then(() => scheduleIdle(loadSecondaryDashboard));
+      };
+      refreshLiveDashboard();
+
+      window.setInterval(() => {
+        if (!document.hidden) refreshLiveDashboard();
+      }, 30000);
     };
 
     if (document.readyState === 'loading') {

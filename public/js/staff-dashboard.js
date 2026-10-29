@@ -29,6 +29,10 @@
     </a>`;
   const revenuePeriods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months', yearly: 'Last 5 years' };
   let revenueAnalyticsData = null;
+  const scheduleIdle = (callback) => {
+    if (window.requestIdleCallback) window.requestIdleCallback(callback, { timeout: 1500 });
+    else window.setTimeout(callback, 300);
+  };
 
   const loadRevenue = async () => {
     const selectedPeriod = document.querySelector('#staff-revenue .revenue-periods button[aria-pressed="true"]')?.dataset.period || 'monthly';
@@ -92,9 +96,6 @@
     });
   });
   document.getElementById('staff-export-revenue').addEventListener('click', exportRevenuePdf);
-  loadRevenue().catch((error) => {
-    document.getElementById('staff-revenue-combined').textContent = `Unable to load revenue analytics: ${error.message}`;
-  });
 
   const loadDashboard = async () => {
     const [grooming, hotel] = await Promise.all([apiGet('/grooming'), apiGet('/hotel')]);
@@ -235,11 +236,18 @@
     });
   });
 
-  loadDashboard().catch((error) => {
+  const loadStaffRevenueWhenIdle = () => scheduleIdle(() => {
+    loadRevenue().catch((error) => {
+      document.getElementById('staff-revenue-combined').textContent = `Unable to load revenue analytics: ${error.message}`;
+    });
+  });
+  const initialDashboardLoad = loadDashboard();
+  initialDashboardLoad.catch((error) => {
     statsEl.innerHTML = `<div class="alert alert-error show">${escapeHtml(error.message)}</div>`;
     groomingRows.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(error.message)}</td></tr>`;
     hotelRows.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(error.message)}</td></tr>`;
   });
+  initialDashboardLoad.then(loadStaffRevenueWhenIdle, loadStaffRevenueWhenIdle);
   window.setInterval(() => {
     if (!document.hidden) {
       loadDashboard().catch((error) => {

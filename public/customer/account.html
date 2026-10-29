@@ -383,7 +383,10 @@
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15000);
       try {
-        const r = await fetch('/customer/profile', { credentials: 'include', signal: controller.signal });
+        const [r, requestsResponse] = await Promise.all([
+          fetch('/customer/profile', { credentials: 'include', signal: controller.signal }),
+          fetch('/api/v1/bookings/customer/reschedule-requests', { credentials: 'include', signal: controller.signal }),
+        ]);
         const contentType = r.headers.get('content-type') || '';
         if (r.status === 401 || r.redirected) {
           location.href = '/customer/login.html?return=' + encodeURIComponent(location.pathname);
@@ -392,7 +395,6 @@
         if (!r.ok) throw new Error(`Profile request failed (${r.status}).`);
         if (!contentType.includes('application/json')) throw new Error('Profile response was not JSON.');
         const data = await r.json();
-        const requestsResponse = await fetch('/api/v1/bookings/customer/reschedule-requests', { credentials: 'include' });
         const rescheduleRequests = requestsResponse.ok ? await requestsResponse.json() : [];
         const p = data.customer || {};
         const groomingBookings = data.grooming || [];

@@ -219,7 +219,7 @@ const createReservation = async (req, res, next) => {
         checkInTime,
         checkOut,
         checkOutTime,
-        notes,
+        notes: notes || '',
         customerId,
         petId,
         capacityManaged: true,

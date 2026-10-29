@@ -179,7 +179,7 @@ const createAppointment = async (req, res, next) => {
         time,
         ...(slotClaim ? { groomingSlotNumber: slotClaim.slotNumber } : {}),
         pickupTime: pickupTime || null,
-        notes,
+        notes: notes || '',
         customerId,
         petId,
         status: status || 'pending',

@@ -617,7 +617,6 @@
                 </div>
                 <div class="profile-actions">
                   <button class="btn btn-outline btn-sm" type="button" data-edit-pet="${escapeHtml(pt.id)}">Edit</button>
-                  <button class="btn btn-danger btn-sm" type="button" data-delete-pet="${escapeHtml(pt.id)}">Delete</button>
                 </div>
               </li>
             `).join('')}</ul>`
@@ -679,24 +678,6 @@
         document.querySelectorAll('[data-edit-pet]').forEach((button) => {
           button.addEventListener('click', () => editPet(pets.find((pet) => String(pet.id) === button.dataset.editPet)));
         });
-        document.querySelectorAll('[data-delete-pet]').forEach((button) => {
-          button.addEventListener('click', async () => {
-            if (!confirm('Delete this pet profile?')) return;
-            try {
-              const response = await fetch(`/customer/pets/${encodeURIComponent(button.dataset.deletePet)}`, {
-                method: 'DELETE',
-                credentials: 'include',
-              });
-              const result = await response.json().catch(() => ({}));
-              if (!response.ok) throw new Error(result.error || 'Unable to delete pet profile.');
-              await loadProfile();
-            } catch (error) {
-              petMessage.className = 'text-error';
-              petMessage.textContent = error.message;
-            }
-          });
-        });
-
         const grooming = activeGroomingBookings.map(item => {
           const statusClass = item.status === 'completed' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
           const serviceSummary = Array.isArray(item.petServices) && item.petServices.length

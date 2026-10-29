@@ -19,8 +19,11 @@ const paymongoRequest = async (path, options = {}) => {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = body.errors?.[0]?.detail || 'PayMongo request failed.';
-    throw new Error(message);
+    const providerError = body.errors?.[0] || {};
+    const error = new Error(`${providerError.code ? `${providerError.code}: ` : ''}${providerError.detail || 'PayMongo request failed.'}`);
+    error.code = providerError.code || 'PAYMONGO_REQUEST_FAILED';
+    error.status = response.status;
+    throw error;
   }
   return body;
 };
@@ -95,6 +98,7 @@ const resolvePaidPayment = async (checkoutAttributes) => {
   return {
     id: paymentResource.id || paymentId,
     amount: Number(paymentAttributes.amount),
+    refunds: paymentAttributes.refunds,
   };
 };
 
@@ -102,7 +106,30 @@ const refundCheckoutSession = async (sessionId) => {
   const checkout = await getCheckoutSession(sessionId);
   const attributes = checkout.data?.attributes || {};
   const payment = await resolvePaidPayment(attributes);
-  const amount = payment.amount;
+  const refunds = Array.isArray(payment.refunds) ? payment.refunds : [];
+  const pendingRefund = refunds.find((refund) => ['pending', 'processing'].includes(
+    refund?.attributes?.status || refund?.status,
+  ));
+  if (pendingRefund) {
+    return {
+      id: pendingRefund.id || null,
+      status: pendingRefund.attributes?.status || pendingRefund.status,
+    };
+  }
+  const refundedAmount = refunds.reduce((total, refund) => {
+    const refundStatus = refund?.attributes?.status || refund?.status;
+    return refundStatus === 'failed' ? total : total + Number(refund?.attributes?.amount ?? refund?.amount ?? 0);
+  }, 0);
+  const amount = payment.amount - refundedAmount;
+  const completedRefund = refunds.find((refund) => ['refunded', 'succeeded'].includes(
+    refund?.attributes?.status || refund?.status,
+  ));
+  if (amount === 0 && completedRefund) {
+    return {
+      id: completedRefund.id || null,
+      status: completedRefund.attributes?.status || completedRefund.status,
+    };
+  }
   if (!Number.isInteger(amount) || amount < 100) {
     throw new Error('PayMongo could not identify a refundable payment for this booking.');
   }
@@ -114,7 +141,7 @@ const refundCheckoutSession = async (sessionId) => {
         attributes: {
           amount,
           payment_id: payment.id,
-          reason: 'requested_by_customer',
+          reason: 'others',
           notes: `Booking cancellation for checkout ${sessionId}`,
         },
       },

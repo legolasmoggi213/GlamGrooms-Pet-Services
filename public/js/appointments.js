@@ -320,7 +320,7 @@
         <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
         <td><span class="appointment-primary">${escapeHtml(petsFor(booking))}</span><span class="appointment-detail">${escapeHtml(serviceFor(booking, type))}</span></td>
         <td>${escapeHtml(completionLabel)}: ${escapeHtml(fmtDateTime(completionDate))}</td>
-        <td>${escapeHtml(String(booking.paymentStatus || 'unpaid').replace(/-/g, ' '))}</td>
+        <td><span class="appointment-payment-status">${escapeHtml(String(booking.paymentStatus || 'unpaid').replace(/-/g, ' ').toUpperCase())} · ${escapeHtml(completionLabel.toUpperCase())}</span></td>
         <td>${escapeHtml(String(booking.paymentMethod || '—').toUpperCase())}</td>
         <td>${escapeHtml(fmtMoney(amount))}</td>
         <td><button type="button" class="btn btn-outline btn-sm" data-manage="true" data-type="${type}" data-id="${escapeHtml(booking.id)}">View</button></td>
@@ -569,11 +569,13 @@
           ? await apiPost(`/${type}/${encodeURIComponent(id)}/${action === 'resend-ticket' ? 'resend-ticket' : 'ticket'}`, {})
           : await apiPut(`/${type}/${encodeURIComponent(id)}`, { status: 'confirmed' });
         noteBookingActivity(type, id);
-        await refreshManageBooking(type, id);
+        const refreshedBooking = await refreshManageBooking(type, id);
         messageEl.className = result && sendingTicket && !result.emailSent ? 'text-error' : 'text-success';
         messageEl.textContent = result && sendingTicket && !result.emailSent
           ? 'The ticket email was not sent. Check the email configuration.'
-          : sendingTicket ? 'Reservation ticket sent.' : 'Booking confirmed. Use Send Ticket to email the customer.';
+          : sendingTicket && terminalStatuses[type].has(String(refreshedBooking.status || '').toLowerCase())
+            ? `Reservation ticket sent. This ${refreshedBooking.paymentStatus === 'paid' ? 'paid' : 'unpaid'} ${type === 'grooming' ? 'completed' : 'checked-out'} booking is in Transaction History; payment status was not changed.`
+            : sendingTicket ? 'Reservation ticket sent.' : 'Booking confirmed. Use Send Ticket to email the customer.';
       } catch (error) {
         button.disabled = false;
         button.textContent = sendingTicket ? 'Send Ticket' : 'Confirm';

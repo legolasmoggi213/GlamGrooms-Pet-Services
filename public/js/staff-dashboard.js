@@ -195,7 +195,7 @@
     const groomingToday = grooming.filter((booking) => booking.date === businessDate
       && ['pending', 'scheduled', 'confirmed', 'in-progress'].includes(String(booking.status || '').toLowerCase()));
     const upcomingGrooming = groomingBookings
-      .filter((booking) => String(booking.date || '') >= businessDate)
+      .filter((booking) => String(booking.date || '') > businessDate)
       .sort((left, right) => String(left.date).localeCompare(String(right.date))
         || String(left.time || '').localeCompare(String(right.time || '')));
     const nextGrooming = upcomingGrooming.slice(0, 8);
@@ -204,11 +204,14 @@
       .sort((left, right) => String(left.checkIn).localeCompare(String(right.checkIn)))
       .slice(0, 8);
     const upcomingHotelArrivals = hotelBookings
-      .filter((booking) => ['pending', 'reserved', 'confirmed'].includes(booking.status)
-        && String(booking.checkIn || '') >= businessDate)
+      .filter((booking) => ['pending', 'reserved', 'confirmed'].includes(String(booking.status || '').toLowerCase())
+        && String(booking.checkIn || '') > businessDate)
       .sort((left, right) => String(left.checkIn || '').localeCompare(String(right.checkIn || ''))
         || String(left.checkInTime || '').localeCompare(String(right.checkInTime || '')));
-      const todaysHotelArrivals = upcomingHotelArrivals.filter((booking) => booking.checkIn === businessDate);
+    const todaysHotelArrivals = hotelBookings.filter((booking) => (
+      ['pending', 'reserved', 'confirmed'].includes(String(booking.status || '').toLowerCase())
+      && booking.checkIn === businessDate
+    )).sort((left, right) => String(left.checkInTime || '').localeCompare(String(right.checkInTime || '')));
     statsEl.innerHTML = [
       statCard('Customers', stats.customers, 'purple', '/admin/customers.html'),
       statCard('Pets', stats.pets, 'purple', '/admin/pets.html'),

@@ -246,10 +246,10 @@
         }
         return dashboardBookingsPromise;
       };
-      const isUpcomingGrooming = (booking) => String(booking.date || '') >= businessToday
+      const isUpcomingGrooming = (booking) => String(booking.date || '') > businessToday
         && !['cancelled', 'completed'].includes(String(booking.status || '').toLowerCase());
       const isUpcomingHotel = (booking) => ['pending', 'reserved', 'confirmed'].includes(String(booking.status || '').toLowerCase())
-        && String(booking.checkIn || '') >= businessToday;
+        && String(booking.checkIn || '') > businessToday;
       const isTodaysActiveGrooming = (booking) => booking.date === businessToday
         && ['pending', 'scheduled', 'confirmed', 'in-progress'].includes(String(booking.status || '').toLowerCase());
       const isTodaysHotelArrival = (booking) => booking.checkIn === businessToday

@@ -72,20 +72,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const isRegistrationForm = form.action.endsWith('/customer/register');
   const passwordInput = isRegistrationForm ? form.elements.password : null;
   const confirmPasswordInput = isRegistrationForm ? form.elements.confirmPassword : null;
-  const confirmPasswordError = isRegistrationForm ? document.getElementById('confirm-password-error') : null;
+  const confirmPasswordStatus = isRegistrationForm ? document.getElementById('confirm-password-status') : null;
   let pendingUser = null;
   let pendingProfile = null;
   let challengeId = null;
 
   const updatePasswordMatch = () => {
-    if (!passwordInput || !confirmPasswordInput || !confirmPasswordError) return false;
+    if (!passwordInput || !confirmPasswordInput || !confirmPasswordStatus) return false;
     const hasConfirmation = Boolean(confirmPasswordInput.value);
     const passwordsMatch = passwordInput.value === confirmPasswordInput.value;
     const mismatch = hasConfirmation && !passwordsMatch;
     confirmPasswordInput.setCustomValidity(mismatch ? 'Passwords do not match.' : '');
     confirmPasswordInput.classList.toggle('is-invalid', mismatch);
     confirmPasswordInput.setAttribute('aria-invalid', String(mismatch));
-    confirmPasswordError.hidden = !mismatch;
+    confirmPasswordStatus.hidden = !hasConfirmation;
+    confirmPasswordStatus.textContent = mismatch ? 'Passwords do not match.' : 'Passwords match.';
+    confirmPasswordStatus.className = `confirm-password-status${mismatch ? ' is-mismatch' : ' is-match'}`;
     return !mismatch;
   };
 

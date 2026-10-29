@@ -148,20 +148,38 @@
     let paymentRetryStarted = false;
     const customerNav = document.querySelector('.customer-account-nav');
     const customerNavLinks = [...customerNav.querySelectorAll('a[href^="#"]')];
-    const updateCustomerNav = (hash = location.hash || '#dashboard') => {
+    const updateCustomerNav = (hash = location.hash || '#dashboard', keepLinkVisible = false) => {
+      let activeLink = null;
       customerNavLinks.forEach((link) => {
         const isActive = link.getAttribute('href') === hash;
         link.classList.toggle('active', isActive);
-        if (isActive) link.setAttribute('aria-current', 'location');
-        else link.removeAttribute('aria-current');
+        if (isActive) {
+          link.setAttribute('aria-current', 'location');
+          activeLink = link;
+        } else {
+          link.removeAttribute('aria-current');
+        }
       });
+      if (keepLinkVisible && activeLink) activeLink.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     };
     customerNav.addEventListener('click', (event) => {
       const link = event.target.closest('a[href^="#"]');
-      if (link) updateCustomerNav(link.getAttribute('href'));
+      if (link) updateCustomerNav(link.getAttribute('href'), true);
     });
     window.addEventListener('hashchange', () => updateCustomerNav());
     updateCustomerNav();
+    const observedSections = customerNavLinks
+      .map((link) => document.querySelector(link.getAttribute('href')))
+      .filter(Boolean);
+    if ('IntersectionObserver' in window) {
+      const sectionObserver = new IntersectionObserver((entries) => {
+        const activeSection = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top)[0];
+        if (activeSection) updateCustomerNav(`#${activeSection.target.id}`, true);
+      }, { rootMargin: '-15% 0px -65% 0px', threshold: 0 });
+      observedSections.forEach((section) => sectionObserver.observe(section));
+    }
     document.addEventListener('click', (event) => {
       const logoutLink = event.target.closest('[data-confirm-logout]');
       if (logoutLink && !window.confirm('Are you sure you want to log out?')) {

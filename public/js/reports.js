@@ -132,7 +132,7 @@
       endDateFilter.focus();
       return;
     }
-    const paymentLabel = filter === 'gcash' ? 'GCash only' : filter === 'cash' ? 'Cash only' : 'All payment methods';
+    const paymentLabel = filter === 'gcash' ? 'Online payments' : filter === 'cash' ? 'Cash only' : 'All payment methods';
     const dateRangeLabel = startDate || endDate
       ? `${startDate || 'Any date'} to ${endDate || 'Any date'}`
       : 'All dates';
@@ -157,20 +157,20 @@
 
       const methodIndex = paymentIndexes[type];
       const amountIndex = amountIndexes[type];
-      const totals = { Cash: 0, GCash: 0 };
-      const counts = { Cash: 0, GCash: 0 };
+      const totals = { CASH: 0, 'ONLINE PAYMENT': 0 };
+      const counts = { CASH: 0, 'ONLINE PAYMENT': 0 };
       report.rows.forEach((row) => {
         const method = row[methodIndex];
         if (!Object.prototype.hasOwnProperty.call(totals, method)) return;
         totals[method] += Number(row[amountIndex]) || 0;
         counts[method] += 1;
       });
-      const totalRecords = counts.Cash + counts.GCash;
+      const totalRecords = counts.CASH + counts['ONLINE PAYMENT'];
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(8);
       pdf.setTextColor(37, 50, 56);
       pdf.text(
-        `Records: ${totalRecords} | Cash: ${counts.Cash} (PHP ${totals.Cash.toFixed(2)}) | GCash: ${counts.GCash} (PHP ${totals.GCash.toFixed(2)})`,
+        `Records: ${totalRecords} | CASH: ${counts.CASH} (PHP ${totals.CASH.toFixed(2)}) | ONLINE PAYMENT: ${counts['ONLINE PAYMENT']} (PHP ${totals['ONLINE PAYMENT'].toFixed(2)})`,
         12,
         y,
       );
@@ -181,7 +181,8 @@
 
       const date = new Date().toISOString().slice(0, 10);
       const rangeSuffix = startDate || endDate ? `-${startDate || 'any'}-to-${endDate || 'any'}` : '';
-      pdf.save(`${type}-report-${filter}-payments${rangeSuffix || `-${date}`}.pdf`);
+      const filenameFilter = filter === 'gcash' ? 'online' : filter;
+      pdf.save(`${type}-report-${filenameFilter}-payments${rangeSuffix || `-${date}`}.pdf`);
       setMessage(`${titles[type]} PDF downloaded (${report.rows.length} ${report.rows.length === 1 ? 'record' : 'records'}).`);
     } catch (error) {
       setMessage(error.message || `Unable to download the ${titles[type]} PDF.`, true);

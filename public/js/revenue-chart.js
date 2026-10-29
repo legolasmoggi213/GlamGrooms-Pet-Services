@@ -159,18 +159,21 @@
         }
       };
       const drawTableHeader = () => {
+        const headerHeight = 12;
         let x = margin;
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(fontSize);
-        pdf.setFillColor(32, 45, 50);
+        pdf.setFontSize(7);
         pdf.setDrawColor(207, 211, 205);
         headers.forEach((header, index) => {
-          pdf.rect(x, y, widths[index], 9, 'FD');
+          const lines = pdf.splitTextToSize(String(header), widths[index] - 4);
+          pdf.setFillColor(32, 45, 50);
+          pdf.rect(x, y, widths[index], headerHeight, 'FD');
           pdf.setTextColor(255, 255, 255);
-          pdf.text(String(header), x + 2, y + 5.8, { maxWidth: widths[index] - 4 });
+          const textY = y + (headerHeight - lines.length * 3) / 2 + 2.4;
+          pdf.text(lines, x + 2, textY, { lineHeightFactor: 1 });
           x += widths[index];
         });
-        y += 9;
+        y += headerHeight;
       };
       const drawRow = (row, isTotal, rowIndex) => {
         const cellLines = row.map((value, index) => pdf.splitTextToSize(
@@ -261,7 +264,7 @@
       drawTable({
         title,
         description: 'Includes category-level quantities and revenue for the selected reporting period.',
-        headers: [itemLabel, 'Qty', 'Revenue', 'Share'],
+        headers: [itemLabel, 'Qty', 'Revenue', '% of Total'],
         widths: [115, 42, 55, 61],
         rows: entries
           .filter((entry) => Number(entry.count || 0) || Number(entry.revenue || 0))

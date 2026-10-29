@@ -636,7 +636,7 @@ const getOperationalReport = async (req, res, next) => {
       return res.status(400).json({ error: 'Choose grooming, hotel, or walk-in as the report type.' });
     }
     if (!['all', 'cash', 'gcash'].includes(paymentFilter)) {
-      return res.status(400).json({ error: 'Choose all payment methods, cash, or GCash.' });
+      return res.status(400).json({ error: 'Choose all payment methods, cash, or online payments.' });
     }
     const isValidDate = (value) => {
       if (!value) return true;
@@ -651,9 +651,9 @@ const getOperationalReport = async (req, res, next) => {
       return res.status(400).json({ error: 'The From date must be on or before the To date.' });
     }
 
-    const paymentMethodLabel = (method) => String(method || 'cash').toLowerCase() === 'qrph' ? 'GCash' : 'Cash';
+    const paymentMethodLabel = (method) => String(method || 'cash').toLowerCase() === 'qrph' ? 'ONLINE PAYMENT' : 'CASH';
     const includePaymentMethod = (method) => paymentFilter === 'all'
-      || (paymentFilter === 'gcash' ? paymentMethodLabel(method) === 'GCash' : paymentMethodLabel(method) === 'Cash');
+      || (paymentFilter === 'gcash' ? paymentMethodLabel(method) === 'ONLINE PAYMENT' : paymentMethodLabel(method) === 'CASH');
     const isPaidBooking = (booking) => String(booking.paymentStatus || '').toLowerCase() === 'paid';
     const includeDateRange = (value) => {
       if (!startDate && !endDate) return true;

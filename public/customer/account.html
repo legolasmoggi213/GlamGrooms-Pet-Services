@@ -272,6 +272,11 @@
 
     const bookingCanCancel = (item, type) => {
       const status = String(item.status || '').toLowerCase();
+      if (status === 'cancelled') {
+        return item.paymentMethod === 'qrph'
+          && item.paymentStatus === 'paid'
+          && item.paymentRefundStatus === 'failed';
+      }
       const unavailableStatuses = type === 'hotel'
         ? ['cancelled', 'checked-in', 'checked-out']
         : ['cancelled', 'in-progress', 'completed'];
@@ -313,8 +318,11 @@
 
       if (item.paymentMethod === 'qrph') {
         if (bookingCanCancel(item, type)) {
-          actions.push('<p class="transaction-meta">GCash bookings can be cancelled but not rescheduled. Refunds are subject to PayMongo processing.</p>');
-          actions.push(`<div class="profile-actions"><button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}" data-cancel-paid-online="${item.paymentStatus === 'paid'}">Cancel booking</button></div>`);
+          const refundRetry = String(item.status || '').toLowerCase() === 'cancelled';
+          actions.push(refundRetry
+            ? '<p class="transaction-meta">The booking is cancelled, but the refund request failed. You can try requesting the refund again.</p>'
+            : '<p class="transaction-meta">GCash bookings can be cancelled but not rescheduled. Refunds are subject to PayMongo processing.</p>');
+          actions.push(`<div class="profile-actions"><button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}" data-cancel-paid-online="${item.paymentStatus === 'paid'}"${refundRetry ? ' data-refund-retry="true"' : ''}>${refundRetry ? 'Retry refund request' : 'Cancel booking'}</button></div>`);
         }
         return actions.join('');
       }
@@ -328,7 +336,9 @@
       const cancelButton = event.target.closest('[data-cancel-type]');
       if (cancelButton) {
         const { cancelType: type, cancelId: id } = cancelButton.dataset;
-        if (!window.confirm(cancelButton.dataset.cancelPaidOnline === 'true'
+        if (!window.confirm(cancelButton.dataset.refundRetry === 'true'
+          ? 'Retry the refund request for this cancelled GCash booking?'
+          : cancelButton.dataset.cancelPaidOnline === 'true'
           ? 'Cancel this GCash booking? PayMongo will be asked to refund the payment, subject to provider processing.'
           : 'Cancel this upcoming booking?')) return;
         cancelButton.disabled = true;
@@ -342,7 +352,7 @@
           if (result.paid && !result.deleted && result.status !== 'cancelled') {
             alert('The GCash payment completed before cancellation. The booking is still active; select Cancel booking again to request cancellation and refund.');
           } else if (result.refund?.status === 'failed') {
-            alert('The booking was cancelled, but PayMongo could not start the refund. Please contact the business to arrange it.');
+            alert('The booking is cancelled, but PayMongo could not start the refund. Please contact the business to arrange it.');
           } else if (result.refund) {
             alert('The booking was cancelled and the refund request was sent to PayMongo. Refund completion may take time.');
           }

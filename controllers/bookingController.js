@@ -1292,6 +1292,15 @@ const cancelCustomerBooking = async (req, res, next) => {
     const context = await customerBookingContext(req, res, bookingType);
     if (!context) return;
     const { customer, booking } = context;
+    if (String(booking.status || '').toLowerCase() === 'cancelled') {
+      if (booking.paymentMethod === 'qrph'
+        && booking.paymentStatus === 'paid'
+        && booking.paymentRefundStatus === 'failed') {
+        const refund = await requestGcashBookingRefund(booking);
+        return res.json({ success: true, bookingId: booking.id, status: 'cancelled', refund });
+      }
+      return res.status(409).json({ error: 'This booking has already been cancelled.' });
+    }
     if (!ensureCustomerCanCancelBooking(booking, bookingType, res)) return;
 
     if (booking.paymentMethod === 'qrph' && booking.paymentStatus === 'pending') {

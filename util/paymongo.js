@@ -57,17 +57,53 @@ const createQrPhCheckout = async ({ amount, description, metadata, successUrl, c
 const getCheckoutSession = (sessionId) => paymongoRequest(`/checkout_sessions/${encodeURIComponent(sessionId)}`);
 const expireCheckoutSession = (sessionId) => paymongoRequest(`/checkout_sessions/${encodeURIComponent(sessionId)}/expire`, { method: 'POST' });
 
-const refundCheckoutSession = async (sessionId, fallbackAmount) => {
-  const checkout = await getCheckoutSession(sessionId);
-  const attributes = checkout.data?.attributes || {};
-  const payment = (attributes.payments || []).find((item) => {
-    const status = item?.attributes?.status;
+const resourceId = (resource) => typeof resource === 'string' ? resource : resource?.id;
+
+const resolvePaidPayment = async (checkoutAttributes) => {
+  let candidates = Array.isArray(checkoutAttributes.payments) ? checkoutAttributes.payments : [];
+  let paidCandidate = candidates.find((candidate) => {
+    const status = candidate?.attributes?.status || candidate?.status;
     return status === 'paid' || status === 'succeeded';
   });
-  const paymentId = payment?.id || attributes.payment_intent?.id;
-  const paymentAttributes = payment?.attributes || attributes.payment_intent?.attributes || {};
-  const amount = Number(paymentAttributes.amount) || Math.round(Number(fallbackAmount) * 100);
-  if (!paymentId || !Number.isInteger(amount) || amount < 100) {
+  const paymentIntentId = resourceId(checkoutAttributes.payment_intent);
+  if (!paidCandidate && paymentIntentId) {
+    const paymentIntent = await paymongoRequest(`/payment_intents/${encodeURIComponent(paymentIntentId)}`);
+    const intentAttributes = paymentIntent.data?.attributes || {};
+    candidates = [
+      ...(Array.isArray(intentAttributes.payments) ? intentAttributes.payments : []),
+      intentAttributes.latest_payment,
+      intentAttributes.last_payment,
+    ].filter(Boolean);
+    paidCandidate = candidates.find((candidate) => {
+      const status = candidate?.attributes?.status || candidate?.status;
+      return status === 'paid' || status === 'succeeded';
+    });
+  }
+  const paymentId = [paidCandidate, ...[...candidates].reverse()]
+    .map(resourceId)
+    .find((id) => typeof id === 'string' && id.startsWith('pay_'));
+  if (!paymentId) {
+    throw new Error('PayMongo could not identify a refundable payment for this booking.');
+  }
+
+  const payment = await paymongoRequest(`/payments/${encodeURIComponent(paymentId)}`);
+  const paymentResource = payment.data || {};
+  const paymentAttributes = paymentResource.attributes || {};
+  if (!['paid', 'succeeded'].includes(paymentAttributes.status)) {
+    throw new Error('PayMongo reports that this payment is not in a refundable state.');
+  }
+  return {
+    id: paymentResource.id || paymentId,
+    amount: Number(paymentAttributes.amount),
+  };
+};
+
+const refundCheckoutSession = async (sessionId) => {
+  const checkout = await getCheckoutSession(sessionId);
+  const attributes = checkout.data?.attributes || {};
+  const payment = await resolvePaidPayment(attributes);
+  const amount = payment.amount;
+  if (!Number.isInteger(amount) || amount < 100) {
     throw new Error('PayMongo could not identify a refundable payment for this booking.');
   }
 
@@ -77,7 +113,7 @@ const refundCheckoutSession = async (sessionId, fallbackAmount) => {
       data: {
         attributes: {
           amount,
-          payment_id: paymentId,
+          payment_id: payment.id,
           reason: 'requested_by_customer',
           notes: `Booking cancellation for checkout ${sessionId}`,
         },

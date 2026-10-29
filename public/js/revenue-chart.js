@@ -210,24 +210,32 @@
     drawReportHeading();
     const grooming = data.grooming || [];
     const hotel = data.hotel || [];
+    const walkIn = data.walkIn || [];
     const groomingRevenue = grooming.reduce((sum, bucket) => sum + Number(bucket.revenue || 0), 0);
     const hotelRevenue = hotel.reduce((sum, bucket) => sum + Number(bucket.revenue || 0), 0);
+    const walkInRevenue = walkIn.reduce((sum, bucket) => sum + Number(bucket.revenue || 0), 0);
     const groomingCount = grooming.reduce((sum, bucket) => sum + Number(bucket.count || 0), 0);
     const hotelCount = hotel.reduce((sum, bucket) => sum + Number(bucket.count || 0), 0);
+    const walkInCount = walkIn.reduce((sum, bucket) => sum + Number(bucket.count || 0), 0);
+    const totalRevenue = groomingRevenue + hotelRevenue + walkInRevenue;
 
     drawTable({
       title: 'Revenue by period',
-      headers: ['Period', 'Grooming Bookings', 'Grooming Revenue', 'Hotel Bookings', 'Hotel Revenue', 'Combined Revenue'],
-      widths: [36, 36, 47, 34, 47, 73],
+      description: 'Paid grooming, hotel, and walk-in sales grouped by the selected time period.',
+      headers: ['Period', 'Grooming Qty', 'Grooming Revenue', 'Hotel Qty', 'Hotel Revenue', 'Walk-in Sales', 'Walk-in Revenue', 'Total Revenue'],
+      widths: [30, 25, 36, 25, 36, 25, 36, 55],
       rows: grooming.map((bucket, index) => {
         const hotelBucket = hotel[index] || {};
+        const walkInBucket = walkIn[index] || {};
         return [
           bucket.label,
           String(Number(bucket.count || 0)),
           formatPdfMoney(bucket.revenue),
           String(Number(hotelBucket.count || 0)),
           formatPdfMoney(hotelBucket.revenue),
-          formatPdfMoney(Number(bucket.revenue || 0) + Number(hotelBucket.revenue || 0)),
+          String(Number(walkInBucket.count || 0)),
+          formatPdfMoney(walkInBucket.revenue),
+          formatPdfMoney(Number(bucket.revenue || 0) + Number(hotelBucket.revenue || 0) + Number(walkInBucket.revenue || 0)),
         ];
       }),
       total: [
@@ -236,21 +244,24 @@
         formatPdfMoney(groomingRevenue),
         String(hotelCount),
         formatPdfMoney(hotelRevenue),
-        formatPdfMoney(groomingRevenue + hotelRevenue),
+        String(walkInCount),
+        formatPdfMoney(walkInRevenue),
+        formatPdfMoney(totalRevenue),
       ],
     });
 
     const serviceTables = [
-      { title: 'Grooming service sales', entries: data.groomingServices || [], totalRevenue: groomingRevenue },
-      { title: 'Hotel room sales', entries: data.hotelServices || [], totalRevenue: hotelRevenue },
+      { title: 'Grooming service sales by category', entries: data.groomingServices || [], totalRevenue: groomingRevenue, itemLabel: 'Service' },
+      { title: 'Hotel room sales by category', entries: data.hotelServices || [], totalRevenue: hotelRevenue, itemLabel: 'Room' },
+      { title: 'Walk-in sales by category', entries: data.walkInServices || [], totalRevenue: walkInRevenue, itemLabel: 'Category / item' },
     ];
-    serviceTables.forEach(({ title, entries, totalRevenue }) => {
+    serviceTables.forEach(({ title, entries, totalRevenue, itemLabel }) => {
       const count = entries.reduce((sum, entry) => sum + Number(entry.count || 0), 0);
       const revenue = entries.reduce((sum, entry) => sum + Number(entry.revenue || 0), 0);
       drawTable({
         title,
-        description: 'Includes service-level totals and counts for the selected reporting period.',
-        headers: ['Service', 'Qty', 'Revenue', 'Share'],
+        description: 'Includes category-level quantities and revenue for the selected reporting period.',
+        headers: [itemLabel, 'Qty', 'Revenue', 'Share'],
         widths: [115, 42, 55, 61],
         rows: entries
           .filter((entry) => Number(entry.count || 0) || Number(entry.revenue || 0))
@@ -264,7 +275,7 @@
       });
     });
 
-    if (y + 38 > pageHeight - 14) addReportPage();
+    if (y + 45 > pageHeight - 14) addReportPage();
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(10);
     pdf.setTextColor(25, 30, 50);
@@ -273,10 +284,11 @@
     const summary = [
       ['Grooming revenue', formatPdfMoney(groomingRevenue), [250, 247, 238]],
       ['Hotel revenue', formatPdfMoney(hotelRevenue), [237, 246, 244]],
-      ['Combined revenue', formatPdfMoney(groomingRevenue + hotelRevenue), [234, 232, 220]],
+      ['Walk-in sales', formatPdfMoney(walkInRevenue), [250, 247, 238]],
+      ['Total revenue', formatPdfMoney(totalRevenue), [234, 232, 220]],
     ];
     const gap = 3;
-    const cardWidth = (pageWidth - margin * 2 - gap * 2) / 3;
+    const cardWidth = (pageWidth - margin * 2 - gap * (summary.length - 1)) / summary.length;
     summary.forEach(([label, amount, color], index) => {
       const x = margin + index * (cardWidth + gap);
       pdf.setFillColor(...color);

@@ -660,7 +660,7 @@ app.post('/admin/login/verify-code', async (req, res) => {
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
     });
-    return res.redirect('/admin/index.html');
+    return res.redirect('/admin/staff-dashboard.html');
   } catch (error) {
     if (error instanceof VerificationError) {
       return res.redirect(`/admin/login.html?verify=1&error=${error.status === 429 ? 'limit' : 'code'}`);
@@ -750,6 +750,9 @@ app.use('/admin', async (req, res, next) => {
   const isStaff = isStaffRole(user) && await isActiveStaffRole(user);
   if (user === ADMIN_USERNAME && req.path === '/employees.html') {
     return res.redirect('/admin/staff.html');
+  }
+  if (isStaff && req.path === '/index.html') {
+    return res.redirect('/admin/staff-dashboard.html');
   }
   const staffPages = ['/index.html', '/staff-dashboard.html', '/appointments.html', '/grooming.html', '/hotel.html', '/customers.html', '/pets.html', '/reports.html', '/notifications.html'];
   const hasAccess = user === ADMIN_USERNAME || (isStaff && staffPages.includes(req.path));

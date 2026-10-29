@@ -89,6 +89,68 @@ const aggregateRevenue = (records, amountField, period, buckets) => {
   }
   return buckets.map(({ key, label }) => ({ label, ...values.get(key) }));
 };
+
+const aggregateWalkInRevenue = (transactions, period, buckets) => {
+  const values = new Map(buckets.map(({ key }) => [key, { revenue: 0, count: 0 }]));
+  for (const transaction of transactions) {
+    const dateKey = walkInSalesDateKey(transaction);
+    if (!dateKey) continue;
+    const bucket = values.get(revenuePeriodKey(dateKey, period));
+    if (!bucket) continue;
+    bucket.revenue += Number(transaction.amount || 0);
+    bucket.count += 1;
+  }
+  return buckets.map(({ key, label }) => ({ label, ...values.get(key) }));
+};
+
+const walkInRevenueItems = (transaction) => {
+  const items = Array.isArray(transaction.items) ? transaction.items : [];
+  if (!items.length) {
+    return [{ category: transaction.description || 'Walk-in sale', revenue: Number(transaction.amount || 0), quantity: 1 }];
+  }
+  return items.map((item) => {
+    const quantity = Number(item.quantity || 1);
+    const lineTotal = Number(item.lineTotal);
+    const unitPrice = Number(item.unitPrice);
+    const revenue = Number.isFinite(lineTotal) && lineTotal > 0
+      ? lineTotal
+      : Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice * quantity : 0;
+    return {
+      category: item.category || item.name || transaction.description || 'Walk-in sale',
+      revenue,
+      quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+    };
+  });
+};
+
+const aggregateWalkInRevenueByCategory = (transactions, period, buckets) => {
+  const values = new Map();
+  const validPeriodKeys = new Set(buckets.map(({ key }) => key));
+  for (const transaction of transactions) {
+    const dateKey = walkInSalesDateKey(transaction);
+    if (!dateKey || !validPeriodKeys.has(revenuePeriodKey(dateKey, period))) continue;
+    const items = walkInRevenueItems(transaction);
+    const itemRevenue = items.reduce((sum, item) => sum + item.revenue, 0);
+    const categoryItems = itemRevenue > 0
+      ? items
+      : [{ category: transaction.description || 'Walk-in sale', revenue: Number(transaction.amount || 0), quantity: 1 }];
+    for (const item of categoryItems) {
+      const category = item.category || 'Walk-in sale';
+      const value = values.get(category) || { revenue: 0, count: 0 };
+      value.revenue += item.revenue;
+      value.count += item.quantity;
+      values.set(category, value);
+    }
+  }
+  return [...values.entries()]
+    .map(([category, value]) => ({
+      label: readableRevenueLabel(category),
+      revenue: Math.round(value.revenue * 100) / 100,
+      count: value.count,
+    }))
+    .sort((left, right) => right.revenue - left.revenue || left.label.localeCompare(right.label));
+};
+
 const isPaidWalkInTransaction = (transaction) => transaction.paymentStatus
   ? transaction.paymentStatus === 'paid'
   : transaction.paymentMethod !== 'qrph';
@@ -291,7 +353,7 @@ const getRecentActivity = async (req, res, next) => {
     const petMap = Object.fromEntries(pets.map((p) => [String(p.id), p]));
 
     const sortedActivity = [
-      ...grooming.filter((a) => a.status !== 'completed').map((a) => {
+      ...grooming.filter((a) => String(a.status || '').toLowerCase() !== 'completed').map((a) => {
         const pet = petMap[String(a.petId)];
         const customer = customerMap[String(a.customerId)];
         const serviceSummary = Array.isArray(a.petServices) && a.petServices.length
@@ -309,7 +371,7 @@ const getRecentActivity = async (req, res, next) => {
             : summary,
         };
       }),
-      ...hotel.filter((r) => r.status !== 'checked-out').map((r) => {
+      ...hotel.filter((r) => String(r.status || '').toLowerCase() !== 'checked-out').map((r) => {
         const pet = petMap[String(r.petId)];
         const customer = customerMap[String(r.customerId)];
         const roomSummary = Array.isArray(r.petRooms) && r.petRooms.length
@@ -428,13 +490,16 @@ const getOccupancy = async (req, res, next) => {
 const getRevenueAnalytics = async (req, res, next) => {
   try {
     const period = ['daily', 'weekly', 'monthly', 'yearly'].includes(req.query.period) ? req.query.period : 'monthly';
-    const [grooming, hotel] = await Promise.all([
+    const [grooming, hotel, walkInTransactions] = await Promise.all([
       findRevenueRecords(GroomingAppointment, REVENUE_GROOMING_STATUSES),
       findRevenueRecords(HotelReservation, REVENUE_HOTEL_STATUSES),
+      CashTransaction.findAll({ where: { type: 'walk-in' } }),
     ]);
+    const paidWalkInTransactions = walkInTransactions.filter(isPaidWalkInTransaction);
     const buckets = createRevenueBuckets(period, businessDateKey());
     const groomingBuckets = aggregateRevenue(grooming, 'price', period, buckets);
     const hotelBuckets = aggregateRevenue(hotel, 'totalPrice', period, buckets);
+    const walkInBuckets = aggregateWalkInRevenue(paidWalkInTransactions, period, buckets);
     const groomingServices = aggregateRevenueByCategory(
       grooming,
       period,
@@ -449,18 +514,23 @@ const getRevenueAnalytics = async (req, res, next) => {
       hotelRevenueItems,
       Object.keys(ROOM_PRICES),
     );
+    const walkInServices = aggregateWalkInRevenueByCategory(paidWalkInTransactions, period, buckets);
     const groomingRevenue = groomingBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
     const hotelRevenue = hotelBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
+    const walkInRevenue = walkInBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
     res.json({
       period,
       grooming: groomingBuckets,
       hotel: hotelBuckets,
+      walkIn: walkInBuckets,
       groomingServices,
       hotelServices,
+      walkInServices,
       totals: {
         grooming: groomingRevenue,
         hotel: hotelRevenue,
-        combined: groomingRevenue + hotelRevenue,
+        walkIn: walkInRevenue,
+        combined: groomingRevenue + hotelRevenue + walkInRevenue,
       },
     });
   } catch (error) {

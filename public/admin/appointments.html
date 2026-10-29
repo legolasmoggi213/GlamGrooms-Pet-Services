@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Appointments — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
+  <link rel="stylesheet" href="/css/style.css?v=transaction-history-20261029" />
 </head>
 <body>
   <div class="admin-layout">
@@ -68,10 +68,26 @@
           </div>
         </section>
       </div>
+      <section class="panel transaction-history-panel" aria-labelledby="transaction-history-heading">
+        <div>
+          <h2 id="transaction-history-heading">Transaction History</h2>
+          <p class="text-muted">Completed grooming appointments and checked-out pet hotel stays.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="appointments-table transaction-history-table">
+            <thead>
+              <tr><th>Service</th><th>Customer</th><th>Pet &amp; Service / Room</th><th>Completed / Check-out</th><th>Payment status</th><th>Payment method</th><th>Amount</th><th>Details</th></tr>
+            </thead>
+            <tbody id="transaction-history-rows">
+              <tr><td colspan="8" class="loading">Loading transaction history…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </main>
   </div>
   <script src="/js/api.js"></script>
   <script src="/js/admin.js?v=appointments-reschedule-requests-20261028"></script>
-  <script src="/js/appointments.js?v=keep-manage-open-20261029"></script>
+  <script src="/js/appointments.js?v=transaction-history-20261029"></script>
 </body>
 </html>

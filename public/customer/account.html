@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Account — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=customer-dashboard-ux-20261029" />
+  <link rel="stylesheet" href="/css/style.css?v=customer-transaction-history-20261029" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -122,7 +122,7 @@
           <div class="customer-section-heading">
             <div>
               <h2>Transactions</h2>
-              <p>Review recent activity or expand previous bookings.</p>
+              <p>Recent activity and completed services are organized below.</p>
             </div>
           </div>
           <div id="recent-transactions">Loading transactions…</div>
@@ -733,11 +733,11 @@
               return recentBookingCardMarkup(item, pets, p, statusClass, rescheduleRequests);
             }).join('')}</ul>`
           : '<div class="empty-state">No transactions to show.</div>';
-        const recentHtml = `<div class="recent-transactions-list"><h3>Recent transactions</h3>${renderTransactionList(recentTransactions)}</div>
-          <details class="previous-transactions-disclosure">
-            <summary><span>Previous transactions</span><span class="previous-transactions-count">${previousTransactions.length}</span><span class="previous-transactions-toggle" aria-hidden="true"></span></summary>
-            <div class="previous-transactions-content">${renderTransactionList(previousTransactions)}</div>
-          </details>`;
+        const recentHtml = `<div class="recent-transactions-list"><h3>Recent Transactions</h3>${renderTransactionList(recentTransactions)}</div>
+          <div class="transaction-history-list"><h3>Transaction History <span class="previous-transactions-count">${previousTransactions.length}</span></h3>
+            <p class="transaction-meta">Completed services, checked-out stays, and previous bookings.</p>
+            ${renderTransactionList(previousTransactions)}
+          </div>`;
 
         document.getElementById('recent-transactions').innerHTML = recentHtml;
         document.getElementById('grooming-bookings').innerHTML = `<ul class="transaction-list">${grooming}</ul>`;

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Staff Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=pending-appointment-arrivals-20261029" />
+  <link rel="stylesheet" href="/css/style.css?v=staff-transaction-history-20261029" />
 </head>
 <body>
   <div class="admin-layout">
@@ -105,10 +105,39 @@
           </section>
         </div>
       </section>
+      <section class="panel" aria-labelledby="staff-recent-activity-heading">
+        <h3 id="staff-recent-activity-heading">Recent Activities</h3>
+        <div class="activity-columns">
+          <section class="activity-group" aria-labelledby="staff-grooming-activity-heading">
+            <h4 id="staff-grooming-activity-heading">Grooming</h4>
+            <div id="staff-grooming-activity"><div class="loading">Loading grooming activity…</div></div>
+          </section>
+          <section class="activity-group" aria-labelledby="staff-hotel-activity-heading">
+            <h4 id="staff-hotel-activity-heading">Pet Hotel</h4>
+            <div id="staff-hotel-activity"><div class="loading">Loading hotel activity…</div></div>
+          </section>
+        </div>
+      </section>
+      <section class="panel" aria-labelledby="staff-transaction-history-heading">
+        <div>
+          <h3 id="staff-transaction-history-heading">Transaction History</h3>
+          <p class="text-muted">Completed grooming appointments and checked-out pet hotel stays.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="appointments-table transaction-history-table">
+            <thead>
+              <tr><th>Service</th><th>Customer</th><th>Pet &amp; Service / Room</th><th>Completed / Check-out</th><th>Payment status</th><th>Payment method</th><th>Amount</th></tr>
+            </thead>
+            <tbody id="staff-transaction-history-rows">
+              <tr><td colspan="7" class="loading">Loading transaction history…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
       <section class="panel" id="staff-revenue" aria-label="Revenue analytics">
         <div class="analytics-heading">
           <div>
-            <h3>Revenue Analytics</h3>
+            <h3>Revenue &amp; Sales Analytics</h3>
             <p class="text-muted" id="staff-revenue-period-label">Last 6 months</p>
           </div>
           <div class="analytics-actions">
@@ -121,7 +150,7 @@
             <button type="button" class="btn btn-primary" id="staff-export-revenue">Export PDF</button>
           </div>
         </div>
-        <div id="staff-revenue-combined" class="revenue-combined" aria-live="polite">Loading revenue…</div>
+        <div id="staff-revenue-combined" class="revenue-combined" aria-live="polite">Loading total revenue…</div>
         <div class="revenue-chart-grid revenue-overview-grid">
           <section class="revenue-chart-panel grooming-chart">
             <div class="flex-between"><h4>Grooming Revenue</h4><strong id="staff-grooming-revenue-total">PHP 0.00</strong></div>
@@ -136,7 +165,7 @@
             <div id="staff-walk-in-revenue-chart" class="revenue-line-host"></div>
           </section>
         </div>
-        <h4 class="revenue-breakdown-title">Service Sales Breakdown</h4>
+        <h4 class="revenue-breakdown-title">Sales Breakdown by Category</h4>
         <div class="revenue-chart-grid">
           <section class="revenue-chart-panel grooming-chart">
             <div class="flex-between"><h4>Sales by Grooming Service</h4><strong id="staff-grooming-service-total">PHP 0.00</strong></div>
@@ -145,6 +174,10 @@
           <section class="revenue-chart-panel hotel-chart">
             <div class="flex-between"><h4>Sales by Hotel Room</h4><strong id="staff-hotel-service-total">PHP 0.00</strong></div>
             <div id="staff-hotel-service-chart" class="revenue-line-host"></div>
+          </section>
+          <section class="revenue-chart-panel walk-in-chart">
+            <div class="flex-between"><h4>Walk-in Sales by Category</h4><strong id="staff-walk-in-service-total">PHP 0.00</strong></div>
+            <div id="staff-walk-in-service-chart" class="revenue-line-host"></div>
           </section>
         </div>
       </section>
@@ -172,9 +205,9 @@
     </main>
   </div>
   <script src="/js/api.js"></script>
-  <script src="/js/admin.js"></script>
-  <script src="/js/revenue-chart.js?v=service-line-chart-20261029"></script>
+  <script src="/js/admin.js?v=role-specific-dashboard-20261029"></script>
+  <script src="/js/revenue-chart.js?v=walkin-in-total-revenue-20261029"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="/js/staff-dashboard.js?v=todays-upcoming-arrivals-split-20261029"></script>
+  <script src="/js/staff-dashboard.js?v=staff-transaction-history-20261029"></script>
 </body>
 </html>

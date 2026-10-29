@@ -3,6 +3,7 @@
 
   const groomingRowsEl = document.getElementById('grooming-appointment-rows');
   const hotelRowsEl = document.getElementById('hotel-appointment-rows');
+  const transactionHistoryRowsEl = document.getElementById('transaction-history-rows');
   const rescheduleRowsEl = document.getElementById('reschedule-request-rows');
   const messageEl = document.getElementById('appointments-message');
   const terminalStatuses = {
@@ -257,7 +258,8 @@
   };
 
   const renderRows = (type, rowsEl, emptyMessage) => {
-    const typeBookings = bookings.filter((item) => item.type === type);
+    const typeBookings = bookings.filter((item) => item.type === type
+      && !terminalStatuses[type].has(String(item.booking.status || '').toLowerCase()));
     if (!typeBookings.length) {
       rowsEl.innerHTML = `<tr><td colspan="5" class="empty">${emptyMessage}</td></tr>`;
       return;
@@ -277,13 +279,45 @@
   const renderAppointments = () => {
     renderRows('grooming', groomingRowsEl, 'No active grooming appointments.');
     renderRows('hotel', hotelRowsEl, 'No active pet hotel reservations.');
+    renderTransactionHistory();
   };
 
-  const isVisibleBooking = (type, booking) => !terminalStatuses[type].has(String(booking.status || '').toLowerCase())
-    || (type === 'grooming'
-      && String(booking.status || '').toLowerCase() === 'completed'
-      && String(booking.paymentStatus || '').toLowerCase() === 'paid'
-      && !booking.paymentReceiptEmailSentAt);
+  const isTerminalBooking = (type, booking) => terminalStatuses[type].has(String(booking.status || '').toLowerCase());
+
+  const transactionCompletionTime = (item) => {
+    const booking = item.booking;
+    const completionTime = item.type === 'grooming'
+      ? booking.checkedOutAt || booking.updatedAt || booking.createdAt
+      : booking.checkedOutAt || booking.updatedAt || booking.checkOut || booking.createdAt;
+    return Date.parse(completionTime || '') || 0;
+  };
+
+  const renderTransactionHistory = () => {
+    const completedBookings = bookings
+      .filter((item) => isTerminalBooking(item.type, item.booking))
+      .sort((left, right) => transactionCompletionTime(right) - transactionCompletionTime(left));
+    if (!completedBookings.length) {
+      transactionHistoryRowsEl.innerHTML = '<tr><td colspan="8" class="empty">No completed transactions yet.</td></tr>';
+      return;
+    }
+    transactionHistoryRowsEl.innerHTML = completedBookings.map(({ type, booking }) => {
+      const completionLabel = type === 'grooming' ? 'Completed' : 'Checked out';
+      const completionDate = type === 'grooming'
+        ? booking.checkedOutAt || booking.updatedAt || booking.date
+        : booking.checkedOutAt || booking.updatedAt || booking.checkOut;
+      const amount = type === 'grooming' ? booking.price : booking.totalPrice;
+      return `<tr>
+        <td>${type === 'grooming' ? 'Grooming' : 'Pet Hotel'}</td>
+        <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
+        <td><span class="appointment-primary">${escapeHtml(petsFor(booking))}</span><span class="appointment-detail">${escapeHtml(serviceFor(booking, type))}</span></td>
+        <td>${escapeHtml(completionLabel)}: ${escapeHtml(fmtDateTime(completionDate))}</td>
+        <td>${escapeHtml(String(booking.paymentStatus || 'unpaid').replace(/-/g, ' '))}</td>
+        <td>${escapeHtml(String(booking.paymentMethod || '—').toUpperCase())}</td>
+        <td>${escapeHtml(fmtMoney(amount))}</td>
+        <td><button type="button" class="btn btn-outline btn-sm" data-manage="true" data-type="${type}" data-id="${escapeHtml(booking.id)}">View</button></td>
+      </tr>`;
+    }).join('');
+  };
 
   const sortBookings = () => bookings.sort((left, right) => {
     const bookingActivityOrder = bookingActivityTime(right) - bookingActivityTime(left);
@@ -307,9 +341,10 @@
 
   const storeBooking = (type, booking) => {
     bookings = bookings.filter((item) => item.type !== type || String(item.booking.id) !== String(booking.id));
-    if (isVisibleBooking(type, booking)) bookings.push({ type, booking });
+    bookings.push({ type, booking });
     sortBookings();
     renderBookingType(type);
+    renderTransactionHistory();
   };
 
   const refreshBooking = async (type, id) => {
@@ -321,12 +356,14 @@
   const removeBooking = (type, id) => {
     bookings = bookings.filter((item) => item.type !== type || String(item.booking.id) !== String(id));
     renderBookingType(type);
+    renderTransactionHistory();
   };
 
   const showLoadError = (error) => {
     const message = escapeHtml(error.message);
     groomingRowsEl.innerHTML = `<tr><td colspan="5" class="empty">${message}</td></tr>`;
     hotelRowsEl.innerHTML = `<tr><td colspan="5" class="empty">${message}</td></tr>`;
+    transactionHistoryRowsEl.innerHTML = `<tr><td colspan="8" class="empty">${message}</td></tr>`;
     rescheduleRowsEl.innerHTML = `<tr><td colspan="8" class="empty">${message}</td></tr>`;
   };
 
@@ -418,10 +455,8 @@
     canDeleteCancelledBookings = isAdmin || session.role === 'STAFF' || String(session.role || '').startsWith('STAFF:');
     rescheduleRequests = requests;
     bookings = [
-      ...grooming.filter((booking) => isVisibleBooking('grooming', booking))
-        .map((booking) => ({ type: 'grooming', booking })),
-      ...hotel.filter((booking) => isVisibleBooking('hotel', booking))
-        .map((booking) => ({ type: 'hotel', booking })),
+      ...grooming.map((booking) => ({ type: 'grooming', booking })),
+      ...hotel.map((booking) => ({ type: 'hotel', booking })),
     ];
     sortBookings();
     renderAppointments();

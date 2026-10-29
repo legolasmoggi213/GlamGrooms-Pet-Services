@@ -13,7 +13,7 @@ const ADMIN_PAGES = [
 ];
 
 const STAFF_PAGES = [
-  { href: '/admin/index.html', label: 'Dashboard' },
+  { href: '/admin/staff-dashboard.html', label: 'Dashboard' },
   { href: '/admin/appointments.html', label: 'Appointments' },
   ...ADMIN_PAGES.filter((page) => ['Customers', 'Pets', 'Notifications', 'Reports'].includes(page.label)),
 ];
@@ -25,7 +25,7 @@ function renderSidebar(activeLabel) {
       `<a href="${page.href}" class="${page.label === activeLabel ? 'active' : ''}">${page.label === 'Notifications' ? 'Notifications <span class="admin-notification-count" data-notification-count hidden></span>' : page.label}</a>`
     ).join('');
     sidebar.innerHTML = `
-      <a class="brand" href="/admin/index.html">Glam Grooms Pet Spa & Hotel</a>
+      <a class="brand" href="${pages === STAFF_PAGES ? '/admin/staff-dashboard.html' : '/admin/index.html'}">Glam Grooms Pet Spa & Hotel</a>
       ${links}
       <a href="/admin/logout" style="margin-top:0.6rem;color:var(--danger);">Logout</a>
     `;

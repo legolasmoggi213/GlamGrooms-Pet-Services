@@ -134,7 +134,7 @@
       <section class="panel" id="revenue" aria-label="Revenue analytics">
         <div class="analytics-heading">
           <div>
-            <h3>Revenue Analytics</h3>
+            <h3>Revenue &amp; Sales Analytics</h3>
             <p class="text-muted" id="revenue-period-label">Last 6 months</p>
           </div>
           <div class="analytics-actions">
@@ -147,7 +147,7 @@
             <button type="button" class="btn btn-primary" id="export-revenue-pdf">Export PDF</button>
           </div>
         </div>
-        <div id="revenue-combined" class="revenue-combined" aria-live="polite">Loading revenue…</div>
+        <div id="revenue-combined" class="revenue-combined" aria-live="polite">Loading total revenue…</div>
         <div class="revenue-chart-grid revenue-overview-grid">
           <section class="revenue-chart-panel grooming-chart">
             <div class="flex-between"><h4>Grooming Revenue</h4><strong id="grooming-revenue-total">₱0.00</strong></div>
@@ -162,7 +162,7 @@
             <div id="walk-in-revenue-chart" class="revenue-line-host"></div>
           </section>
         </div>
-        <h4 class="revenue-breakdown-title">Service Sales Breakdown</h4>
+        <h4 class="revenue-breakdown-title">Sales Breakdown by Category</h4>
         <div class="revenue-chart-grid">
           <section class="revenue-chart-panel grooming-chart">
             <div class="flex-between"><h4>Sales by Grooming Service</h4><strong id="grooming-service-total">₱0.00</strong></div>
@@ -171,6 +171,10 @@
           <section class="revenue-chart-panel hotel-chart">
             <div class="flex-between"><h4>Sales by Hotel Room</h4><strong id="hotel-service-total">₱0.00</strong></div>
             <div id="hotel-service-chart" class="revenue-line-host"></div>
+          </section>
+          <section class="revenue-chart-panel walk-in-chart">
+            <div class="flex-between"><h4>Walk-in Sales by Category</h4><strong id="walk-in-service-total">₱0.00</strong></div>
+            <div id="walk-in-service-chart" class="revenue-line-host"></div>
           </section>
         </div>
       </section>
@@ -195,7 +199,7 @@
     </main>
   </div>
 
-  <script src="/js/revenue-chart.js?v=service-line-chart-20261029"></script>
+  <script src="/js/revenue-chart.js?v=walkin-in-total-revenue-20261029"></script>
   <script src="/js/api.js?v=php-currency-20261027"></script>
   <script src="/js/admin.js?v=staff-dashboard-access-20261028"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -448,10 +452,12 @@
           .join('')
           : `<div class="empty">No recent ${typeLabel.toLowerCase()} activity.</div>`;
         document.getElementById('grooming-activity').innerHTML = renderActivity(
-          items.filter((item) => item.type === 'grooming'), 'Grooming',
+          items.filter((item) => item.type === 'grooming'
+            && String(item.status || '').toLowerCase() !== 'completed'), 'Grooming',
         );
         document.getElementById('hotel-activity').innerHTML = renderActivity(
-          items.filter((item) => item.type === 'hotel'), 'Pet Hotel',
+          items.filter((item) => item.type === 'hotel'
+            && String(item.status || '').toLowerCase() !== 'checked-out'), 'Pet Hotel',
         );
       }
 
@@ -533,14 +539,11 @@
 
       async function loadRevenue() {
         const period = document.querySelector('.revenue-periods button[aria-pressed="true"]').dataset.period;
-        const [data, walkInData] = await Promise.all([
-          apiGet(`/admin/revenue-analytics?period=${period}`),
-          apiGet(`/admin/pos-sales?period=${period}`),
-        ]);
+        const data = await apiGet(`/admin/revenue-analytics?period=${period}`);
         revenueAnalyticsData = data;
         const periods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months', yearly: 'Last 5 years' };
         document.getElementById('revenue-period-label').textContent = periods[data.period];
-        document.getElementById('revenue-combined').textContent = `Grooming + hotel revenue: ${fmtMoney(data.totals.combined)}`;
+        document.getElementById('revenue-combined').textContent = `Total revenue (Grooming + Hotel + Walk-in): ${fmtMoney(data.totals.combined)}`;
 
         const groomingTotal = data.grooming.reduce((total, bucket) => total + bucket.revenue, 0);
         const hotelTotal = data.hotel.reduce((total, bucket) => total + bucket.revenue, 0);
@@ -548,12 +551,8 @@
         document.getElementById('hotel-revenue-total').textContent = fmtMoney(hotelTotal);
         document.getElementById('grooming-revenue-chart').innerHTML = window.renderRevenueLineChart(data.grooming);
         document.getElementById('hotel-revenue-chart').innerHTML = window.renderRevenueLineChart(data.hotel);
-        const walkInBuckets = (walkInData.buckets || []).map((bucket) => ({
-          label: bucket.label,
-          revenue: bucket.sales,
-          count: bucket.count,
-        }));
-        document.getElementById('walk-in-revenue-total').textContent = fmtMoney(walkInBuckets.reduce((sum, bucket) => sum + Number(bucket.revenue || 0), 0));
+        const walkInBuckets = data.walkIn || [];
+        document.getElementById('walk-in-revenue-total').textContent = fmtMoney(data.totals.walkIn || 0);
         document.getElementById('walk-in-revenue-chart').innerHTML = window.renderRevenueLineChart(walkInBuckets, {
           countLabel: 'sales', ariaLabel: 'Walk-in sales by period',
         });
@@ -566,6 +565,11 @@
         });
         document.getElementById('hotel-service-chart').innerHTML = window.renderRevenueLineChart(data.hotelServices || [], {
           countLabel: 'room assignments', ariaLabel: 'Sales by hotel room', wrapLabels: true,
+        });
+        const walkInServiceTotal = (data.walkInServices || []).reduce((sum, entry) => sum + Number(entry.revenue || 0), 0);
+        document.getElementById('walk-in-service-total').textContent = fmtMoney(walkInServiceTotal);
+        document.getElementById('walk-in-service-chart').innerHTML = window.renderRevenueLineChart(data.walkInServices || [], {
+          countLabel: 'items', ariaLabel: 'Sales by walk-in category', wrapLabels: true,
         });
       }
 

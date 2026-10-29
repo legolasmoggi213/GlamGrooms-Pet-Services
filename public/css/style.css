@@ -1255,6 +1255,10 @@ a:hover { color: var(--primary-dark); text-decoration: none; }
   line-height: 1.2;
   white-space: nowrap;
 }
+.transaction-history-table {
+  min-width: 1000px;
+  table-layout: auto;
+}
 .appointments-table .status-badge.status-confirmed { background: #fff; color: #15803d; }
 .appointments-table .status-badge.status-cancelled { background: #fff; color: #dc2626; }
 .appointments-table .status-badge.status-pending { background: #fff; color: #a87900; }
@@ -1666,6 +1670,7 @@ tr:hover td { background: #f5f1e5; }
   transition: background 0.2s ease;
 }
 .activity-booking-button { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.staff-dashboard-activity-link { color: inherit; text-decoration: none; }
 .activity-booking-button:hover, .activity-booking-button:focus-visible { background: rgba(255, 210, 26, 0.08); outline: 2px solid rgba(212, 169, 0, 0.35); outline-offset: -2px; }
 .activity-item:last-child { border-bottom: none; }
 .activity-item .dot { 
@@ -2167,6 +2172,9 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
 .customer-account-layout .transaction-list li { border-color: #e1e4df; border-radius: 8px; background: #fffefa; }
 .customer-account-layout .empty-state { color: #66737a; }
 .customer-account-layout .payment-retry-panel { margin-bottom: 1rem; }
+.customer-account-layout .transaction-history-list { margin-top: 1.4rem; padding-top: 1.1rem; border-top: 1px solid #e1e4df; }
+.customer-account-layout .transaction-history-list h3 { display: flex; align-items: center; gap: 0.6rem; margin: 0 0 0.35rem; color: #253238; font-size: 1.05rem; }
+.customer-account-layout .transaction-history-list > .transaction-meta { margin: 0 0 0.85rem; }
 .previous-transactions-disclosure { margin-top: 1rem; border-top: 1px solid #e1e4df; }
 .previous-transactions-disclosure > summary { display: flex; align-items: center; gap: 0.6rem; padding: 0.9rem 0; color: #253238; font-size: 0.95rem; font-weight: 750; cursor: pointer; list-style: none; }
 .previous-transactions-disclosure > summary::-webkit-details-marker { display: none; }

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Account — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=customer-mobile-refund-link-20261029" />
+  <link rel="stylesheet" href="/css/style.css?v=customer-refund-claim-banner-20261029" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -317,13 +317,6 @@
       }
 
       if (item.paymentMethod === 'qrph') {
-        const refundTransferLink = item.paymentRefundTransferLink;
-        if (String(item.status || '').toLowerCase() === 'cancelled'
-          && refundTransferLink
-          && ['https://transfer.paymongo.com/', 'https://transfer.paymongo-stg.com/'].some((prefix) => refundTransferLink.startsWith(prefix))) {
-          actions.push('<p class="transaction-meta">Your GCash refund is ready. Open the secure PayMongo link to claim it; the link expires after 3 days.</p>');
-          actions.push(`<div class="profile-actions"><a class="btn btn-primary btn-sm" href="${escapeHtml(refundTransferLink)}" target="_blank" rel="noopener noreferrer">Claim GCash refund</a></div>`);
-        }
         if (bookingCanCancel(item, type)) {
           const refundRetry = String(item.status || '').toLowerCase() === 'cancelled';
           actions.push(refundRetry
@@ -360,15 +353,23 @@
             alert('The GCash payment completed before cancellation. The booking is still active; select Cancel booking again to request cancellation and refund.');
           } else if (result.refund?.status === 'failed') {
             alert('The booking is cancelled, but PayMongo could not start the refund. Please contact the business to arrange it.');
-          } else if (result.refund) {
-            alert(result.refund.transferLink
-              ? 'The booking was cancelled and the refund is ready. Open the cancelled booking details and tap Claim GCash refund to choose where to receive the money.'
-              : 'The booking was cancelled and the refund request was sent to PayMongo. Refund completion may take time.');
+          } else if (result.refund && !result.refund.transferLink) {
+            alert('The booking was cancelled and the refund request was sent to PayMongo. Refund completion may take time.');
           }
           if (result.notificationSent === false) {
             alert('Your booking was canceled, but staff could not be notified automatically. Please contact the team.');
           }
           await loadProfile();
+          if (result.refund?.transferLink) {
+            const cancelledCard = [...document.querySelectorAll('.recent-booking-card')]
+              .find((card) => card.dataset.bookingId === String(id) && card.dataset.bookingType === type);
+            const claimLink = cancelledCard?.querySelector('[data-refund-claim]');
+            if (cancelledCard && claimLink) {
+              cancelledCard.querySelector('.recent-booking-expand').open = true;
+              cancelledCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              claimLink.focus({ preventScroll: true });
+            }
+          }
         } catch (error) {
           alert(error.message);
           cancelButton.disabled = false;
@@ -828,6 +829,14 @@
       const payment = booking.paymentMethod === 'qrph'
         ? (booking.paymentStatus === 'paid' ? 'Paid online via GCash' : 'GCash payment pending')
         : (booking.paymentStatus === 'paid' ? 'Cash paid' : 'Cash due at counter');
+      const refundTransferLink = booking.paymentRefundTransferLink;
+      const canClaimRefund = String(booking.status || '').toLowerCase() === 'cancelled'
+        && booking.paymentMethod === 'qrph'
+        && typeof refundTransferLink === 'string'
+        && ['https://transfer.paymongo.com/', 'https://transfer.paymongo-stg.com/'].some((prefix) => refundTransferLink.startsWith(prefix));
+      const refundClaimMarkup = canClaimRefund
+        ? `<div class="refund-claim-banner"><div><strong>GCash refund ready</strong><p>Choose where to receive your refund. This secure link expires in 3 days.</p></div><a class="btn btn-primary btn-sm" href="${escapeHtml(refundTransferLink)}" target="_blank" rel="noopener noreferrer" data-refund-claim>Claim GCash refund</a></div>`
+        : '';
       const bookedAt = bookingCreatedAt(booking);
       const detailRows = [
         ['Booking reference', booking.id],
@@ -845,7 +854,8 @@
       ];
       if (booking.notes) detailRows.splice(detailRows.length - 2, 0, ['Special requests', booking.notes]);
 
-      return `<li class="recent-booking-card">
+      return `<li class="recent-booking-card" data-booking-id="${escapeHtml(booking.id)}" data-booking-type="${item.bookingType}">
+        ${refundClaimMarkup}
         <details class="recent-booking-expand">
           <summary class="recent-booking-summary">
             <span class="recent-booking-heading"><strong>${escapeHtml(item.type)}: ${escapeHtml(item.label)}</strong><span class="transaction-meta">${escapeHtml(item.details)} • ${escapeHtml(item.pets)}</span></span>

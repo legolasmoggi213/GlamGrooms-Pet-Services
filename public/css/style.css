@@ -2352,6 +2352,10 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
 .pet-list li:hover, .transaction-list li:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 .transaction-list li { flex-direction: column; align-items: flex-start; }
 .recent-booking-card { padding: 0 !important; overflow: hidden; }
+.refund-claim-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.9rem; padding: 0.9rem 1rem; border-bottom: 1px solid #e8d486; background: #fff8df; color: #253238; }
+.refund-claim-banner strong { display: block; color: #6b5100; font-size: 0.92rem; }
+.refund-claim-banner p { margin: 0.2rem 0 0; color: #5e625c; font-size: 0.82rem; line-height: 1.4; }
+.refund-claim-banner .btn { flex: 0 0 auto; }
 .recent-booking-expand { width: 100%; }
 .recent-booking-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; cursor: pointer; list-style: none; }
 .recent-booking-summary::-webkit-details-marker { display: none; }
@@ -2366,6 +2370,8 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
 .recent-booking-detail-list dt { color: var(--muted); font-size: 0.82rem; font-weight: 700; }
 .recent-booking-detail-list dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
 @media (max-width: 600px) {
+  .refund-claim-banner { align-items: stretch; flex-direction: column; padding: 0.9rem; }
+  .refund-claim-banner .btn { width: 100%; }
   .recent-booking-summary { align-items: flex-start; padding: 0.9rem; }
   .recent-booking-summary-side { gap: 0.45rem; }
   .recent-booking-summary-side .status-pill { max-width: 7rem; white-space: normal; text-align: center; }

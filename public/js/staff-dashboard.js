@@ -129,12 +129,12 @@
         .sort((left, right) => String(left.time || '').localeCompare(String(right.time || '')))
         .map((booking) => `
           <tr>
-            <td>${escapeHtml(booking.time || '—')}</td>
+            <td>${escapeHtml(fmtDate(booking.date))}<span class="dashboard-booking-subtext">${escapeHtml(booking.time || 'Time not set')}${booking.pickupTime ? ` · Pickup ${escapeHtml(booking.pickupTime)}` : ''}</span></td>
             <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
+            <td><span class="dashboard-booking-type">Grooming</span><span class="dashboard-booking-subtext">${escapeHtml(groomingService(booking))}</span></td>
             <td>${escapeHtml(petNames(booking))}</td>
-            <td>${escapeHtml(groomingService(booking))}</td>
-            <td>${escapeHtml(booking.pickupTime || '—')}</td>
-            <td>${escapeHtml(booking.Customer?.phone || booking.customerDetails?.phone || '—')}</td>
+            <td class="dashboard-booking-amount">${fmtMoney(booking.price)}</td>
+            <td>${statusBadge(booking.status)}</td>
             <td><button class="btn btn-success btn-sm" type="button" data-confirm-grooming="${escapeHtml(booking.id)}">Confirm</button></td>
           </tr>`).join('')
       : '<tr><td colspan="7" class="empty">No pending Grooming arrivals today.</td></tr>';
@@ -142,33 +142,44 @@
     const upcomingArrivals = [
       ...upcomingGrooming.map((booking) => ({
         type: 'Grooming',
+        bookingType: 'grooming',
+        id: booking.id,
         date: String(booking.date || ''),
         time: String(booking.time || ''),
         customer: booking.Customer?.name || booking.customerDetails?.name || '—',
         pets: petNames(booking),
+        amount: booking.price,
+        status: booking.status,
         detail: groomingService(booking),
-        schedule: `${fmtDate(booking.date)} at ${booking.time || 'Time not set'}${booking.pickupTime ? ` · Pickup ${booking.pickupTime}` : ''}`,
+        schedule: `${booking.time || 'Time not set'}${booking.pickupTime ? ` · Pickup ${booking.pickupTime}` : ''}`,
       })),
       ...upcomingHotelArrivals.map((booking) => ({
         type: 'Pet Hotel',
+        bookingType: 'hotel',
+        id: booking.id,
         date: String(booking.checkIn || ''),
         time: String(booking.checkInTime || ''),
         customer: booking.Customer?.name || booking.customerDetails?.name || '—',
         pets: petNames(booking),
+        amount: booking.totalPrice,
+        status: booking.status,
         detail: Array.isArray(booking.petRooms) && booking.petRooms.length
           ? booking.petRooms.map((item) => `${item.petName || 'Pet'}: ${String(item.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join('; ')
           : String(booking.roomType || 'Pet Hotel').replace(/^staycation-/, '').replace(/-/g, ' '),
-        schedule: `Check-in: ${fmtDate(booking.checkIn)} ${booking.checkInTime || ''} · Check-out: ${fmtDate(booking.checkOut)} ${booking.checkOutTime || ''}`,
+        schedule: `Check-in ${booking.checkInTime || 'Time not set'} · Check-out ${fmtDate(booking.checkOut)}`,
       })),
     ].sort((left, right) => left.date.localeCompare(right.date) || left.time.localeCompare(right.time));
     upcomingArrivalRows.innerHTML = upcomingArrivals.length
       ? upcomingArrivals.map((arrival) => `<tr>
-        <td>${arrival.type}</td>
+        <td>${escapeHtml(fmtDate(arrival.date))}<span class="dashboard-booking-subtext">${escapeHtml(arrival.schedule)}</span></td>
         <td>${escapeHtml(arrival.customer)}</td>
-        <td><span class="appointment-primary">${escapeHtml(arrival.pets)}</span><span class="appointment-detail">${escapeHtml(arrival.detail)}</span></td>
-        <td>${escapeHtml(arrival.schedule)}</td>
+        <td><span class="dashboard-booking-type">${escapeHtml(arrival.type)}</span><span class="dashboard-booking-subtext">${escapeHtml(arrival.detail)}</span></td>
+        <td>${escapeHtml(arrival.pets)}</td>
+        <td class="dashboard-booking-amount">${fmtMoney(arrival.amount)}</td>
+        <td>${statusBadge(arrival.status)}</td>
+        <td><a class="btn btn-outline btn-sm" href="/admin/appointments.html">View</a></td>
       </tr>`).join('')
-      : '<tr><td colspan="4" class="empty">No upcoming grooming appointments or pet hotel arrivals.</td></tr>';
+      : '<tr><td colspan="7" class="empty">No upcoming grooming appointments or pet hotel arrivals.</td></tr>';
 
     groomingRows.innerHTML = nextGrooming.length
       ? nextGrooming.map((booking) => `
@@ -227,7 +238,7 @@
   loadDashboard().catch((error) => {
     statsEl.innerHTML = `<div class="alert alert-error show">${escapeHtml(error.message)}</div>`;
     groomingRows.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(error.message)}</td></tr>`;
-    hotelRows.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(error.message)}</td></tr>`;
+    hotelRows.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(error.message)}</td></tr>`;
   });
   window.setInterval(() => {
     if (!document.hidden) {

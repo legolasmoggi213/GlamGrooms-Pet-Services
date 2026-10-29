@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Staff Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=revenue-sales-20261028" />
+  <link rel="stylesheet" href="/css/style.css?v=dashboard-bookings-table-20261029" />
 </head>
 <body>
   <div class="admin-layout">
@@ -29,8 +29,8 @@
           <button type="button" class="btn btn-outline btn-sm" id="staff-refresh-pending-grooming">Refresh</button>
         </div>
         <div class="table-wrap">
-          <table>
-            <thead><tr><th>Time</th><th>Customer</th><th>Pet(s)</th><th>Service</th><th>Pickup</th><th>Contact</th><th>Action</th></tr></thead>
+          <table class="dashboard-booking-table">
+            <thead><tr><th>Date</th><th>Customer</th><th>Service</th><th>Pet</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="staff-pending-grooming-rows"><tr><td colspan="7" class="loading">Loading pending arrivals…</td></tr></tbody>
           </table>
         </div>
@@ -44,9 +44,9 @@
           <a class="btn btn-outline btn-sm" href="/admin/appointments.html">View appointments</a>
         </div>
         <div class="table-wrap">
-          <table>
-            <thead><tr><th>Type</th><th>Customer</th><th>Pet &amp; Service / Room</th><th>Schedule</th></tr></thead>
-            <tbody id="staff-upcoming-arrivals-rows"><tr><td colspan="4" class="loading">Loading upcoming arrivals…</td></tr></tbody>
+          <table class="dashboard-booking-table">
+            <thead><tr><th>Date</th><th>Customer</th><th>Service</th><th>Pet</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="staff-upcoming-arrivals-rows"><tr><td colspan="7" class="loading">Loading upcoming arrivals…</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -120,6 +120,6 @@
   <script src="/js/admin.js"></script>
   <script src="/js/revenue-chart.js?v=service-line-chart-20261029"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="/js/staff-dashboard.js?v=walk-in-revenue-chart-20261029"></script>
+  <script src="/js/staff-dashboard.js?v=dashboard-bookings-table-20261029"></script>
 </body>
 </html>

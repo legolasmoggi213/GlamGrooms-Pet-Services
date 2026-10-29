@@ -1524,6 +1524,12 @@ tr:hover td { background: #f5f1e5; }
 .activity-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
 .activity-group { min-width: 0; }
 .activity-group h4 { margin: 0 0 0.35rem; padding-bottom: 0.55rem; border-bottom: 1px solid var(--admin-border); font-size: 0.92rem; }
+.dashboard-booking-table { min-width: 760px; }
+.dashboard-booking-table th { white-space: nowrap; }
+.dashboard-booking-table td { vertical-align: middle; }
+.dashboard-booking-subtext { display: block; margin-top: 0.2rem; color: var(--admin-muted); font-size: 0.76rem; line-height: 1.4; }
+.dashboard-booking-type { display: block; font-weight: 700; }
+.dashboard-booking-amount { white-space: nowrap; font-weight: 700; }
 
 .analytics-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.2rem; }
 .analytics-heading h3 { margin-bottom: 0.25rem; }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=revenue-sales-20261028" />
+  <link rel="stylesheet" href="/css/style.css?v=dashboard-bookings-table-20261029" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -31,8 +31,8 @@
           <button type="button" class="btn btn-outline btn-sm" id="refresh-pending-grooming">Refresh</button>
         </div>
         <div class="table-wrap">
-          <table>
-            <thead><tr><th>Time</th><th>Customer</th><th>Pet(s)</th><th>Service</th><th>Pickup</th><th>Contact</th><th>Action</th></tr></thead>
+          <table class="dashboard-booking-table">
+            <thead><tr><th>Date</th><th>Customer</th><th>Service</th><th>Pet</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="pending-grooming-rows"><tr><td colspan="7" class="loading">Loading pending arrivals…</td></tr></tbody>
           </table>
         </div>
@@ -48,9 +48,9 @@
           <button type="button" class="btn btn-outline btn-sm" id="refresh-upcoming-arrivals">Refresh</button>
         </div>
         <div class="table-wrap">
-          <table>
-            <thead><tr><th>Type</th><th>Customer</th><th>Pet &amp; Service / Room</th><th>Schedule</th></tr></thead>
-            <tbody id="upcoming-arrivals-rows"><tr><td colspan="4" class="loading">Loading upcoming arrivals…</td></tr></tbody>
+          <table class="dashboard-booking-table">
+            <thead><tr><th>Date</th><th>Customer</th><th>Service</th><th>Pet</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="upcoming-arrivals-rows"><tr><td colspan="7" class="loading">Loading upcoming arrivals…</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -176,6 +176,8 @@
           apiGet('/grooming'),
           apiGet('/hotel'),
         ]);
+        const upcomingArrivalCount = grooming.filter(isUpcomingGrooming).length
+          + hotel.filter(isUpcomingHotel).length;
         const todaysActiveArrivalCount = grooming.filter(isTodaysActiveGrooming).length + hotel.filter(isTodaysHotelArrival).length;
         document.getElementById('stats').innerHTML =
           statCard('Customers', s.customers, 'purple', '/admin/customers.html') +
@@ -202,12 +204,12 @@
             ? appointment.petServices.map((item) => `${item.petName || 'Pet'}: ${String(item.service || '').replace(/^grooming-/, '').replace(/-/g, ' ')}`).join('; ')
             : String(appointment.service || 'Grooming').replace(/^grooming-/, '').replace(/-/g, ' ');
           return `<tr>
-            <td>${escapeHtml(appointment.time || '—')}</td>
+            <td>${escapeHtml(fmtDate(appointment.date))}<span class="dashboard-booking-subtext">${escapeHtml(appointment.time || 'Time not set')}${appointment.pickupTime ? ` · Pickup ${escapeHtml(appointment.pickupTime)}` : ''}</span></td>
             <td>${escapeHtml(appointment.Customer?.name || appointment.customerDetails?.name || '—')}</td>
+            <td><span class="dashboard-booking-type">Grooming</span><span class="dashboard-booking-subtext">${escapeHtml(services)}</span></td>
             <td>${escapeHtml(petNames)}</td>
-            <td>${escapeHtml(services)}</td>
-            <td>${escapeHtml(appointment.pickupTime || '—')}</td>
-            <td>${escapeHtml(appointment.Customer?.phone || appointment.customerDetails?.phone || '—')}</td>
+            <td class="dashboard-booking-amount">${fmtMoney(appointment.price)}</td>
+            <td>${statusBadge(appointment.status)}</td>
             <td><button class="btn btn-success btn-sm" type="button" data-confirm-grooming="${escapeHtml(appointment.id)}">Confirm</button></td>
           </tr>`;
         }).join('') : '<tr><td colspan="7" class="empty">No pending Grooming arrivals today.</td></tr>';
@@ -221,36 +223,52 @@
         const arrivals = [
           ...grooming.filter(isUpcomingGrooming).map((booking) => ({
             type: 'Grooming',
+            bookingType: 'grooming',
+            id: booking.id,
             date: String(booking.date || ''),
             time: String(booking.time || ''),
             customer: booking.Customer?.name || booking.customerDetails?.name || '—',
             pets: petNamesFor(booking),
+            amount: booking.price,
+            status: booking.status,
             detail: Array.isArray(booking.petServices) && booking.petServices.length
               ? booking.petServices.map((item) => `${item.petName || 'Pet'}: ${String(item.service || '').replace(/^grooming-/, '').replace(/-/g, ' ')}`).join('; ')
               : String(booking.service || 'Grooming').replace(/^grooming-/, '').replace(/-/g, ' '),
-            schedule: `${fmtDate(booking.date)} at ${booking.time || 'Time not set'}${booking.pickupTime ? ` · Pickup ${booking.pickupTime}` : ''}`,
+            schedule: `${booking.time || 'Time not set'}${booking.pickupTime ? ` · Pickup ${booking.pickupTime}` : ''}`,
           })),
           ...hotel.filter(isUpcomingHotel).map((booking) => ({
             type: 'Pet Hotel',
+            bookingType: 'hotel',
+            id: booking.id,
             date: String(booking.checkIn || ''),
             time: String(booking.checkInTime || ''),
             customer: booking.Customer?.name || booking.customerDetails?.name || '—',
             pets: petNamesFor(booking),
+            amount: booking.totalPrice,
+            status: booking.status,
             detail: Array.isArray(booking.petRooms) && booking.petRooms.length
               ? booking.petRooms.map((item) => `${item.petName || 'Pet'}: ${String(item.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join('; ')
               : String(booking.roomType || 'Pet Hotel').replace(/^staycation-/, '').replace(/-/g, ' '),
-            schedule: `Check-in: ${fmtDate(booking.checkIn)} ${booking.checkInTime || ''} · Check-out: ${fmtDate(booking.checkOut)} ${booking.checkOutTime || ''}`,
+            schedule: `Check-in ${booking.checkInTime || 'Time not set'} · Check-out ${fmtDate(booking.checkOut)}`,
           })),
         ].sort((left, right) => left.date.localeCompare(right.date) || left.time.localeCompare(right.time));
         upcomingArrivalRows.innerHTML = arrivals.length ? arrivals.map((arrival) => {
           return `<tr>
-            <td>${arrival.type}</td>
+            <td>${escapeHtml(fmtDate(arrival.date))}<span class="dashboard-booking-subtext">${escapeHtml(arrival.schedule)}</span></td>
             <td>${escapeHtml(arrival.customer)}</td>
-            <td><span class="appointment-primary">${escapeHtml(arrival.pets)}</span><span class="appointment-detail">${escapeHtml(arrival.detail)}</span></td>
-            <td>${escapeHtml(arrival.schedule)}</td>
+            <td><span class="dashboard-booking-type">${escapeHtml(arrival.type)}</span><span class="dashboard-booking-subtext">${escapeHtml(arrival.detail)}</span></td>
+            <td>${escapeHtml(arrival.pets)}</td>
+            <td class="dashboard-booking-amount">${fmtMoney(arrival.amount)}</td>
+            <td>${statusBadge(arrival.status)}</td>
+            <td><button class="btn btn-outline btn-sm" type="button" data-booking-id="${escapeHtml(arrival.id)}" data-booking-type="${escapeHtml(arrival.bookingType)}">View</button></td>
           </tr>`;
-        }).join('') : '<tr><td colspan="4" class="empty">No upcoming grooming appointments or pet hotel arrivals.</td></tr>';
+        }).join('') : '<tr><td colspan="7" class="empty">No upcoming grooming appointments or pet hotel arrivals.</td></tr>';
       }
+
+      upcomingArrivalRows.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-booking-id][data-booking-type]');
+        if (button) showBookingDetails(button.dataset.bookingType, button.dataset.bookingId);
+      });
 
       pendingGroomingRows.addEventListener('click', async (event) => {
         const button = event.target.closest('[data-confirm-grooming]');
@@ -279,7 +297,7 @@
       });
       document.getElementById('refresh-upcoming-arrivals').addEventListener('click', () => {
         loadUpcomingArrivals().catch((error) => {
-          upcomingArrivalRows.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(error.message)}</td></tr>`;
+          upcomingArrivalRows.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(error.message)}</td></tr>`;
         });
       });
 

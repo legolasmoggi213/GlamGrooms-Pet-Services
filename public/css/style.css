@@ -1256,8 +1256,31 @@ a:hover { color: var(--primary-dark); text-decoration: none; }
   white-space: nowrap;
 }
 .transaction-history-table {
-  min-width: 1000px;
-  table-layout: auto;
+  width: 100%;
+  min-width: 1180px;
+  table-layout: fixed;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.transaction-history-table th {
+  font-size: 0.7rem;
+  letter-spacing: 0.025em;
+  line-height: 1.35;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.transaction-history-table th:nth-child(1) { width: 9%; }
+.transaction-history-table th:nth-child(2) { width: 15%; }
+.transaction-history-table th:nth-child(3) { width: 21%; }
+.transaction-history-table th:nth-child(4) { width: 17%; }
+.transaction-history-table th:nth-child(5) { width: 11%; }
+.transaction-history-table th:nth-child(6) { width: 11%; }
+.transaction-history-table th:nth-child(7) { width: 9%; }
+.transaction-history-table th:nth-child(8) { width: 7%; }
+.transaction-history-table th,
+.transaction-history-table td {
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .appointments-table .status-badge.status-confirmed { background: #fff; color: #15803d; }
 .appointments-table .status-badge.status-cancelled { background: #fff; color: #dc2626; }

@@ -3,7 +3,11 @@ const { refundCheckoutSession } = require('./paymongo');
 const requestGcashBookingRefund = async (booking) => {
   if (booking.paymentMethod !== 'qrph' || booking.paymentStatus !== 'paid') return null;
   if (booking.paymentRefundStatus && booking.paymentRefundStatus !== 'failed') {
-    return { status: booking.paymentRefundStatus, reference: booking.paymentRefundReference || null };
+    return {
+      status: booking.paymentRefundStatus,
+      reference: booking.paymentRefundReference || null,
+      transferLink: booking.paymentRefundTransferLink || null,
+    };
   }
 
   try {
@@ -12,10 +16,11 @@ const requestGcashBookingRefund = async (booking) => {
     await booking.update({
       paymentRefundStatus: refund.status,
       paymentRefundReference: refund.id,
+      paymentRefundTransferLink: refund.transferLink || null,
       paymentRefundRequestedAt: new Date(),
       paymentRefundError: null,
     });
-    return { status: refund.status, reference: refund.id };
+    return { status: refund.status, reference: refund.id, transferLink: refund.transferLink || null };
   } catch (error) {
     try {
       await booking.update({ paymentRefundStatus: 'failed', paymentRefundError: error.message });

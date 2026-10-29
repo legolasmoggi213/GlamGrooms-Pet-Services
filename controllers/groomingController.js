@@ -368,15 +368,22 @@ const checkOutAppointment = async (req, res, next) => {
       return res.status(409).json({ error: 'Record payment before checking out this appointment.' });
     }
 
+    if (String(appointment.status || '').toLowerCase() !== 'completed') {
+      await appointment.update({ status: 'completed', checkedOutAt: new Date() });
+    }
+
     const [customer, pets] = await Promise.all([
       Customer.findByPk(appointment.customerId),
       Promise.all((appointment.petIds || (appointment.petId ? [appointment.petId] : [])).map((id) => Pet.findByPk(id))),
     ]);
     const recipient = customer?.email || appointment.customerDetails?.email;
-    if (!recipient) return res.status(400).json({ error: 'The customer record has no email address for the receipt.' });
-
-    if (appointment.status !== 'completed') {
-      await appointment.update({ status: 'completed', checkedOutAt: new Date() });
+    if (!recipient) {
+      return res.json({
+        success: true,
+        status: 'completed',
+        emailSent: false,
+        message: 'The appointment was checked out, but the customer has no email address for the receipt.',
+      });
     }
 
     try {
@@ -414,8 +421,8 @@ const sendAppointmentTicket = async (req, res, next) => {
   try {
     const appointment = await GroomingAppointment.findByPk(req.params.id);
     if (!appointment) return res.status(404).json({ error: 'Appointment not found' });
-    if (appointment.status !== 'confirmed' && !appointment.confirmedAt) {
-      return res.status(409).json({ error: 'Confirm the appointment before sending its ticket.' });
+    if (!['in-progress', 'completed'].includes(String(appointment.status || '').toLowerCase())) {
+      return res.status(409).json({ error: 'Check in the grooming appointment before sending its ticket.' });
     }
 
     const [customer, pets] = await Promise.all([
@@ -424,20 +431,33 @@ const sendAppointmentTicket = async (req, res, next) => {
     ]);
     if (!customer) return res.status(404).json({ error: 'The customer record for this appointment was not found.' });
 
-    try {
-      const emailSent = await sendReservationTicket({
-        bookingRecord: appointment,
-        type: 'grooming',
-        to: customer.email,
-        customer: appointment.customerDetails || customer,
-        pets: pets.filter(Boolean),
-      });
-      if (!emailSent) return res.status(503).json({ error: 'The ticket email was not sent. Check the email configuration or whether a ticket was already sent.' });
-    } catch (mailError) {
-      console.error('Grooming reservation ticket email failed:', mailError);
-      return res.status(502).json({ error: 'The appointment was confirmed, but the ticket email failed. Check the server email provider logs.' });
+    let alreadySent = Boolean(appointment.reservationTicketEmailSentAt);
+    if (!alreadySent) {
+      try {
+        const emailSent = await sendReservationTicket({
+          bookingRecord: appointment,
+          type: 'grooming',
+          to: customer.email,
+          customer: appointment.customerDetails || customer,
+          pets: pets.filter(Boolean),
+        });
+        if (!emailSent) {
+          const refreshedAppointment = await GroomingAppointment.findByPk(appointment.id);
+          if (refreshedAppointment?.reservationTicketEmailSentAt) {
+            alreadySent = true;
+          } else {
+            return res.status(409).json({ error: 'The ticket is already being sent. Please wait before trying again.' });
+          }
+        }
+      } catch (mailError) {
+        console.error('Grooming reservation ticket email failed:', mailError);
+        return res.status(502).json({ error: 'The ticket email failed. Check the server email provider logs.' });
+      }
     }
-    return res.json({ success: true, emailSent: true });
+    if (String(appointment.status || '').toLowerCase() !== 'completed') {
+      await appointment.update({ status: 'completed', checkedOutAt: new Date() });
+    }
+    return res.json({ success: true, emailSent: true, alreadySent });
   } catch (error) {
     next(error);
   }

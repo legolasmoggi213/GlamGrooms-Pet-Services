@@ -425,8 +425,8 @@ const sendReservationTicketEmail = async (req, res, next) => {
   try {
     const reservation = await HotelReservation.findByPk(req.params.id);
     if (!reservation) return res.status(404).json({ error: 'Reservation not found' });
-    if (reservation.status !== 'confirmed' && !reservation.confirmedAt) {
-      return res.status(409).json({ error: 'Confirm the reservation before sending its ticket.' });
+    if (!['checked-in', 'checked-out'].includes(String(reservation.status || '').toLowerCase())) {
+      return res.status(409).json({ error: 'Check in the pet hotel reservation before sending its ticket.' });
     }
 
     const [customer, pets] = await Promise.all([
@@ -435,20 +435,40 @@ const sendReservationTicketEmail = async (req, res, next) => {
     ]);
     if (!customer) return res.status(404).json({ error: 'The customer record for this reservation was not found.' });
 
-    try {
-      const emailSent = await sendReservationTicket({
-        bookingRecord: reservation,
-        type: 'hotel',
-        to: customer.email,
-        customer: reservation.customerDetails || customer,
-        pets: pets.filter(Boolean),
-      });
-      if (!emailSent) return res.status(503).json({ error: 'The ticket email was not sent. Check the email configuration or whether a ticket was already sent.' });
-    } catch (mailError) {
-      console.error('Hotel reservation ticket email failed:', mailError);
-      return res.status(502).json({ error: 'The reservation was confirmed, but the ticket email failed. Check the server email provider logs.' });
+    let alreadySent = Boolean(reservation.reservationTicketEmailSentAt);
+    if (!alreadySent) {
+      try {
+        const emailSent = await sendReservationTicket({
+          bookingRecord: reservation,
+          type: 'hotel',
+          to: customer.email,
+          customer: reservation.customerDetails || customer,
+          pets: pets.filter(Boolean),
+        });
+        if (!emailSent) {
+          const refreshedReservation = await HotelReservation.findByPk(reservation.id);
+          if (refreshedReservation?.reservationTicketEmailSentAt) {
+            alreadySent = true;
+          } else {
+            return res.status(409).json({ error: 'The ticket is already being sent. Please wait before trying again.' });
+          }
+        }
+      } catch (mailError) {
+        console.error('Hotel reservation ticket email failed:', mailError);
+        return res.status(502).json({ error: 'The ticket email failed. Check the server email provider logs.' });
+      }
     }
-    return res.json({ success: true, emailSent: true });
+    if (String(reservation.status || '').toLowerCase() !== 'checked-out') {
+      const lockIds = reservationLockIds(reservation);
+      await reservation.update({
+        status: 'checked-out',
+        checkedOutAt: new Date(),
+        capacityLockIds: [],
+        hotelSlotAssignments: {},
+      });
+      await releaseBookingSlotsByIds(lockIds);
+    }
+    return res.json({ success: true, emailSent: true, alreadySent });
   } catch (error) {
     next(error);
   }

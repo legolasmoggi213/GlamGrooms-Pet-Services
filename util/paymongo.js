@@ -1,15 +1,16 @@
 const PAYMONGO_API = 'https://api.paymongo.com/v1';
+const PAYMONGO_QRPH_REFUNDS_API = 'https://refunds-api.paymongo.com/v1';
 
 const getPayMongoKey = () => {
   const key = String(process.env.PAYMONGO_SECRET_KEY || '').trim();
   return /^sk_(test|live)_/.test(key) ? key : '';
 };
 
-const paymongoRequest = async (path, options = {}) => {
+const paymongoRequest = async (path, options = {}, baseUrl = PAYMONGO_API) => {
   const secretKey = getPayMongoKey();
   if (!secretKey) throw new Error('PayMongo is not configured. Add PAYMONGO_SECRET_KEY to .env.');
 
-  const response = await fetch(`${PAYMONGO_API}${path}`, {
+  const response = await fetch(`${baseUrl}${path}`, {
     ...options,
     headers: {
       Authorization: `Basic ${Buffer.from(`${secretKey}:`).toString('base64')}`,
@@ -107,13 +108,14 @@ const refundCheckoutSession = async (sessionId) => {
   const attributes = checkout.data?.attributes || {};
   const payment = await resolvePaidPayment(attributes);
   const refunds = Array.isArray(payment.refunds) ? payment.refunds : [];
-  const pendingRefund = refunds.find((refund) => ['pending', 'processing'].includes(
+  const pendingRefund = refunds.find((refund) => ['pending', 'processing', 'refunding'].includes(
     refund?.attributes?.status || refund?.status,
   ));
   if (pendingRefund) {
     return {
       id: pendingRefund.id || null,
       status: pendingRefund.attributes?.status || pendingRefund.status,
+      transferLink: pendingRefund.attributes?.transfer_link || pendingRefund.transfer_link || null,
     };
   }
   const refundedAmount = refunds.reduce((total, refund) => {
@@ -128,6 +130,7 @@ const refundCheckoutSession = async (sessionId) => {
     return {
       id: completedRefund.id || null,
       status: completedRefund.attributes?.status || completedRefund.status,
+      transferLink: completedRefund.attributes?.transfer_link || completedRefund.transfer_link || null,
     };
   }
   if (!Number.isInteger(amount) || amount < 100) {
@@ -146,10 +149,11 @@ const refundCheckoutSession = async (sessionId) => {
         },
       },
     }),
-  });
+  }, PAYMONGO_QRPH_REFUNDS_API);
   return {
     id: result.data?.id || null,
     status: result.data?.attributes?.status || 'pending',
+    transferLink: result.data?.attributes?.transfer_link || null,
   };
 };
 

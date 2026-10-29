@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Account — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=customer-transaction-history-20261029" />
+  <link rel="stylesheet" href="/css/style.css?v=customer-mobile-refund-link-20261029" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -317,6 +317,13 @@
       }
 
       if (item.paymentMethod === 'qrph') {
+        const refundTransferLink = item.paymentRefundTransferLink;
+        if (String(item.status || '').toLowerCase() === 'cancelled'
+          && refundTransferLink
+          && ['https://transfer.paymongo.com/', 'https://transfer.paymongo-stg.com/'].some((prefix) => refundTransferLink.startsWith(prefix))) {
+          actions.push('<p class="transaction-meta">Your GCash refund is ready. Open the secure PayMongo link to claim it; the link expires after 3 days.</p>');
+          actions.push(`<div class="profile-actions"><a class="btn btn-primary btn-sm" href="${escapeHtml(refundTransferLink)}" target="_blank" rel="noopener noreferrer">Claim GCash refund</a></div>`);
+        }
         if (bookingCanCancel(item, type)) {
           const refundRetry = String(item.status || '').toLowerCase() === 'cancelled';
           actions.push(refundRetry
@@ -354,7 +361,9 @@
           } else if (result.refund?.status === 'failed') {
             alert('The booking is cancelled, but PayMongo could not start the refund. Please contact the business to arrange it.');
           } else if (result.refund) {
-            alert('The booking was cancelled and the refund request was sent to PayMongo. Refund completion may take time.');
+            alert(result.refund.transferLink
+              ? 'The booking was cancelled and the refund is ready. Open the cancelled booking details and tap Claim GCash refund to choose where to receive the money.'
+              : 'The booking was cancelled and the refund request was sent to PayMongo. Refund completion may take time.');
           }
           if (result.notificationSent === false) {
             alert('Your booking was canceled, but staff could not be notified automatically. Please contact the team.');

@@ -141,19 +141,19 @@ router.delete('/pets/:id', adminOrStaff, petController.deletePet);
 router.get('/grooming', groomingController.listAppointments);
 router.get('/grooming/:id', groomingController.getAppointment);
 router.post('/grooming', groomingController.createAppointment);
-router.post('/grooming/:id/resend-ticket', groomingController.resendAppointmentTicket);
+router.post('/grooming/:id/resend-ticket', adminOrStaff, groomingController.resendAppointmentTicket);
 router.put('/grooming/:id', adminOrStaff, groomingController.updateAppointment);
 router.post('/grooming/:id/checkout', adminOrStaff, groomingController.checkOutAppointment);
-router.post('/grooming/:id/ticket', groomingController.sendAppointmentTicket);
+router.post('/grooming/:id/ticket', adminOrStaff, groomingController.sendAppointmentTicket);
 router.delete('/grooming/:id', adminOrStaff, groomingController.deleteAppointment);
 
 // Hotel reservations
 router.get('/hotel', hotelController.listReservations);
 router.get('/hotel/:id', hotelController.getReservation);
 router.post('/hotel', hotelController.createReservation);
-router.post('/hotel/:id/resend-ticket', hotelController.resendReservationTicket);
+router.post('/hotel/:id/resend-ticket', adminOrStaff, hotelController.resendReservationTicket);
 router.put('/hotel/:id', adminOrStaff, hotelController.updateReservation);
-router.post('/hotel/:id/ticket', hotelController.sendReservationTicketEmail);
+router.post('/hotel/:id/ticket', adminOrStaff, hotelController.sendReservationTicketEmail);
 router.delete('/hotel/:id', adminOrStaff, hotelController.deleteReservation);
 
 // Staff and admin inventory workflows; only admins review or delete records.

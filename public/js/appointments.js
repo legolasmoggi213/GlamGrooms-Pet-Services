@@ -69,18 +69,16 @@
 
   const manageActionsFor = (booking, type) => {
     const actions = [];
-    const ticketEligibleStatuses = type === 'grooming'
-      ? ['confirmed', 'in-progress', 'completed']
-      : ['confirmed', 'checked-in', 'checked-out'];
-    const ticketReady = booking.status !== 'cancelled'
-      && (Boolean(booking.confirmedAt) || ticketEligibleStatuses.includes(booking.status));
+    const bookingStatus = String(booking.status || '').toLowerCase();
+    const ticketReady = type === 'grooming'
+      ? ['in-progress', 'completed'].includes(bookingStatus)
+      : ['checked-in', 'checked-out'].includes(bookingStatus);
     const ticketSent = Boolean(booking.reservationTicketEmailSentAt);
-    const ticketAction = ticketSent || ['in-progress', 'completed', 'checked-in', 'checked-out'].includes(booking.status)
-      ? 'resend-ticket'
-      : 'send-ticket';
     if (type === 'grooming') {
       if (ticketReady) {
-        actions.push(actionButton(booking, type, ticketAction, 'Send Ticket', 'btn-success'));
+        actions.push(ticketSent
+          ? '<span class="appointment-payment-status">Ticket Sent</span>'
+          : actionButton(booking, type, 'send-ticket', 'Send Ticket', 'btn-success'));
       } else if (booking.status !== 'cancelled' && booking.status !== 'completed') {
         actions.push(actionButton(booking, type, 'confirm', 'Confirm', 'btn-success'));
       }
@@ -105,7 +103,9 @@
       }
     } else {
       if (ticketReady) {
-        actions.push(actionButton(booking, type, ticketAction, 'Send Ticket', 'btn-success'));
+        actions.push(ticketSent
+          ? '<span class="appointment-payment-status">Ticket Sent</span>'
+          : actionButton(booking, type, 'send-ticket', 'Send Ticket', 'btn-success'));
       } else if (booking.status !== 'cancelled' && booking.status !== 'checked-in' && booking.status !== 'checked-out') {
         actions.push(actionButton(booking, type, 'confirm', 'Confirm', 'btn-success'));
       }
@@ -560,22 +560,23 @@
       }
       return;
     }
-    if (action === 'confirm' || action === 'send-ticket' || action === 'resend-ticket') {
-      const sendingTicket = action !== 'confirm';
+    if (action === 'confirm' || action === 'send-ticket') {
+      const sendingTicket = action === 'send-ticket';
       button.disabled = true;
       button.textContent = sendingTicket ? 'Sending ticket…' : 'Confirming…';
       try {
         const result = sendingTicket
-          ? await apiPost(`/${type}/${encodeURIComponent(id)}/${action === 'resend-ticket' ? 'resend-ticket' : 'ticket'}`, {})
+          ? await apiPost(`/${type}/${encodeURIComponent(id)}/ticket`, {})
           : await apiPut(`/${type}/${encodeURIComponent(id)}`, { status: 'confirmed' });
         noteBookingActivity(type, id);
-        const refreshedBooking = await refreshManageBooking(type, id);
+        await refreshBooking(type, id);
         messageEl.className = result && sendingTicket && !result.emailSent ? 'text-error' : 'text-success';
         messageEl.textContent = result && sendingTicket && !result.emailSent
           ? 'The ticket email was not sent. Check the email configuration.'
-          : sendingTicket && terminalStatuses[type].has(String(refreshedBooking.status || '').toLowerCase())
-            ? `Reservation ticket sent. This ${refreshedBooking.paymentStatus === 'paid' ? 'paid' : 'unpaid'} ${type === 'grooming' ? 'completed' : 'checked-out'} booking is in Transaction History; payment status was not changed.`
-            : sendingTicket ? 'Reservation ticket sent.' : 'Booking confirmed. Use Send Ticket to email the customer.';
+          : sendingTicket
+            ? 'Ticket Sent.'
+            : 'Booking confirmed.';
+        if (sendingTicket) closeModal();
       } catch (error) {
         button.disabled = false;
         button.textContent = sendingTicket ? 'Send Ticket' : 'Confirm';
@@ -591,11 +592,14 @@
       try {
         const result = await apiPost(`/grooming/${encodeURIComponent(id)}/checkout`, {});
         noteBookingActivity(type, id);
-        await refreshManageBooking(type, id);
-        messageEl.className = result.emailSent ? 'text-success' : 'text-error';
-        messageEl.textContent = result.emailSent
-          ? checkingOut ? 'Grooming appointment checked out and receipt sent.' : 'Payment receipt sent.'
-          : (result.message || 'The appointment was checked out, but the receipt email was not sent. Retry from Manage.');
+        await refreshBooking(type, id);
+        closeModal();
+        messageEl.className = 'text-success';
+        messageEl.textContent = checkingOut
+          ? result.emailSent
+            ? 'Grooming appointment checked out and moved to Transaction History. Receipt sent.'
+            : 'Grooming appointment checked out and moved to Transaction History. The receipt email was not sent.'
+          : result.emailSent ? 'Payment receipt sent.' : (result.message || 'The payment receipt email was not sent.');
       } catch (error) {
         button.disabled = false;
         button.textContent = checkingOut ? 'Check Out' : 'Send Receipt';
@@ -610,7 +614,8 @@
       try {
         await apiPut(`/${type}/${encodeURIComponent(id)}`, { status });
         noteBookingActivity(type, id);
-        await refreshManageBooking(type, id);
+        await refreshBooking(type, id);
+        if (type === 'hotel' && status === 'checked-out') closeModal();
         messageEl.className = 'text-success';
         messageEl.textContent = type === 'grooming' ? 'Grooming appointment checked in.' : status === 'checked-in' ? 'Pet checked in.' : 'Pet checked out.';
       } catch (error) {

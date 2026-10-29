@@ -151,7 +151,7 @@
           <td>${statusBadge(a.status)}</td>
           <td class="grooming-actions-cell">
             <div class="grooming-actions">
-            ${a.status !== 'cancelled' && ((!a.confirmedAt && a.status !== 'completed') || (a.confirmedAt && !a.reservationTicketEmailSentAt)) ? `<button class="btn btn-success btn-sm" onclick="confirmAppt('${a.id}', this)">${a.confirmedAt ? 'Send Ticket' : 'Confirm'}</button>` : ''}
+            ${a.status !== 'cancelled' && (a.confirmedAt || ['confirmed', 'in-progress', 'completed'].includes(a.status)) ? `<button class="btn btn-success btn-sm" data-ticket-resend="${Boolean(a.reservationTicketEmailSentAt || ['in-progress', 'completed'].includes(a.status))}" onclick="confirmAppt('${a.id}', this)">Send Ticket</button>` : a.status !== 'cancelled' && a.status !== 'completed' ? `<button class="btn btn-success btn-sm" onclick="confirmAppt('${a.id}', this)">Confirm</button>` : ''}
             <button class="btn btn-outline btn-sm" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})'>View</button>
             ${a.status !== 'cancelled' && a.status !== 'completed' ? `<button class="btn btn-danger btn-sm" onclick='rejectAppt(${escapeHtml(JSON.stringify(a.id))}, ${escapeHtml(JSON.stringify(a.status))}, this)'>${a.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
             ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeAppt(${escapeHtml(JSON.stringify(a.id))})'>Delete</button>` : ''}
@@ -283,17 +283,18 @@
 
     window.confirmAppt = async (id, button) => {
       const actionLabel = button ? button.textContent : 'Confirm';
+      const sendingTicket = actionLabel === 'Send Ticket';
       if (button) {
         button.disabled = true;
-        button.textContent = actionLabel === 'Send Ticket' ? 'Sending ticket...' : 'Confirming...';
+        button.textContent = sendingTicket ? 'Sending ticket...' : 'Confirming...';
       }
       try {
-        const result = actionLabel === 'Send Ticket'
-          ? await apiPost(`/grooming/${id}/ticket`, {})
+        const result = sendingTicket
+          ? await apiPost(`/grooming/${id}/${button && button.dataset.ticketResend === 'true' ? 'resend-ticket' : 'ticket'}`, {})
           : await apiPut(`/grooming/${id}`, { status: 'confirmed' });
-        if (actionLabel === 'Send Ticket' && !result.emailSent) {
+        if (sendingTicket && !result.emailSent) {
           alert('The ticket email was not sent. Check the email configuration.');
-        } else if (actionLabel !== 'Send Ticket') {
+        } else if (!sendingTicket) {
           alert('Booking confirmed. Use Send Ticket to email the customer.');
         }
         await loadAppointments();

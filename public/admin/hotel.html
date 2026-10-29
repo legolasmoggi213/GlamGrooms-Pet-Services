@@ -77,7 +77,7 @@
           <td>${statusBadge(r.status)}</td>
           <td class="hotel-actions-cell">
             <div class="hotel-actions">
-            ${r.status !== 'cancelled' && ((!r.confirmedAt && r.status !== 'checked-in' && r.status !== 'checked-out') || (r.confirmedAt && !r.reservationTicketEmailSentAt)) ? `<button class="btn btn-success btn-sm" onclick="confirmRes('${r.id}', this)">${r.confirmedAt ? 'Send Ticket' : 'Confirm'}</button>` : ''}
+            ${r.status !== 'cancelled' && (r.confirmedAt || ['confirmed', 'checked-in', 'checked-out'].includes(r.status)) ? `<button class="btn btn-success btn-sm" data-ticket-resend="${Boolean(r.reservationTicketEmailSentAt || ['checked-in', 'checked-out'].includes(r.status))}" onclick="confirmRes('${r.id}', this)">Send Ticket</button>` : r.status !== 'cancelled' && r.status !== 'checked-in' && r.status !== 'checked-out' ? `<button class="btn btn-success btn-sm" onclick="confirmRes('${r.id}', this)">Confirm</button>` : ''}
             ${['reserved', 'confirmed'].includes(r.status) ? `<button class="btn btn-outline btn-sm" onclick='setResStatus(${escapeHtml(JSON.stringify(r.id))}, "checked-in", this)'>Check In</button>` : ''}
             ${r.status === 'checked-in' ? `<button class="btn btn-success btn-sm" onclick='setResStatus(${escapeHtml(JSON.stringify(r.id))}, "checked-out", this)'>Check Out</button>` : ''}
             <button class="btn btn-outline btn-sm" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})'>View</button>
@@ -138,17 +138,18 @@
 
     window.confirmRes = async (id, button) => {
       const actionLabel = button ? button.textContent : 'Confirm';
+      const sendingTicket = actionLabel === 'Send Ticket';
       if (button) {
         button.disabled = true;
-        button.textContent = actionLabel === 'Send Ticket' ? 'Sending ticket...' : 'Confirming...';
+        button.textContent = sendingTicket ? 'Sending ticket...' : 'Confirming...';
       }
       try {
-        const result = actionLabel === 'Send Ticket'
-          ? await apiPost(`/hotel/${id}/ticket`, {})
+        const result = sendingTicket
+          ? await apiPost(`/hotel/${id}/${button && button.dataset.ticketResend === 'true' ? 'resend-ticket' : 'ticket'}`, {})
           : await apiPut(`/hotel/${id}`, { status: 'confirmed' });
-        if (actionLabel === 'Send Ticket' && !result.emailSent) {
+        if (sendingTicket && !result.emailSent) {
           alert('The ticket email was not sent. Check the email configuration.');
-        } else if (actionLabel !== 'Send Ticket') {
+        } else if (!sendingTicket) {
           alert('Reservation confirmed. Use Send Ticket to email the customer.');
         }
         await loadReservations();

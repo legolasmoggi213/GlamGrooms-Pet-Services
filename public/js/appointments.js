@@ -69,11 +69,20 @@
 
   const manageActionsFor = (booking, type) => {
     const actions = [];
+    const ticketEligibleStatuses = type === 'grooming'
+      ? ['confirmed', 'in-progress', 'completed']
+      : ['confirmed', 'checked-in', 'checked-out'];
+    const ticketReady = booking.status !== 'cancelled'
+      && (Boolean(booking.confirmedAt) || ticketEligibleStatuses.includes(booking.status));
+    const ticketSent = Boolean(booking.reservationTicketEmailSentAt);
+    const ticketAction = ticketSent || ['in-progress', 'completed', 'checked-in', 'checked-out'].includes(booking.status)
+      ? 'resend-ticket'
+      : 'send-ticket';
     if (type === 'grooming') {
-      if (booking.status !== 'cancelled'
-        && ((!booking.confirmedAt && booking.status !== 'completed')
-          || (booking.confirmedAt && !booking.reservationTicketEmailSentAt))) {
-        actions.push(actionButton(booking, type, booking.confirmedAt ? 'send-ticket' : 'confirm', booking.confirmedAt ? 'Send Ticket' : 'Confirm', 'btn-success'));
+      if (ticketReady) {
+        actions.push(actionButton(booking, type, ticketAction, 'Send Ticket', 'btn-success'));
+      } else if (booking.status !== 'cancelled' && booking.status !== 'completed') {
+        actions.push(actionButton(booking, type, 'confirm', 'Confirm', 'btn-success'));
       }
       if (booking.status === 'confirmed') actions.push(actionButton(booking, type, 'check-in', 'Check In', 'btn-outline'));
       if (booking.status === 'in-progress' && booking.confirmedAt && booking.paymentMethod !== 'qrph') {
@@ -95,10 +104,10 @@
         actions.push(actionButton(booking, type, 'cancel', booking.status === 'pending' ? 'Reject' : 'Cancel', 'btn-danger'));
       }
     } else {
-      if (booking.status !== 'cancelled'
-        && ((!booking.confirmedAt && booking.status !== 'checked-in' && booking.status !== 'checked-out')
-          || (booking.confirmedAt && !booking.reservationTicketEmailSentAt))) {
-        actions.push(actionButton(booking, type, booking.confirmedAt ? 'send-ticket' : 'confirm', booking.confirmedAt ? 'Send Ticket' : 'Confirm', 'btn-success'));
+      if (ticketReady) {
+        actions.push(actionButton(booking, type, ticketAction, 'Send Ticket', 'btn-success'));
+      } else if (booking.status !== 'cancelled' && booking.status !== 'checked-in' && booking.status !== 'checked-out') {
+        actions.push(actionButton(booking, type, 'confirm', 'Confirm', 'btn-success'));
       }
       if (['reserved', 'confirmed'].includes(booking.status)) {
         actions.push(actionButton(booking, type, 'check-in', 'Check In', 'btn-outline'));
@@ -551,13 +560,13 @@
       }
       return;
     }
-    if (action === 'confirm' || action === 'send-ticket') {
-      const sendingTicket = action === 'send-ticket';
+    if (action === 'confirm' || action === 'send-ticket' || action === 'resend-ticket') {
+      const sendingTicket = action !== 'confirm';
       button.disabled = true;
       button.textContent = sendingTicket ? 'Sending ticket…' : 'Confirming…';
       try {
         const result = sendingTicket
-          ? await apiPost(`/${type}/${encodeURIComponent(id)}/ticket`, {})
+          ? await apiPost(`/${type}/${encodeURIComponent(id)}/${action === 'resend-ticket' ? 'resend-ticket' : 'ticket'}`, {})
           : await apiPut(`/${type}/${encodeURIComponent(id)}`, { status: 'confirmed' });
         noteBookingActivity(type, id);
         await refreshManageBooking(type, id);

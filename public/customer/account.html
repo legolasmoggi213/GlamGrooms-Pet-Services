@@ -780,7 +780,7 @@
           return ['cancelled', 'canceled', 'completed', 'checked-out'].includes(String(item.status || '').toLowerCase())
             || Boolean(endDate && endDate < businessToday);
         };
-        const recentTransactions = allTransactions.filter((item) => !isPreviousTransaction(item)).slice(0, 5);
+        const recentTransactions = allTransactions.filter((item) => !isPreviousTransaction(item));
         const previousTransactions = allTransactions.filter(isPreviousTransaction);
         const renderTransactionList = (transactions) => transactions.length
           ? `<ul class="transaction-list">${transactions.map(item => {
@@ -789,7 +789,7 @@
               return recentBookingCardMarkup(item, pets, p, statusClass, rescheduleRequests);
             }).join('')}</ul>`
           : '<div class="empty-state">No transactions to show.</div>';
-        const recentHtml = `<div class="recent-transactions-list"><h3>Recent Transactions</h3>${renderTransactionList(recentTransactions)}</div>
+        const recentHtml = `<div class="recent-transactions-list"><h3>Recent Transactions <span class="previous-transactions-count">${recentTransactions.length}</span></h3>${renderTransactionList(recentTransactions)}</div>
           <div class="transaction-history-list"><h3>Transaction History <span class="previous-transactions-count">${previousTransactions.length}</span></h3>
             <p class="transaction-meta">Completed services, checked-out stays, and all cancelled or previous bookings.</p>
             ${renderTransactionList(previousTransactions)}

@@ -1,11 +1,9 @@
-// Glam Grooms operating hours.
-// Friday-Saturday: 9 AM - 5 PM
-// Sunday:         6 AM - 5 PM
-// Monday-Thursday: 9 AM - 5 PM
+// Grooming appointments run daily from 9 AM to 5 PM.
 
-const OPEN_HOUR = 9;     // 09:00 default open
-const SUN_OPEN_HOUR = 6; // 06:00 Sunday open
-const CLOSE_HOUR = 17;   // 17:00 close (last valid booking start is 16:00)
+const OPEN_HOUR = 9;
+const SUN_OPEN_HOUR = 6;
+const CLOSE_HOUR = 17;
+const GROOMING_OPEN_HOUR = 9;
 
 const DAY_SUNDAY = 0;
 const DAY_FRIDAY = 5;
@@ -32,11 +30,10 @@ const isOpenAt = (date, hour) => {
   return h >= openHourFor(date) && h < CLOSE_HOUR;
 };
 
-// Returns a list of valid time-slot hours for a given date.
-const validHoursFor = (date) => {
-  const start = openHourFor(date);
+// Grooming availability is fixed daily; hotel hours continue to use openHourFor.
+const validHoursFor = () => {
   const hours = [];
-  for (let h = start; h < CLOSE_HOUR; h++) hours.push(h);
+  for (let h = GROOMING_OPEN_HOUR; h < CLOSE_HOUR; h++) hours.push(h);
   return hours;
 };
 
@@ -69,11 +66,15 @@ const validatePickupTime = (date, time) => {
 };
 
 const validateAppointmentDuration = (date, time, durationMinutes) => {
-  const timeCheck = validateTime(date, time);
-  if (!timeCheck.ok) return timeCheck;
+  if (!date || !time) return { ok: false, error: 'Date and time are required.' };
+  if (!isValidDateKey(date)) return { ok: false, error: 'A valid date is required.' };
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(time))) return { ok: false, error: 'Invalid time format.' };
+  const [hour, minute] = String(time).split(':').map(Number);
+  if (hour < GROOMING_OPEN_HOUR || hour >= CLOSE_HOUR) {
+    return { ok: false, error: `Grooming appointments are available daily from ${fmtHour(GROOMING_OPEN_HOUR)} to ${fmtHour(CLOSE_HOUR)}.` };
+  }
   const duration = Number(durationMinutes);
   if (!Number.isFinite(duration) || duration <= 0) return { ok: false, error: 'A valid service duration is required.' };
-  const [hour, minute] = String(time).split(':').map(Number);
   const endMinute = hour * 60 + minute + duration;
   if (endMinute > CLOSE_HOUR * 60) return { ok: false, error: 'The selected service would finish after closing time.' };
   return {
@@ -88,6 +89,7 @@ module.exports = {
   OPEN_HOUR,
   SUN_OPEN_HOUR,
   CLOSE_HOUR,
+  GROOMING_OPEN_HOUR,
   DAY_SUNDAY,
   DAY_FRIDAY,
   DAY_SATURDAY,

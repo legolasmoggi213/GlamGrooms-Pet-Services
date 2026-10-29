@@ -38,7 +38,9 @@
     renderSidebar('Grooming');
 
     const rowsEl = document.getElementById('rows');
-    const todayOnly = new URLSearchParams(location.search).get('filter') === 'today';
+    const arrivalFilter = new URLSearchParams(location.search).get('filter');
+    const todayOnly = arrivalFilter === 'today';
+    const upcomingOnly = arrivalFilter === 'upcoming';
     const today = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Manila',
       year: 'numeric',
@@ -57,22 +59,27 @@
       ? appointment.petServices.map((item) => `${escapeHtml(item.petName || 'Pet')}: ${escapeHtml(serviceLabel(item.service))}`).join('<br>')
       : escapeHtml(serviceLabel(appointment.service));
 
-    if (todayOnly) {
-      document.title = "Today's Active Arrivals — Glam Grooms Admin";
-      document.getElementById('grooming-page-title').textContent = "Today's Active Arrivals";
-      document.getElementById('grooming-page-subtitle').textContent = `Active grooming appointments and pet hotel check-ins for ${new Date(`${today}T12:00:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`;
+    if (todayOnly || upcomingOnly) {
+      const title = upcomingOnly ? 'Upcoming Arrivals' : "Today's Active Arrivals";
+      document.title = `${title} — Glam Grooms Admin`;
+      document.getElementById('grooming-page-title').textContent = title;
+      document.getElementById('grooming-page-subtitle').textContent = upcomingOnly
+        ? 'Upcoming grooming appointments and pet hotel check-ins.'
+        : `Active grooming appointments and pet hotel check-ins for ${new Date(`${today}T12:00:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`;
       document.getElementById('grooming-table-head').innerHTML = '<tr><th>Type</th><th>Customer</th><th>Pet &amp; Service / Room</th><th>Schedule</th></tr>';
     }
 
     async function loadAppointments() {
-      if (todayOnly) {
+      if (todayOnly || upcomingOnly) {
         const [appointments, reservations] = await Promise.all([apiGet('/grooming'), apiGet('/hotel')]);
+        const isArrivalInRange = (date) => upcomingOnly ? String(date || '') >= today : date === today;
         const petsFor = (booking) => Array.isArray(booking.petNames) && booking.petNames.length
           ? booking.petNames.join(', ')
           : (booking.Pets || (booking.Pet ? [booking.Pet] : [])).map((pet) => pet.name).filter(Boolean).join(', ') || '—';
         const arrivals = [
           ...appointments
-            .filter((appointment) => appointment.date === today && activeStatuses.has(String(appointment.status || '').toLowerCase()))
+            .filter((appointment) => isArrivalInRange(appointment.date)
+              && activeStatuses.has(String(appointment.status || '').toLowerCase()))
             .map((appointment) => ({
               type: 'Grooming',
               date: String(appointment.date || ''),
@@ -85,7 +92,7 @@
               schedule: `${fmtDate(appointment.date)} at ${appointment.time || 'Time not set'}${appointment.pickupTime ? ` · Pickup ${appointment.pickupTime}` : ''}`,
             })),
           ...reservations
-            .filter((reservation) => reservation.checkIn === today
+            .filter((reservation) => isArrivalInRange(reservation.checkIn)
               && ['pending', 'reserved', 'confirmed'].includes(String(reservation.status || '').toLowerCase()))
             .map((reservation) => ({
               type: 'Pet Hotel',
@@ -106,7 +113,9 @@
               <td><span class="appointment-primary">${escapeHtml(arrival.pets)}</span><span class="appointment-detail">${escapeHtml(arrival.detail)}</span></td>
               <td>${escapeHtml(arrival.schedule)}</td>
             </tr>`).join('')
-          : '<tr><td colspan="4" class="empty">No active grooming appointments or pet hotel check-ins today.</td></tr>';
+          : `<tr><td colspan="4" class="empty">${upcomingOnly
+            ? 'No upcoming grooming appointments or pet hotel check-ins.'
+            : 'No active grooming appointments or pet hotel check-ins today.'}</td></tr>`;
         return;
       }
 

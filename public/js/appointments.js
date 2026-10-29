@@ -10,6 +10,7 @@
     hotel: new Set(['checked-out']),
   };
   let isAdmin = false;
+  let canDeleteCancelledBookings = false;
   let bookings = [];
   let rescheduleRequests = [];
   const recentCustomerActivity = new Map();
@@ -113,7 +114,9 @@
       }
       if (canReschedule(booking, type)) actions.push(actionButton(booking, type, 'reschedule', 'Reschedule', 'btn-outline'));
     }
-    if (isAdmin) actions.push(actionButton(booking, type, 'delete', 'Delete', 'btn-danger'));
+    if (isAdmin || (canDeleteCancelledBookings && booking.status === 'cancelled')) {
+      actions.push(actionButton(booking, type, 'delete', 'Delete', 'btn-danger'));
+    }
     return actions;
   };
 
@@ -406,6 +409,7 @@
     if (!sessionResponse.ok) throw new Error(`Unable to verify your role (${sessionResponse.status}).`);
     const session = await sessionResponse.json();
     isAdmin = session.role === 'ADMIN';
+    canDeleteCancelledBookings = isAdmin || session.role === 'STAFF' || String(session.role || '').startsWith('STAFF:');
     rescheduleRequests = requests;
     bookings = [
       ...grooming.filter((booking) => isVisibleBooking('grooming', booking))
@@ -604,7 +608,7 @@
       }
       return;
     }
-    if (action !== 'delete' || !isAdmin) return;
+    if (action !== 'delete' || (!isAdmin && !(canDeleteCancelledBookings && record.booking.status === 'cancelled'))) return;
     const label = type === 'grooming' ? 'appointment' : 'reservation';
     if (!window.confirm(`Permanently delete this ${label}?`)) return;
     button.disabled = true;

@@ -121,7 +121,7 @@
     statsEl.innerHTML = [
       statCard("Today's Active Arrivals", groomingToday.length + todaysHotelArrivals.length, 'green', '/admin/grooming.html?filter=today'),
       statCard('Pending Grooming Arrivals', pendingGroomingToday.length, 'orange', '#staff-pending-grooming', 'staff-pending-grooming-count'),
-      statCard('Upcoming Arrivals', upcomingGrooming.length + upcomingHotelArrivals.length, 'orange'),
+      statCard('Upcoming Arrivals', upcomingGrooming.length + upcomingHotelArrivals.length, 'orange', '/admin/grooming.html?filter=upcoming'),
     ].join('');
 
     pendingGroomingRows.innerHTML = pendingGroomingToday.length

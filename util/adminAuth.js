@@ -36,6 +36,14 @@ function parseToken(token) {
   }
 }
 
+function getRequestRole(req) {
+  const cookie = (req.headers.cookie || '').split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith('admin_token='));
+  const token = cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : null;
+  return parseToken(token);
+}
+
 const isStaffRole = (role) => role === 'STAFF' || (typeof role === 'string' && role.startsWith('STAFF:'));
 
 const isActiveStaffRole = async (role) => {
@@ -48,4 +56,4 @@ const isActiveStaffRole = async (role) => {
   return Boolean(account && account.active === true);
 };
 
-module.exports = { createToken, parseToken, isStaffRole, isActiveStaffRole };
+module.exports = { createToken, parseToken, getRequestRole, isStaffRole, isActiveStaffRole };

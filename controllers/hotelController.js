@@ -1,4 +1,5 @@
 const { HotelReservation, Customer, Pet } = require('../models');
+const { getRequestRole } = require('../util/adminAuth');
 const { randomUUID } = require('crypto');
 const { sendReservationTicket, sendBookingCancellation } = require('../util/mailer');
 const { requestGcashBookingRefund } = require('../util/paymentRefund');
@@ -492,6 +493,9 @@ const deleteReservation = async (req, res, next) => {
     const reservation = await HotelReservation.findByPk(req.params.id);
     if (!reservation) {
       return res.status(404).json({ error: 'Reservation not found' });
+    }
+    if (getRequestRole(req) !== 'ADMIN' && reservation.status !== 'cancelled') {
+      return res.status(403).json({ error: 'Staff can only delete cancelled pet hotel reservations.' });
     }
     await reservation.destroy();
     await releaseBookingSlotsByIds(reservationLockIds(reservation));

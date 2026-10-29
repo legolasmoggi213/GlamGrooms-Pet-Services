@@ -45,7 +45,10 @@
             <h3 id="upcoming-arrivals-heading">Upcoming Arrivals</h3>
             <p class="text-muted">Upcoming grooming appointments and pet hotel check-ins.</p>
           </div>
-          <button type="button" class="btn btn-outline btn-sm" id="refresh-upcoming-arrivals">Refresh</button>
+          <div class="appointments-header-actions">
+            <a class="btn btn-outline btn-sm" href="/admin/grooming.html?filter=upcoming">View arrivals</a>
+            <button type="button" class="btn btn-outline btn-sm" id="refresh-upcoming-arrivals">Refresh</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table class="dashboard-booking-table">
@@ -184,7 +187,7 @@
           statCard('Pets', s.pets, 'purple', '/admin/pets.html') +
           statCard("Today's Active Arrivals", todaysActiveArrivalCount, 'green', '/admin/grooming.html?filter=today') +
           statCard('Pending Grooming Arrivals', s.grooming.pendingToday, 'orange', '#pending-grooming-arrivals') +
-          statCard('Upcoming Arrivals', upcomingArrivalCount, 'orange', '/admin/appointments.html') +
+          statCard('Upcoming Arrivals', upcomingArrivalCount, 'orange', '/admin/grooming.html?filter=upcoming') +
           statCard('Grooming Revenue', fmtMoney(s.grooming.revenue), 'green', '#revenue') +
           statCard('Hotel Revenue', fmtMoney(s.hotel.revenue), 'green', '#revenue') +
           statCard('Walk-in Cash Sales', fmtMoney(s.overTheCounterRevenue), 'green', '/admin/pos.html') +

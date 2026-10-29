@@ -5,7 +5,7 @@ const groomingController = require('../controllers/groomingController');
 const hotelController = require('../controllers/hotelController');
 const bookingController = require('../controllers/bookingController');
 const adminController = require('../controllers/adminController');
-const { parseToken, isStaffRole, isActiveStaffRole } = require('../util/adminAuth');
+const { parseToken, getRequestRole, isStaffRole, isActiveStaffRole } = require('../util/adminAuth');
 const staffController = require('../controllers/staffController');
 const inventoryController = require('../controllers/inventoryController');
 const operationsController = require('../controllers/operationsController');
@@ -66,11 +66,7 @@ const getServices = async (req, res, next) => {
 };
 
 const getRequestUser = (req) => {
-	const cookie = (req.headers.cookie || '').split(';')
-		.map((part) => part.trim())
-		.find((part) => part.startsWith('admin_token='));
-	const token = cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : null;
-  return parseToken(token);
+  return getRequestRole(req);
 };
 
 const adminOnly = (req, res, next) => {
@@ -149,7 +145,7 @@ router.post('/grooming/:id/resend-ticket', groomingController.resendAppointmentT
 router.put('/grooming/:id', adminOrStaff, groomingController.updateAppointment);
 router.post('/grooming/:id/checkout', adminOrStaff, groomingController.checkOutAppointment);
 router.post('/grooming/:id/ticket', groomingController.sendAppointmentTicket);
-router.delete('/grooming/:id', adminOnly, groomingController.deleteAppointment);
+router.delete('/grooming/:id', adminOrStaff, groomingController.deleteAppointment);
 
 // Hotel reservations
 router.get('/hotel', hotelController.listReservations);
@@ -158,7 +154,7 @@ router.post('/hotel', hotelController.createReservation);
 router.post('/hotel/:id/resend-ticket', hotelController.resendReservationTicket);
 router.put('/hotel/:id', adminOrStaff, hotelController.updateReservation);
 router.post('/hotel/:id/ticket', hotelController.sendReservationTicketEmail);
-router.delete('/hotel/:id', adminOnly, hotelController.deleteReservation);
+router.delete('/hotel/:id', adminOrStaff, hotelController.deleteReservation);
 
 // Staff and admin inventory workflows; only admins review or delete records.
 router.get('/inventory/items', inventoryController.listInventoryItems);

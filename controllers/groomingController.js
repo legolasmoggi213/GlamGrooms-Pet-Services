@@ -1,4 +1,5 @@
 const { GroomingAppointment, Customer, Pet } = require('../models');
+const { getRequestRole } = require('../util/adminAuth');
 const { sendReservationTicket, sendPaymentReceipt, sendBookingCancellation } = require('../util/mailer');
 const { requestGcashBookingRefund } = require('../util/paymentRefund');
 const {
@@ -433,6 +434,9 @@ const deleteAppointment = async (req, res, next) => {
     const appointment = await GroomingAppointment.findByPk(req.params.id);
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
+    }
+    if (getRequestRole(req) !== 'ADMIN' && appointment.status !== 'cancelled') {
+      return res.status(403).json({ error: 'Staff can only delete cancelled grooming appointments.' });
     }
     await appointment.destroy();
     await releaseGroomingBookingSlots(appointment.date, appointment.time, groomingRecordDuration(appointment), appointment.groomingSlotNumber);

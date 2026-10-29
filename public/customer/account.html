@@ -62,8 +62,8 @@
       <a class="customer-account-brand" href="/customer/account.html" aria-label="Customer dashboard"><img src="/favicon-48x48.png" alt="" width="48" height="48" /></a>
       <nav class="customer-account-nav" aria-label="Customer account">
         <a class="active" href="#dashboard" aria-current="page">Dashboard</a>
-        <a href="#grooming-section">Grooming</a>
-        <a href="#hotel-section">Pet Hotel</a>
+        <a href="#grooming-section">Active Grooming</a>
+        <a href="#hotel-section">Active Pet Hotel</a>
         <a href="#transactions-section">Transactions</a>
         <a href="#pets-section">Pets</a>
         <a href="#profile-section">Profile</a>
@@ -84,8 +84,8 @@
           </div>
           <div class="customer-summary-grid" aria-label="Account summary">
             <a class="customer-summary-item" href="#pets-section"><span>Pets</span><strong id="summary-pets">—</strong></a>
-            <a class="customer-summary-item" href="#grooming-section"><span>Grooming</span><strong id="summary-grooming">—</strong></a>
-            <a class="customer-summary-item" href="#hotel-section"><span>Pet hotel</span><strong id="summary-hotel">—</strong></a>
+            <a class="customer-summary-item" href="#grooming-section"><span>Active Grooming</span><strong id="summary-grooming">—</strong></a>
+            <a class="customer-summary-item" href="#hotel-section"><span>Active Pet Hotel</span><strong id="summary-hotel">—</strong></a>
             <a class="customer-summary-item" href="#transactions-section"><span>Transactions</span><strong id="summary-transactions">—</strong></a>
           </div>
         </section>
@@ -96,12 +96,12 @@
         </section>
 
         <section id="grooming-section" class="customer-account-section">
-          <h2>Grooming</h2>
+          <h2>Active Grooming</h2>
           <div id="grooming-bookings">Loading grooming appointments…</div>
         </section>
 
         <section id="hotel-section" class="customer-account-section">
-          <h2>Pet Hotel</h2>
+          <h2>Active Pet Hotel</h2>
           <div id="hotel-bookings">Loading pet hotel stays…</div>
         </section>
 
@@ -397,6 +397,20 @@
         const p = data.customer || {};
         const groomingBookings = data.grooming || [];
         const hotelBookings = data.hotel || [];
+        const businessToday = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date());
+        const activeGroomingBookings = groomingBookings.filter((item) => (
+          ['pending', 'scheduled', 'confirmed', 'in-progress'].includes(String(item.status || '').toLowerCase())
+          && String(item.date || '') >= businessToday
+        ));
+        const activeHotelBookings = hotelBookings.filter((item) => (
+          ['pending', 'reserved', 'confirmed', 'checked-in'].includes(String(item.status || '').toLowerCase())
+          && String(item.checkOut || '') >= businessToday
+        ));
         document.getElementById('customer-greeting').textContent = p.name ? `Welcome back, ${p.name}` : 'My Dashboard';
 
         document.getElementById('profile').innerHTML = `
@@ -537,8 +551,8 @@
 
         const pets = (data.pets || []);
         document.getElementById('summary-pets').textContent = String(pets.length);
-        document.getElementById('summary-grooming').textContent = String(groomingBookings.length);
-        document.getElementById('summary-hotel').textContent = String(hotelBookings.length);
+        document.getElementById('summary-grooming').textContent = String(activeGroomingBookings.length);
+        document.getElementById('summary-hotel').textContent = String(activeHotelBookings.length);
         document.getElementById('summary-transactions').textContent = String(groomingBookings.length + hotelBookings.length);
         document.getElementById('pets').innerHTML = pets.length
           ? `<ul class="pet-list">${pets.map(pt => `
@@ -630,7 +644,7 @@
           });
         });
 
-        const grooming = groomingBookings.map(item => {
+        const grooming = activeGroomingBookings.map(item => {
           const statusClass = item.status === 'completed' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
           const serviceSummary = Array.isArray(item.petServices) && item.petServices.length
             ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ')
@@ -647,9 +661,9 @@
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
           `;
-        }).join('') || '<div class="empty-state">No grooming appointments yet.</div>';
+        }).join('') || '<div class="empty-state">No active grooming appointments.</div>';
 
-        const hotel = hotelBookings.map(item => {
+        const hotel = activeHotelBookings.map(item => {
           const statusClass = item.status === 'checked-out' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
           const roomSummary = Array.isArray(item.petRooms) && item.petRooms.length
             ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ')
@@ -666,14 +680,8 @@
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
           `;
-        }).join('') || '<div class="empty-state">No hotel reservations yet.</div>';
+        }).join('') || '<div class="empty-state">No active pet hotel reservations.</div>';
 
-        const businessToday = new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'Asia/Manila',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        }).format(new Date());
         const allTransactions = [
           ...groomingBookings.map(item => ({ type: 'Grooming', bookingType: 'grooming', booking: item, date: item.date, createdAt: item.createdAt, label: Array.isArray(item.petServices) && item.petServices.length ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ') : (item.service || 'Grooming'), details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),
           ...hotelBookings.map(item => ({ type: 'Hotel', bookingType: 'hotel', booking: item, date: item.checkIn, createdAt: item.createdAt, label: Array.isArray(item.petRooms) && item.petRooms.length ? item.petRooms.map(petRoom => `${petRoom.petName || 'Pet'}: ${String(petRoom.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join(' · ') : `${item.roomType || 'Room'} stay`, details: `${formatDate(item.checkIn)} at ${item.checkInTime || 'Time TBA'} → ${formatDate(item.checkOut)} at ${item.checkOutTime || 'Time TBA'} • ${formatMoney(item.totalPrice)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),

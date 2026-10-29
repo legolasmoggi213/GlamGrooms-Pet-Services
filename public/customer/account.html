@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Account — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=customer-refund-status-refresh-20261029" />
+  <link rel="stylesheet" href="/css/style.css?v=customer-refund-help-history-20261029" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -272,7 +272,7 @@
 
     const bookingCanCancel = (item, type) => {
       const status = String(item.status || '').toLowerCase();
-      if (status === 'cancelled') {
+      if (['cancelled', 'canceled'].includes(status)) {
         return item.paymentMethod === 'qrph'
           && item.paymentStatus === 'paid'
           && item.paymentRefundStatus === 'failed';
@@ -317,7 +317,7 @@
       };
 
       if (item.paymentMethod === 'qrph') {
-        if (String(item.status || '').toLowerCase() !== 'cancelled' && bookingCanCancel(item, type)) {
+        if (!['cancelled', 'canceled'].includes(String(item.status || '').toLowerCase()) && bookingCanCancel(item, type)) {
           actions.push('<p class="transaction-meta">GCash bookings can be cancelled but not rescheduled. Refunds are subject to PayMongo processing.</p>');
           actions.push(`<div class="profile-actions"><button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}" data-cancel-paid-online="${item.paymentStatus === 'paid'}">Cancel booking</button></div>`);
         }
@@ -330,6 +330,32 @@
     };
 
     document.querySelector('.customer-account-content').addEventListener('click', async (event) => {
+      const refundIssueButton = event.target.closest('[data-refund-issue]');
+      if (refundIssueButton) {
+        const { refundIssueType: type, refundIssueId: id } = refundIssueButton.dataset;
+        if (!window.confirm('Tell staff that the PayMongo refund transfer could not be sent? They will arrange a replacement through PayMongo.')) return;
+        refundIssueButton.disabled = true;
+        try {
+          const response = await fetch(`/api/v1/bookings/customer/${type}/${encodeURIComponent(id)}/refund-claim-issue`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || 'Unable to notify staff about the failed refund transfer.');
+          await loadProfile();
+          const toast = document.getElementById('toast');
+          toast.textContent = result.alreadyReported
+            ? 'Staff have already been notified about this refund transfer.'
+            : 'Staff have been notified and will arrange a replacement refund transfer.';
+          toast.classList.add('show');
+          setTimeout(() => toast.classList.remove('show'), 3500);
+        } catch (error) {
+          alert(error.message);
+          refundIssueButton.disabled = false;
+        }
+        return;
+      }
+
       const cancelButton = event.target.closest('[data-cancel-type]');
       if (cancelButton) {
         const { cancelType: type, cancelId: id } = cancelButton.dataset;
@@ -355,7 +381,7 @@
           if (result.paid && !result.deleted && result.status !== 'cancelled') {
             alert('The GCash payment completed before cancellation. The booking is still active; select Cancel booking again to request cancellation and refund.');
           } else if (isRefundRefresh && result.refund?.transferLink === previousClaimLink) {
-            alert('PayMongo still marks this transfer as processing, so it has not issued a replacement link yet. Check again after PayMongo marks the transfer as failed, or contact the business for help.');
+            alert('PayMongo still marks this transfer as processing. No second refund was created to avoid duplicate payment. If the link says it could not be sent, use “Report failed link” so staff can arrange a replacement.');
           } else if (isRefundRefresh && result.refund?.transferLink) {
             alert('PayMongo issued a new refund claim link. Use the updated button on this booking.');
           } else if (result.refund?.status === 'failed') {
@@ -751,20 +777,21 @@
         ].sort((a, b) => (bookingCreatedAt(b.booking) || 0) - (bookingCreatedAt(a.booking) || 0));
         const isPreviousTransaction = (item) => {
           const endDate = item.bookingType === 'hotel' ? item.booking.checkOut : item.booking.date;
-          return ['cancelled', 'completed', 'checked-out'].includes(String(item.status || '').toLowerCase())
+          return ['cancelled', 'canceled', 'completed', 'checked-out'].includes(String(item.status || '').toLowerCase())
             || Boolean(endDate && endDate < businessToday);
         };
         const recentTransactions = allTransactions.filter((item) => !isPreviousTransaction(item)).slice(0, 5);
         const previousTransactions = allTransactions.filter(isPreviousTransaction);
         const renderTransactionList = (transactions) => transactions.length
           ? `<ul class="transaction-list">${transactions.map(item => {
-              const statusClass = ['completed', 'checked-out'].includes(item.status) ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
+              const normalizedStatus = String(item.status || '').toLowerCase();
+              const statusClass = ['completed', 'checked-out'].includes(normalizedStatus) ? 'success' : ['cancelled', 'canceled'].includes(normalizedStatus) ? 'danger' : normalizedStatus === 'confirmed' ? 'confirmed' : 'secondary';
               return recentBookingCardMarkup(item, pets, p, statusClass, rescheduleRequests);
             }).join('')}</ul>`
           : '<div class="empty-state">No transactions to show.</div>';
         const recentHtml = `<div class="recent-transactions-list"><h3>Recent Transactions</h3>${renderTransactionList(recentTransactions)}</div>
           <div class="transaction-history-list"><h3>Transaction History <span class="previous-transactions-count">${previousTransactions.length}</span></h3>
-            <p class="transaction-meta">Completed services, checked-out stays, and previous bookings.</p>
+            <p class="transaction-meta">Completed services, checked-out stays, and all cancelled or previous bookings.</p>
             ${renderTransactionList(previousTransactions)}
           </div>`;
 
@@ -840,10 +867,11 @@
         : (booking.paymentStatus === 'paid' ? 'Cash paid' : 'Cash due at counter');
       const refundTransferLink = booking.paymentRefundTransferLink;
       const refundStatus = String(booking.paymentRefundStatus || '').toLowerCase();
-      const isCancelledPaidGcash = String(booking.status || '').toLowerCase() === 'cancelled'
+      const isCancelledPaidGcash = ['cancelled', 'canceled'].includes(String(booking.status || '').toLowerCase())
         && booking.paymentMethod === 'qrph'
         && booking.paymentStatus === 'paid';
-      const canClaimRefund = String(booking.status || '').toLowerCase() === 'cancelled'
+      const refundClaimIssueOpen = booking.paymentRefundClaimIssueStatus === 'open';
+      const canClaimRefund = ['cancelled', 'canceled'].includes(String(booking.status || '').toLowerCase())
         && booking.paymentMethod === 'qrph'
         && !['failed', 'succeeded', 'refunded'].includes(refundStatus)
         && typeof refundTransferLink === 'string'
@@ -865,6 +893,13 @@
             </div>
           </div>`
         : '';
+      const refundIssueMarkup = isCancelledPaidGcash
+        && booking.paymentRefundReference
+        && !['succeeded', 'refunded'].includes(refundStatus)
+        ? refundClaimIssueOpen
+          ? '<p class="refund-issue-reported" role="status">Staff have been notified. They will arrange a replacement PayMongo transfer.</p>'
+          : `<button class="btn btn-outline btn-sm refund-issue-button" type="button" data-refund-issue data-refund-issue-type="${item.bookingType}" data-refund-issue-id="${escapeHtml(booking.id)}">Report failed link</button>`
+        : '';
       const bookedAt = bookingCreatedAt(booking);
       const detailRows = [
         ['Booking reference', booking.id],
@@ -884,6 +919,7 @@
 
       return `<li class="recent-booking-card" data-booking-id="${escapeHtml(booking.id)}" data-booking-type="${item.bookingType}">
         ${refundClaimMarkup}
+        ${refundIssueMarkup}
         <details class="recent-booking-expand">
           <summary class="recent-booking-summary">
             <span class="recent-booking-heading"><strong>${escapeHtml(item.type)}: ${escapeHtml(item.label)}</strong><span class="transaction-meta">${escapeHtml(item.details)} • ${escapeHtml(item.pets)}</span></span>

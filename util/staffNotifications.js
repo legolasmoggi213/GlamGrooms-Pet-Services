@@ -51,6 +51,28 @@ const notifyStaffOfCancellation = async ({ type, booking, customer, pets }) => {
   }
 };
 
+const notifyStaffOfRefundClaimIssue = async ({ type, booking, customer, pets }) => {
+  try {
+    await StaffNotification.create({
+      type: 'refund_claim_failed',
+      bookingType: type,
+      bookingId: String(booking.id),
+      customerName: customer?.name || booking.customerDetails?.name || 'Customer',
+      petNames: (pets || []).map((pet) => pet.name).filter(Boolean),
+      schedule: type === 'hotel'
+        ? `${booking.checkIn || ''} ${booking.checkInTime || ''} – ${booking.checkOut || ''} ${booking.checkOutTime || ''}`.trim()
+        : `${booking.date || ''} ${booking.time || ''}`.trim(),
+      status: 'action-required',
+      read: false,
+      createdAt: new Date(),
+    });
+    return true;
+  } catch (error) {
+    console.error(`Unable to notify staff about failed refund claim for ${type} booking ${booking.id}:`, error);
+    return false;
+  }
+};
+
 const notifyStaffOfReschedule = async ({ type, booking, customer, pets, previousSchedule }) => {
   try {
     await StaffNotification.create({
@@ -74,4 +96,9 @@ const notifyStaffOfReschedule = async ({ type, booking, customer, pets, previous
   }
 };
 
-module.exports = { notifyStaffOfBooking, notifyStaffOfCancellation, notifyStaffOfReschedule };
+module.exports = {
+  notifyStaffOfBooking,
+  notifyStaffOfCancellation,
+  notifyStaffOfRefundClaimIssue,
+  notifyStaffOfReschedule,
+};

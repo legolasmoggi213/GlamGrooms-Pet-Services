@@ -2359,6 +2359,12 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
 .refund-claim-banner--failed strong { color: #8d3026; }
 .refund-claim-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 0.5rem; }
 .refund-claim-banner .btn { flex: 0 0 auto; }
+.refund-issue-button { margin: 0.65rem 1rem 0.9rem; }
+.refund-issue-reported { margin: 0.65rem 1rem 0.9rem; color: #27634b; font-size: 0.86rem; }
+.refund-admin-replacement { display: grid; gap: 0.6rem; width: min(100%, 34rem); margin-top: 0.85rem; }
+.refund-admin-replacement label { display: grid; gap: 0.25rem; font-size: 0.82rem; font-weight: 700; }
+.refund-admin-replacement input { width: 100%; min-width: 0; padding: 0.55rem 0.65rem; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+.refund-admin-replacement button { justify-self: start; }
 .recent-booking-expand { width: 100%; }
 .recent-booking-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; cursor: pointer; list-style: none; }
 .recent-booking-summary::-webkit-details-marker { display: none; }

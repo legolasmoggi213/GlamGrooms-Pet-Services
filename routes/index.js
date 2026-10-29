@@ -119,7 +119,8 @@ const staffReadableAdminPaths = new Set([
 
 router.use('/admin', (req, res, next) => {
   const isRescheduleDecision = req.method === 'POST' && /^\/reschedule-requests\/[^/]+\/decision$/.test(req.path);
-  if ((req.method === 'GET' && staffReadableAdminPaths.has(req.path)) || isRescheduleDecision) return staffOrAdmin(req, res, next);
+  const isRefundTransferUpdate = req.method === 'PUT' && /^\/refunds\/(grooming|hotel)\/[^/]+\/transfer-link$/.test(req.path);
+  if ((req.method === 'GET' && staffReadableAdminPaths.has(req.path)) || isRescheduleDecision || isRefundTransferUpdate) return staffOrAdmin(req, res, next);
 	return adminOnly(req, res, next);
 });
 
@@ -190,6 +191,7 @@ router.put('/bookings/customer/:bookingType/:id', bookingController.updateCustom
 router.post('/bookings/customer/:bookingType/:id/reschedule-request', bookingController.requestCustomerBookingReschedule);
 router.get('/bookings/customer/reschedule-requests', bookingController.listCustomerRescheduleRequests);
 router.post('/bookings/customer/:bookingType/:id/cancel', bookingController.cancelCustomerBooking);
+router.post('/bookings/customer/:bookingType/:id/refund-claim-issue', bookingController.reportCustomerRefundClaimIssue);
 router.get('/bookings/grooming/availability', bookingController.getGroomingAvailability);
 router.get('/bookings/hotel/availability', bookingController.getHotelAvailability);
 router.get('/services', getServices);
@@ -203,6 +205,7 @@ router.get('/admin/revenue-analytics', adminController.getRevenueAnalytics);
 router.get('/admin/reports', adminController.getOperationalReport);
 router.get('/admin/reschedule-requests', adminOrStaff, bookingController.listPendingRescheduleRequests);
 router.post('/admin/reschedule-requests/:id/decision', adminOrStaff, bookingController.decideCustomerRescheduleRequest);
+router.put('/admin/refunds/:bookingType/:id/transfer-link', adminOrStaff, bookingController.replaceGcashRefundTransferLink);
 router.get('/admin/pos-sales', adminController.getWalkInSalesAnalytics);
 router.get('/admin/cash-transactions', adminController.listCashTransactions);
 router.post('/admin/cash-transactions', adminController.createCashTransaction);

@@ -104,6 +104,25 @@ const resolvePaidPayment = async (checkoutAttributes) => {
   };
 };
 
+const verifyQrPhRefundForCheckoutSession = async (sessionId, refundId, transferLink) => {
+  const checkout = await getCheckoutSession(sessionId);
+  const payment = await resolvePaidPayment(checkout.data?.attributes || {});
+  const response = await getRefund(refundId);
+  const refund = response.data || {};
+  const attributes = refund.attributes || {};
+  const status = attributes.status || '';
+  if (attributes.payment_id !== payment.id
+    || !['pending', 'processing', 'refunding'].includes(status)
+    || attributes.transfer_link !== transferLink) {
+    return null;
+  }
+  return {
+    id: refund.id,
+    status,
+    transferLink: attributes.transfer_link,
+  };
+};
+
 const refundCheckoutSession = async (sessionId, existingRefundId = null) => {
   const checkout = await getCheckoutSession(sessionId);
   const attributes = checkout.data?.attributes || {};
@@ -180,6 +199,7 @@ module.exports = {
   getCheckoutSession,
   expireCheckoutSession,
   getRefund,
+  verifyQrPhRefundForCheckoutSession,
   refundCheckoutSession,
   getPayMongoKey,
   isCheckoutSessionPaid,

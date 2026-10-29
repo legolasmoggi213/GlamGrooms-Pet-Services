@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Booking Notifications — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=responsive-global-20261028b" />
+  <link rel="stylesheet" href="/css/style.css?v=refund-claim-support-workflow-20261029" />
 </head>
 <body>
   <div class="admin-layout">
@@ -32,9 +32,16 @@
       list.innerHTML = notifications.length ? `<ul class="transaction-list">${notifications.map((notice) => `
         <li>
           <div>
-            <strong>${notice.read ? '' : 'New · '}${notice.type === 'booking_cancelled' ? 'Booking canceled' : notice.type === 'booking_rescheduled' ? 'Booking rescheduled' : notice.type === 'booking_reschedule_request' ? 'Reschedule request' : 'New booking'} · ${escape(notice.bookingType)} #${escape(notice.bookingId)}</strong>
+            <strong>${notice.read ? '' : 'New · '}${notice.type === 'refund_claim_failed' ? 'Refund transfer failed' : notice.type === 'booking_cancelled' ? 'Booking canceled' : notice.type === 'booking_rescheduled' ? 'Booking rescheduled' : notice.type === 'booking_reschedule_request' ? 'Reschedule request' : 'New booking'} · ${escape(notice.bookingType)} #${escape(notice.bookingId)}</strong>
             <div class="transaction-meta">${escape(notice.customerName)} · ${escape(notice.petNames.join(', ') || 'No pet listed')} · ${escape(notice.schedule)}</div>
-            <div class="transaction-meta">${notice.type === 'booking_cancelled' ? 'Customer canceled this booking' : ['booking_rescheduled', 'booking_reschedule_request'].includes(notice.type) ? `Previous schedule: ${escape(notice.previousSchedule)}` : `Status: ${escape(notice.status)}`} · ${escape(fmtDateTime(notice.createdAt))}</div>
+            <div class="transaction-meta">${notice.type === 'refund_claim_failed' ? notice.status === 'resolved' ? 'Replacement PayMongo refund link saved to the customer booking.' : 'Customer could not receive the refund transfer. Create a replacement refund in PayMongo, then save its refund ID and transfer link below.' : notice.type === 'booking_cancelled' ? 'Customer canceled this booking' : ['booking_rescheduled', 'booking_reschedule_request'].includes(notice.type) ? `Previous schedule: ${escape(notice.previousSchedule)}` : `Status: ${escape(notice.status)}`} · ${escape(fmtDateTime(notice.createdAt))}</div>
+            ${notice.type === 'refund_claim_failed' && notice.status !== 'resolved' ? `<div class="refund-admin-replacement" data-notification-id="${escape(notice.id)}" data-refund-booking-type="${escape(notice.bookingType)}" data-refund-booking-id="${escape(notice.bookingId)}">
+              <p class="transaction-meta">Only create another refund after confirming the old one failed; otherwise the customer could be refunded twice. If PayMongo still says processing, contact PayMongo support before retrying.</p>
+              <label>New PayMongo refund ID<input name="refundReference" required pattern="ref_[A-Za-z0-9]+" placeholder="ref_..." /></label>
+              <label>New PayMongo transfer link<input name="transferLink" type="url" required placeholder="https://transfer.paymongo.com/..." /></label>
+              <button class="btn btn-primary btn-sm" type="button" data-save-refund>Save replacement link</button>
+              <span class="transaction-meta" data-refund-save-status role="status" aria-live="polite"></span>
+            </div>` : ''}
           </div>
           ${notice.read ? '' : `<button class="btn btn-outline btn-sm" data-mark-read="${escape(notice.id)}">Mark read</button>`}
         </li>`).join('')}</ul>` : '<div class="empty">No booking notifications yet.</div>';
@@ -44,6 +51,31 @@
       loadNotifications().catch((error) => { list.textContent = error.message; });
     });
     list.addEventListener('click', async (event) => {
+      const saveRefundButton = event.target.closest('[data-save-refund]');
+      if (saveRefundButton) {
+        const form = saveRefundButton.closest('.refund-admin-replacement');
+        const status = form.querySelector('[data-refund-save-status]');
+        const refundReference = form.querySelector('[name="refundReference"]').value.trim();
+        const transferLink = form.querySelector('[name="transferLink"]').value.trim();
+        if (!form.querySelector('[name="refundReference"]').reportValidity()
+          || !form.querySelector('[name="transferLink"]').reportValidity()) return;
+        saveRefundButton.disabled = true;
+        status.textContent = 'Saving replacement link…';
+        try {
+          await apiPut(`/admin/refunds/${encodeURIComponent(form.dataset.refundBookingType)}/${encodeURIComponent(form.dataset.refundBookingId)}/transfer-link`, {
+            refundReference,
+            transferLink,
+          });
+          await apiPut(`/notifications/${encodeURIComponent(form.dataset.notificationId)}/read`, {});
+          status.textContent = 'Replacement link saved to the customer booking.';
+          await loadNotifications();
+        } catch (error) {
+          status.textContent = error.message;
+          saveRefundButton.disabled = false;
+        }
+        return;
+      }
+
       const button = event.target.closest('[data-mark-read]');
       if (!button) return;
       button.disabled = true;

@@ -303,24 +303,32 @@
 
   const renderTransactionHistory = () => {
     const completedBookings = bookings
-      .filter((item) => isTerminalBooking(item.type, item.booking))
+      .filter((item) => isTerminalBooking(item.type, item.booking)
+        || ['cancelled', 'canceled'].includes(String(item.booking.status || '').toLowerCase()))
       .sort((left, right) => transactionCompletionTime(right) - transactionCompletionTime(left));
     if (!completedBookings.length) {
-      transactionHistoryRowsEl.innerHTML = '<tr><td colspan="8" class="empty">No completed transactions yet.</td></tr>';
+      transactionHistoryRowsEl.innerHTML = '<tr><td colspan="8" class="empty">No completed or cancelled bookings yet.</td></tr>';
       return;
     }
     transactionHistoryRowsEl.innerHTML = completedBookings.map(({ type, booking }) => {
-      const completionLabel = type === 'grooming' ? 'Completed' : 'Checked out';
-      const completionDate = type === 'grooming'
-        ? booking.checkedOutAt || booking.updatedAt || booking.date
-        : booking.checkedOutAt || booking.updatedAt || booking.checkOut;
+      const isCancelled = ['cancelled', 'canceled'].includes(String(booking.status || '').toLowerCase());
+      const completionLabel = isCancelled ? 'Cancelled' : type === 'grooming' ? 'Completed' : 'Checked out';
+      const completionDate = isCancelled
+        ? booking.updatedAt || booking.createdAt
+        : type === 'grooming'
+          ? booking.checkedOutAt || booking.updatedAt || booking.date
+          : booking.checkedOutAt || booking.updatedAt || booking.checkOut;
       const amount = type === 'grooming' ? booking.price : booking.totalPrice;
+      const paymentStatus = String(booking.paymentStatus || 'unpaid').replace(/-/g, ' ').toUpperCase();
+      const refundStatus = booking.paymentRefundStatus
+        ? ` · REFUND ${String(booking.paymentRefundStatus).replace(/-/g, ' ').toUpperCase()}`
+        : '';
       return `<tr>
         <td>${type === 'grooming' ? 'Grooming' : 'Pet Hotel'}</td>
         <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
         <td><span class="appointment-primary">${escapeHtml(petsFor(booking))}</span><span class="appointment-detail">${escapeHtml(serviceFor(booking, type))}</span></td>
         <td>${escapeHtml(completionLabel)}: ${escapeHtml(fmtDateTime(completionDate))}</td>
-        <td><span class="appointment-payment-status">${escapeHtml(String(booking.paymentStatus || 'unpaid').replace(/-/g, ' ').toUpperCase())} · ${escapeHtml(completionLabel.toUpperCase())}</span></td>
+        <td><span class="appointment-payment-status">${escapeHtml(paymentStatus)}${escapeHtml(refundStatus)} · ${escapeHtml(completionLabel.toUpperCase())}</span></td>
         <td>${escapeHtml(String(booking.paymentMethod || '—').toUpperCase())}</td>
         <td>${escapeHtml(fmtMoney(amount))}</td>
         <td><button type="button" class="btn btn-outline btn-sm" data-manage="true" data-type="${type}" data-id="${escapeHtml(booking.id)}">View</button></td>

@@ -36,12 +36,14 @@ const {
   groomingRecordDuration,
 } = require('../util/bookingCalculations');
 const { sendPayMongoReceipt, sendReservationTicket } = require('../util/mailer');
+const { verifyQrPhRefundForCheckoutSession } = require('../util/paymongo');
 const { requestGcashBookingRefund } = require('../util/paymentRefund');
 const { isValidMobileNumber } = require('../util/mobileNumber');
 const { isDigitsOnly, isOptionalPhoneNumber } = require('../util/numericValidation');
 const {
   notifyStaffOfBooking,
   notifyStaffOfCancellation,
+  notifyStaffOfRefundClaimIssue,
   notifyStaffOfReschedule,
 } = require('../util/staffNotifications');
 
@@ -874,8 +876,8 @@ const ensureCustomerCanChangeBooking = (booking, bookingType, res) => {
 const ensureCustomerCanCancelBooking = (booking, bookingType, res) => {
   const status = String(booking.status || '').toLowerCase();
   const unavailableStatuses = bookingType === 'hotel'
-    ? ['cancelled', 'checked-in', 'checked-out']
-    : ['cancelled', 'in-progress', 'completed'];
+    ? ['cancelled', 'canceled', 'checked-in', 'checked-out']
+    : ['cancelled', 'canceled', 'in-progress', 'completed'];
   if (unavailableStatuses.includes(status) || !isFutureBooking(booking, bookingType)) {
     res.status(409).json({ error: 'Only upcoming bookings that have not started can be cancelled online.' });
     return false;
@@ -1292,7 +1294,7 @@ const cancelCustomerBooking = async (req, res, next) => {
     const context = await customerBookingContext(req, res, bookingType);
     if (!context) return;
     const { customer, booking } = context;
-    if (String(booking.status || '').toLowerCase() === 'cancelled') {
+    if (['cancelled', 'canceled'].includes(String(booking.status || '').toLowerCase())) {
       if (booking.paymentMethod === 'qrph'
         && booking.paymentStatus === 'paid'
         && ['failed', 'pending', 'processing', 'refunding'].includes(String(booking.paymentRefundStatus || '').toLowerCase())) {
@@ -1310,6 +1312,111 @@ const cancelCustomerBooking = async (req, res, next) => {
 
     const cancellation = await cancelCustomerBookingRecord(booking, bookingType, customer);
     return res.json({ success: true, bookingId: booking.id, ...cancellation });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const reportCustomerRefundClaimIssue = async (req, res, next) => {
+  try {
+    const bookingType = req.params.bookingType;
+    if (!['grooming', 'hotel'].includes(bookingType)) {
+      return res.status(400).json({ error: 'Choose grooming or hotel as the booking type.' });
+    }
+    const context = await customerBookingContext(req, res, bookingType);
+    if (!context) return;
+    const { customer, booking } = context;
+    if (!['cancelled', 'canceled'].includes(String(booking.status || '').toLowerCase())
+      || booking.paymentMethod !== 'qrph'
+      || booking.paymentStatus !== 'paid'
+      || !booking.paymentRefundReference) {
+      return res.status(409).json({ error: 'This booking does not have a reportable PayMongo refund transfer.' });
+    }
+    if (booking.paymentRefundClaimIssueStatus === 'open') {
+      return res.json({ success: true, alreadyReported: true });
+    }
+
+    const petIds = Array.isArray(booking.petIds) && booking.petIds.length
+      ? booking.petIds
+      : booking.petId ? [booking.petId] : [];
+    const pets = (await Promise.all(petIds.map((id) => Pet.findByPk(id)))).filter(Boolean);
+    const fallbackPetNames = booking.petNames
+      || booking.petServices?.map((item) => item.petName)
+      || booking.petRooms?.map((item) => item.petName)
+      || [];
+    const notificationSent = await notifyStaffOfRefundClaimIssue({
+      type: bookingType,
+      booking,
+      customer,
+      pets: pets.length ? pets : fallbackPetNames.map((name) => ({ name })),
+    });
+    if (!notificationSent) {
+      return res.status(503).json({ error: 'Staff could not be notified. Please contact the business directly.' });
+    }
+    await booking.update({
+      paymentRefundClaimIssueStatus: 'open',
+      paymentRefundClaimIssueReportedAt: new Date(),
+    });
+    return res.json({ success: true, alreadyReported: false });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const replaceGcashRefundTransferLink = async (req, res, next) => {
+  try {
+    const bookingType = req.params.bookingType;
+    if (!['grooming', 'hotel'].includes(bookingType)) {
+      return res.status(400).json({ error: 'Choose grooming or hotel as the booking type.' });
+    }
+    const refundReference = String(req.body?.refundReference || '').trim();
+    const transferLink = String(req.body?.transferLink || '').trim();
+    let transferUrl;
+    try {
+      transferUrl = new URL(transferLink);
+    } catch (error) {
+      return res.status(400).json({ error: 'Enter a valid PayMongo transfer link.' });
+    }
+    if (!/^ref_[A-Za-z0-9]+$/.test(refundReference)
+      || transferUrl.protocol !== 'https:'
+      || !['transfer.paymongo.com', 'transfer.paymongo-stg.com'].includes(transferUrl.hostname)
+      || transferUrl.username
+      || transferUrl.password) {
+      return res.status(400).json({ error: 'Enter a valid PayMongo refund ID and secure transfer link.' });
+    }
+
+    const Model = bookingType === 'hotel' ? HotelReservation : GroomingAppointment;
+    const booking = await Model.findByPk(req.params.id);
+    if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+    if (!['cancelled', 'canceled'].includes(String(booking.status || '').toLowerCase())
+      || booking.paymentMethod !== 'qrph'
+      || booking.paymentStatus !== 'paid') {
+      return res.status(409).json({ error: 'Only cancelled, paid QR Ph bookings can receive a replacement refund link.' });
+    }
+    const verifiedRefund = await verifyQrPhRefundForCheckoutSession(
+      booking.paymentReference,
+      refundReference,
+      transferUrl.toString(),
+    );
+    if (!verifiedRefund) {
+      return res.status(409).json({ error: 'The refund ID and transfer link do not match an active PayMongo refund for this booking.' });
+    }
+    await booking.update({
+      paymentRefundReference: verifiedRefund.id,
+      paymentRefundTransferLink: verifiedRefund.transferLink,
+      paymentRefundStatus: verifiedRefund.status,
+      paymentRefundError: null,
+      paymentRefundClaimIssueStatus: null,
+      paymentRefundClaimIssueResolvedAt: new Date(),
+    });
+    const refundIssueNotifications = await StaffNotification.findAll({
+      where: { type: 'refund_claim_failed', bookingId: String(booking.id) },
+    });
+    await Promise.all(refundIssueNotifications.map((notification) => notification.update({
+      status: 'resolved',
+      read: true,
+    })));
+    return res.json({ success: true });
   } catch (error) {
     next(error);
   }
@@ -1463,6 +1570,8 @@ module.exports = {
   listPendingRescheduleRequests,
   decideCustomerRescheduleRequest,
   cancelCustomerBooking,
+  reportCustomerRefundClaimIssue,
+  replaceGcashRefundTransferLink,
   getGroomingAvailability,
   getHotelAvailability,
 };

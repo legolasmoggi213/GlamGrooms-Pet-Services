@@ -245,6 +245,16 @@ form.addEventListener('submit', async (event) => {
     try {
       let user;
       if (form.action.endsWith('/customer/register')) {
+        const registrationCheckResponse = await fetch('/customer/registration-email-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ email: data.email }),
+        });
+        const registrationCheck = await registrationCheckResponse.json().catch(() => ({}));
+        if (!registrationCheckResponse.ok) {
+          throw new Error(registrationCheck.error || 'Unable to verify this email for registration.');
+        }
         try {
           const result = await firebaseAuth.createUserWithEmailAndPassword(data.email, data.password);
           user = result.user;

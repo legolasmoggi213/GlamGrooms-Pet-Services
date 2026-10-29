@@ -33,6 +33,7 @@ const { createToken, parseToken, isStaffRole, isActiveStaffRole } = require('./u
 const { createToken: createCustomerToken, parseToken: parseCustomerToken } = require('./util/customerAuth');
 const { isStrongPassword } = require('./util/passwordPolicy');
 const { isValidMobileNumber } = require('./util/mobileNumber');
+const { isStaffOrAdminEmail } = require('./util/registrationEmail');
 const {
   createVerificationChallenge,
   verifyChallenge,
@@ -232,6 +233,22 @@ app.post('/customer/session', async (req, res) => {
   }
 });
 
+app.post('/customer/registration-email-check', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!/^[^@\s]+@(gmail\.com|yahoo\.com|outlook\.com)$/.test(email)) {
+      return res.status(400).json({ error: 'Use a Gmail, Yahoo, or Outlook email address.' });
+    }
+    if (await isStaffOrAdminEmail(email, { ...db, adminEmail: process.env.ADMIN_EMAIL })) {
+      return res.status(409).json({ error: 'This email is reserved for an admin or staff account. Use the staff sign-in page.' });
+    }
+    return res.json({ available: true });
+  } catch (error) {
+    console.error('Registration email check failed:', error);
+    return res.status(503).json({ error: 'Unable to verify this email for registration. Please try again later.' });
+  }
+});
+
 app.post('/customer/register-profile', async (req, res) => {
   try {
     const { idToken, profile = {} } = req.body || {};
@@ -249,6 +266,9 @@ app.post('/customer/register-profile', async (req, res) => {
     if (!email || email !== profileEmail) return res.status(403).json({ error: 'Registration email does not match the Firebase account' });
     if (!/^[^@\s]+@(gmail\.com|yahoo\.com|outlook\.com)$/.test(email)) {
       return res.status(400).json({ error: 'Use a Gmail, Yahoo, or Outlook email address (@gmail.com, @yahoo.com, or @outlook.com).' });
+    }
+    if (await isStaffOrAdminEmail(email, { ...db, adminEmail: process.env.ADMIN_EMAIL })) {
+      return res.status(409).json({ error: 'This email is reserved for an admin or staff account. Use the staff sign-in page.' });
     }
     if (!name || !phone || !address) return res.status(400).json({ error: 'Name, phone, and address are required' });
     if (!/^09[0-9]{9}$/.test(phone)) return res.status(400).json({ error: 'Enter an 11-digit mobile number starting with 09.' });

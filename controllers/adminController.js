@@ -352,6 +352,7 @@ const getStats = async (req, res, next) => {
 // GET /api/v1/admin/activity — most recent bookings across both services.
 const getRecentActivity = async (req, res, next) => {
   try {
+    const recentActivityCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const [grooming, hotel, customers, pets] = await Promise.all([
       GroomingAppointment.findAll({ order: [['createdAt', 'DESC']] }),
       HotelReservation.findAll({ order: [['createdAt', 'DESC']] }),
@@ -373,7 +374,7 @@ const getRecentActivity = async (req, res, next) => {
         return {
           type: 'grooming',
           id: a.id,
-          createdAt: a.paymentPaidAt || a.createdAt,
+          createdAt: a.updatedAt || a.paymentPaidAt || a.createdAt,
           status: a.status,
           paymentStatus: a.paymentStatus,
           summary: a.paymentStatus === 'paid'
@@ -391,7 +392,7 @@ const getRecentActivity = async (req, res, next) => {
         return {
           type: 'hotel',
           id: r.id,
-          createdAt: r.paymentPaidAt || r.createdAt,
+          createdAt: r.updatedAt || r.paymentPaidAt || r.createdAt,
           status: r.status,
           paymentStatus: r.paymentStatus,
           summary: r.paymentStatus === 'paid'
@@ -400,6 +401,10 @@ const getRecentActivity = async (req, res, next) => {
         };
       }),
     ]
+      .filter((item) => {
+        const activityTime = Date.parse(item.createdAt || '');
+        return Number.isFinite(activityTime) && activityTime >= recentActivityCutoff;
+      })
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     const activity = [
       ...sortedActivity.filter((item) => item.type === 'grooming').slice(0, 10),

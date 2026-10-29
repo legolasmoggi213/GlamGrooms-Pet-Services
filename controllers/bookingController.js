@@ -759,6 +759,11 @@ const cancelPayment = async (req, res, next) => {
       let attributes = checkout.data?.attributes || {};
       if (isCheckoutSessionPaid(attributes)) {
         await markBookingPaidAndConfirmed(booking, sessionId);
+        if (req.body?.cancelAfterPaid === true) {
+          const customer = await Customer.findByPk(booking.customerId);
+          const cancellation = await cancelCustomerBookingRecord(booking, bookingType, customer);
+          return res.json({ success: true, bookingId, paid: true, deleted: false, ...cancellation });
+        }
         return res.json({ success: true, bookingId, paid: true, deleted: false });
       }
 
@@ -771,6 +776,11 @@ const cancelPayment = async (req, res, next) => {
           attributes = checkout.data?.attributes || {};
           if (isCheckoutSessionPaid(attributes)) {
             await markBookingPaidAndConfirmed(booking, sessionId);
+            if (req.body?.cancelAfterPaid === true) {
+              const customer = await Customer.findByPk(booking.customerId);
+              const cancellation = await cancelCustomerBookingRecord(booking, bookingType, customer);
+              return res.json({ success: true, bookingId, paid: true, deleted: false, ...cancellation });
+            }
             return res.json({ success: true, bookingId, paid: true, deleted: false });
           }
           if (attributes.status !== 'expired') {
@@ -781,6 +791,11 @@ const cancelPayment = async (req, res, next) => {
 
       if (isCheckoutSessionPaid(attributes)) {
         await markBookingPaidAndConfirmed(booking, sessionId);
+        if (req.body?.cancelAfterPaid === true) {
+          const customer = await Customer.findByPk(booking.customerId);
+          const cancellation = await cancelCustomerBookingRecord(booking, bookingType, customer);
+          return res.json({ success: true, bookingId, paid: true, deleted: false, ...cancellation });
+        }
         return res.json({ success: true, bookingId, paid: true, deleted: false });
       }
       if (attributes.status !== 'expired') {
@@ -870,6 +885,32 @@ const ensureCustomerCanCancelBooking = (booking, bookingType, res) => {
     return false;
   }
   return true;
+};
+
+const cancelCustomerBookingRecord = async (booking, bookingType, customer) => {
+  const lockIds = bookingType === 'hotel'
+    ? hotelReservationLockIds(booking)
+    : booking.groomingSlotNumber
+      ? groomingCapacityLockIds(booking.date, booking.time, groomingRecordDuration(booking), booking.groomingSlotNumber)
+      : groomingLockIds(booking.date, booking.time, groomingRecordDuration(booking));
+  await booking.update({ status: 'cancelled' });
+  await releaseBookingSlotsByIds(lockIds);
+  const bookingPetIds = Array.isArray(booking.petIds) && booking.petIds.length
+    ? booking.petIds
+    : booking.petId ? [booking.petId] : [];
+  const pets = (await Promise.all(bookingPetIds.map((id) => Pet.findByPk(id)))).filter(Boolean);
+  const fallbackPetNames = booking.petNames
+    || booking.petServices?.map((item) => item.petName)
+    || booking.petRooms?.map((item) => item.petName)
+    || [];
+  const notificationSent = await notifyStaffOfCancellation({
+    type: bookingType,
+    booking,
+    customer,
+    pets: pets.length ? pets : fallbackPetNames.map((name) => ({ name })),
+  });
+  const refund = await requestGcashBookingRefund(booking);
+  return { status: 'cancelled', notificationSent, refund };
 };
 
 const updateCustomerBooking = async (req, res, next) => {
@@ -1254,33 +1295,12 @@ const cancelCustomerBooking = async (req, res, next) => {
     if (!ensureCustomerCanCancelBooking(booking, bookingType, res)) return;
 
     if (booking.paymentMethod === 'qrph' && booking.paymentStatus === 'pending') {
-      req.body = { bookingType, bookingId: booking.id };
+      req.body = { bookingType, bookingId: booking.id, cancelAfterPaid: true };
       return cancelPayment(req, res, next);
     }
 
-    const lockIds = bookingType === 'hotel'
-      ? hotelReservationLockIds(booking)
-      : booking.groomingSlotNumber
-        ? groomingCapacityLockIds(booking.date, booking.time, groomingRecordDuration(booking), booking.groomingSlotNumber)
-        : groomingLockIds(booking.date, booking.time, groomingRecordDuration(booking));
-    await booking.update({ status: 'cancelled' });
-    await releaseBookingSlotsByIds(lockIds);
-    const bookingPetIds = Array.isArray(booking.petIds) && booking.petIds.length
-      ? booking.petIds
-      : booking.petId ? [booking.petId] : [];
-    const pets = (await Promise.all(bookingPetIds.map((id) => Pet.findByPk(id)))).filter(Boolean);
-    const fallbackPetNames = booking.petNames
-      || booking.petServices?.map((item) => item.petName)
-      || booking.petRooms?.map((item) => item.petName)
-      || [];
-    const notificationSent = await notifyStaffOfCancellation({
-      type: bookingType,
-      booking,
-      customer,
-      pets: pets.length ? pets : fallbackPetNames.map((name) => ({ name })),
-    });
-    const refund = await requestGcashBookingRefund(booking);
-    return res.json({ success: true, bookingId: booking.id, status: 'cancelled', notificationSent, refund });
+    const cancellation = await cancelCustomerBookingRecord(booking, bookingType, customer);
+    return res.json({ success: true, bookingId: booking.id, ...cancellation });
   } catch (error) {
     next(error);
   }

@@ -339,7 +339,7 @@
           });
           const result = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(result.error || 'Unable to cancel booking.');
-          if (result.paid && !result.deleted) {
+          if (result.paid && !result.deleted && result.status !== 'cancelled') {
             alert('The GCash payment completed before cancellation. The booking is still active; select Cancel booking again to request cancellation and refund.');
           } else if (result.refund?.status === 'failed') {
             alert('The booking was cancelled, but PayMongo could not start the refund. Please contact the business to arrange it.');

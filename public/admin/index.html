@@ -130,6 +130,22 @@
           </section>
         </div>
       </section>
+      <section class="panel" aria-labelledby="dashboard-transaction-history-heading">
+        <div>
+          <h3 id="dashboard-transaction-history-heading">Transaction History</h3>
+          <p class="text-muted">Completed services and booking activity older than one week.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="appointments-table transaction-history-table">
+            <thead>
+              <tr><th>Service</th><th>Customer</th><th>Pet &amp; Service / Room</th><th>Completed / Last activity</th><th>Booking status</th><th>Payment status</th><th>Payment method</th><th>Amount</th><th></th></tr>
+            </thead>
+            <tbody id="dashboard-transaction-history-rows">
+              <tr><td colspan="9" class="loading">Loading transaction history…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section class="panel" id="revenue" aria-label="Revenue analytics">
         <div class="analytics-heading">
@@ -248,6 +264,12 @@
       const hotelRoomFor = (booking) => Array.isArray(booking.petRooms) && booking.petRooms.length
         ? booking.petRooms.map((item) => `${item.petName || 'Pet'}: ${String(item.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join('; ')
         : String(booking.roomType || 'Pet Hotel').replace(/^staycation-/, '').replace(/-/g, ' ');
+      const bookingActivityTime = (booking) => booking.updatedAt || booking.paymentPaidAt || booking.createdAt
+        || (booking.type === 'grooming' ? booking.date : booking.checkIn);
+      const isRecentBookingActivity = (booking) => {
+        const timestamp = Date.parse(bookingActivityTime(booking) || '');
+        return Number.isFinite(timestamp) && timestamp >= Date.now() - 7 * 24 * 60 * 60 * 1000;
+      };
       const groomingAppointmentRow = (booking) => `<tr>
         <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
         <td>${escapeHtml(petNamesFor(booking))}<span class="appointment-detail">${escapeHtml(groomingServiceFor(booking))}</span></td>
@@ -461,6 +483,38 @@
         );
       }
 
+      async function loadTransactionHistory() {
+        const [grooming, hotel] = await loadDashboardBookings();
+        const history = [
+          ...grooming.filter((booking) => String(booking.status || '').toLowerCase() === 'completed'
+            || !isRecentBookingActivity({ ...booking, type: 'grooming' }))
+            .map((booking) => ({ type: 'grooming', booking })),
+          ...hotel.filter((booking) => String(booking.status || '').toLowerCase() === 'checked-out'
+            || !isRecentBookingActivity({ ...booking, type: 'hotel' }))
+            .map((booking) => ({ type: 'hotel', booking })),
+        ].sort((left, right) => (Date.parse(bookingActivityTime({ ...right.booking, type: right.type }) || '') || 0)
+          - (Date.parse(bookingActivityTime({ ...left.booking, type: left.type }) || '') || 0));
+        const rows = document.getElementById('dashboard-transaction-history-rows');
+        rows.innerHTML = history.length
+          ? history.map(({ type, booking }) => {
+            const activityTime = bookingActivityTime({ ...booking, type });
+            const service = type === 'grooming' ? groomingServiceFor(booking) : hotelRoomFor(booking);
+            const amount = type === 'grooming' ? booking.price : booking.totalPrice;
+            return `<tr>
+              <td>${type === 'grooming' ? 'Grooming' : 'Pet Hotel'}</td>
+              <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
+              <td><span class="appointment-primary">${escapeHtml(petNamesFor(booking))}</span><span class="appointment-detail">${escapeHtml(service)}</span></td>
+              <td>${escapeHtml(fmtDateTime(booking.checkedOutAt || activityTime))}</td>
+              <td>${statusBadge(booking.status)}</td>
+              <td>${escapeHtml(String(booking.paymentStatus || 'unpaid').replace(/-/g, ' '))}</td>
+              <td>${escapeHtml(String(booking.paymentMethod || '—').toUpperCase())}</td>
+              <td>${escapeHtml(fmtMoney(amount))}</td>
+              <td>${viewBookingButton(booking, type)}</td>
+            </tr>`;
+          }).join('')
+          : '<tr><td colspan="9" class="empty">No transaction history yet.</td></tr>';
+      }
+
       async function showBookingDetails(type, id) {
         if (!['grooming', 'hotel'].includes(type) || !id) return;
         const title = type === 'grooming' ? 'Grooming booking details' : 'Hotel booking details';
@@ -516,7 +570,7 @@
         }
       }
 
-      ['occupancy', 'activity'].forEach((sectionId) => {
+      ['occupancy', 'activity', 'dashboard-transaction-history-rows'].forEach((sectionId) => {
         document.getElementById(sectionId).addEventListener('click', (event) => {
           const button = event.target.closest('[data-booking-id][data-booking-type]');
           if (button) showBookingDetails(button.dataset.bookingType, button.dataset.bookingId);
@@ -688,6 +742,7 @@
       const loadSecondaryDashboard = () => {
         runDashboardLoader(loadOccupancy, 'occupancy');
         runDashboardLoader(loadActivity, 'activity');
+        runDashboardLoader(loadTransactionHistory, 'dashboard-transaction-history-rows');
         runDashboardLoader(loadRevenue, 'revenue');
         loadServiceCatalog();
       };

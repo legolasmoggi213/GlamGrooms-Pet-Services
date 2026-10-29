@@ -34,10 +34,15 @@
   const hotelRooms = (booking) => Array.isArray(booking.petRooms) && booking.petRooms.length
     ? booking.petRooms.map((item) => `${item.petName || 'Pet'}: ${String(item.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join('; ')
     : String(booking.roomType || 'Pet Hotel').replace(/^staycation-/, '').replace(/-/g, ' ');
-  const activityTime = (booking) => booking.updatedAt || booking.createdAt || booking.date || booking.checkIn;
+  const activityTime = (booking) => booking.updatedAt || booking.paymentPaidAt || booking.createdAt || booking.date || booking.checkIn;
+  const isRecentActivity = (booking) => {
+    const timestamp = Date.parse(activityTime(booking) || '');
+    return Number.isFinite(timestamp) && timestamp >= Date.now() - 7 * 24 * 60 * 60 * 1000;
+  };
   const renderRecentActivity = (type, items, container) => {
     const visibleItems = items
       .filter((booking) => bookingStatus(booking) !== (type === 'grooming' ? 'completed' : 'checked-out'))
+      .filter(isRecentActivity)
       .sort((left, right) => (Date.parse(activityTime(right)) || 0) - (Date.parse(activityTime(left)) || 0))
       .slice(0, 8);
     container.innerHTML = visibleItems.length
@@ -57,30 +62,31 @@
       : `<div class="empty">No recent ${type === 'grooming' ? 'grooming' : 'pet hotel'} activity.</div>`;
   };
   const renderTransactionHistory = (grooming, hotel) => {
-    const completed = [
-      ...grooming.filter((booking) => bookingStatus(booking) === 'completed').map((booking) => ({ type: 'grooming', booking })),
-      ...hotel.filter((booking) => bookingStatus(booking) === 'checked-out').map((booking) => ({ type: 'hotel', booking })),
+    const history = [
+      ...grooming.filter((booking) => bookingStatus(booking) === 'completed' || !isRecentActivity(booking)).map((booking) => ({ type: 'grooming', booking })),
+      ...hotel.filter((booking) => bookingStatus(booking) === 'checked-out' || !isRecentActivity(booking)).map((booking) => ({ type: 'hotel', booking })),
     ].sort((left, right) => {
       const leftDate = left.booking.checkedOutAt || left.booking.updatedAt || left.booking.createdAt || left.booking.date || left.booking.checkOut;
       const rightDate = right.booking.checkedOutAt || right.booking.updatedAt || right.booking.createdAt || right.booking.date || right.booking.checkOut;
       return (Date.parse(rightDate) || 0) - (Date.parse(leftDate) || 0);
     });
-    transactionHistoryRows.innerHTML = completed.length
-      ? completed.map(({ type, booking }) => {
-        const completionDate = booking.checkedOutAt || booking.updatedAt
-          || (type === 'grooming' ? booking.date : booking.checkOut);
+    transactionHistoryRows.innerHTML = history.length
+      ? history.map(({ type, booking }) => {
+        const completionDate = booking.checkedOutAt || booking.updatedAt || booking.paymentPaidAt
+          || booking.createdAt || (type === 'grooming' ? booking.date : booking.checkOut);
         const amount = type === 'grooming' ? booking.price : booking.totalPrice;
         return `<tr>
           <td>${type === 'grooming' ? 'Grooming' : 'Pet Hotel'}</td>
           <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
           <td><span class="appointment-primary">${escapeHtml(petNames(booking))}</span><span class="appointment-detail">${escapeHtml(type === 'grooming' ? groomingService(booking) : hotelRooms(booking))}</span></td>
           <td>${escapeHtml(fmtDateTime(completionDate))}</td>
+          <td>${statusBadge(booking.status)}</td>
           <td>${escapeHtml(String(booking.paymentStatus || 'unpaid').replace(/-/g, ' '))}</td>
           <td>${escapeHtml(String(booking.paymentMethod || '—').toUpperCase())}</td>
           <td>${escapeHtml(fmtMoney(amount))}</td>
         </tr>`;
       }).join('')
-      : '<tr><td colspan="7" class="empty">No completed transactions yet.</td></tr>';
+      : '<tr><td colspan="8" class="empty">No transaction history yet.</td></tr>';
   };
   const appointmentViewLink = '<a class="btn btn-outline btn-sm" href="/admin/appointments.html">View</a>';
   const groomingArrivalRow = (booking) => `<tr>

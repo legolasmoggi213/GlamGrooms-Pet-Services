@@ -2,13 +2,6 @@ const { refundCheckoutSession } = require('./paymongo');
 
 const requestGcashBookingRefund = async (booking) => {
   if (booking.paymentMethod !== 'qrph' || booking.paymentStatus !== 'paid') return null;
-  if (booking.paymentRefundStatus && booking.paymentRefundStatus !== 'failed') {
-    return {
-      status: booking.paymentRefundStatus,
-      reference: booking.paymentRefundReference || null,
-      transferLink: booking.paymentRefundTransferLink || null,
-    };
-  }
 
   try {
     await booking.update({ paymentRefundStatus: 'processing', paymentRefundError: null });

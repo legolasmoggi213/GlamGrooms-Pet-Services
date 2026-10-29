@@ -1295,7 +1295,7 @@ const cancelCustomerBooking = async (req, res, next) => {
     if (String(booking.status || '').toLowerCase() === 'cancelled') {
       if (booking.paymentMethod === 'qrph'
         && booking.paymentStatus === 'paid'
-        && booking.paymentRefundStatus === 'failed') {
+        && ['failed', 'pending', 'processing', 'refunding'].includes(String(booking.paymentRefundStatus || '').toLowerCase())) {
         const refund = await requestGcashBookingRefund(booking);
         return res.json({ success: true, bookingId: booking.id, status: 'cancelled', refund });
       }

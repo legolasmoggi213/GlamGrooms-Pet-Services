@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Counter Checkout — Glam Grooms Admin</title>
-  <link rel="stylesheet" href="/css/style.css?v=counter-checkout-service-only-20261029" />
+  <link rel="stylesheet" href="/css/style.css?v=counter-checkout-sales-chart-20261029" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -48,11 +48,11 @@
           <form id="pos-checkout" class="pos-checkout">
             <div class="field">
               <label for="sale-customer">Customer</label>
-              <input id="sale-customer" maxlength="120" value="Walk-in customer" />
+              <input id="sale-customer" maxlength="120" />
             </div>
             <div class="field">
               <label for="sale-contact">Contact</label>
-              <input id="sale-contact" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number pattern="[0-9]{11}" title="Leave blank or enter exactly 11 digits." placeholder="Optional" />
+              <input id="sale-contact" type="tel" inputmode="numeric" autocomplete="tel-national" data-mobile-number data-mobile-number-prefix="09" maxlength="11" pattern="09[0-9]{9}" title="Enter 9 digits after the fixed 09 prefix." value="09" required />
             </div>
             <div class="field" id="sale-pet-field" hidden>
               <label for="sale-pet">Pet name</label>
@@ -223,8 +223,7 @@
         petNameInput.value = '';
         petSpeciesInput.value = 'dog';
       }
-      const needsContact = includesService;
-      document.getElementById('sale-contact').required = needsContact;
+      document.getElementById('sale-contact').required = true;
       updateTender();
     }
 
@@ -504,7 +503,8 @@
           return;
         }
       }
-      const customerName = document.getElementById('sale-customer').value.trim() || 'Walk-in customer';
+      const customerInput = document.getElementById('sale-customer');
+      const customerName = customerInput.value.trim() || 'Walk-in customer';
       checkoutButton.disabled = true;
       checkoutButton.textContent = 'Processing…';
       try {
@@ -533,9 +533,10 @@
         });
         cart.splice(0, cart.length);
         cashReceived.value = '';
+        customerInput.value = '';
         petNameInput.value = '';
         renderCart();
-        document.getElementById('sale-contact').value = '';
+        document.getElementById('sale-contact').value = '09';
 
         if (paymentMethod === 'qrph' && result.checkoutUrl) {
           const qrWindow = window.open(result.checkoutUrl, '_blank', 'width=430,height=760,noopener,noreferrer');

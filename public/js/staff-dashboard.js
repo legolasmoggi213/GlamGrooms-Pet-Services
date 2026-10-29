@@ -172,7 +172,11 @@
   document.getElementById('staff-export-revenue').addEventListener('click', exportRevenuePdf);
 
   const loadDashboard = async () => {
-    const [grooming, hotel] = await Promise.all([apiGet('/grooming'), apiGet('/hotel')]);
+    const [grooming, hotel, stats] = await Promise.all([
+      apiGet('/grooming'),
+      apiGet('/hotel'),
+      apiGet('/admin/stats'),
+    ]);
     const groomingBookings = activeGrooming(grooming);
     const hotelBookings = activeHotel(hotel);
     renderRecentActivity('grooming', grooming, groomingActivityEl);
@@ -200,9 +204,15 @@
         || String(left.checkInTime || '').localeCompare(String(right.checkInTime || '')));
       const todaysHotelArrivals = upcomingHotelArrivals.filter((booking) => booking.checkIn === businessDate);
     statsEl.innerHTML = [
+      statCard('Customers', stats.customers, 'purple', '/admin/customers.html'),
+      statCard('Pets', stats.pets, 'purple', '/admin/pets.html'),
       statCard("Today's Active Appointment Arrivals", groomingToday.length + todaysHotelArrivals.length, 'green', '#staff-today-active-arrivals'),
       statCard('Pending Appointment Arrivals', pendingGroomingToday.length + pendingHotelToday.length, 'orange', '#staff-pending-arrivals', 'staff-pending-arrivals-count'),
-      statCard('Upcoming Arrivals', upcomingGrooming.length + upcomingHotelArrivals.length, 'orange', '/admin/grooming.html?filter=upcoming'),
+      statCard('Upcoming Arrivals', upcomingGrooming.length + upcomingHotelArrivals.length, 'orange', '#staff-upcoming-arrivals'),
+      statCard('Grooming Revenue', fmtMoney(stats.grooming.revenue), 'green', '#staff-revenue'),
+      statCard('Hotel Revenue', fmtMoney(stats.hotel.revenue), 'green', '#staff-revenue'),
+      statCard('Walk-in Cash Sales', fmtMoney(stats.overTheCounterRevenue), 'green', '#staff-revenue'),
+      statCard('Total Revenue', fmtMoney(stats.totalRevenue), 'purple', '#staff-revenue'),
     ].join('');
 
     pendingGroomingRows.innerHTML = pendingGroomingToday.length

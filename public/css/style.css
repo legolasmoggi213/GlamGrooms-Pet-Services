@@ -2780,7 +2780,7 @@ input[type="email"]:focus, input[type="password"]:focus, input[type="text"]:focu
 .pos-sales-summary span { color: var(--muted); font-size: 0.82rem; }
 .pos-sales-summary strong { color: var(--admin-text); font-size: 1.2rem; }
 .pos-sales-chart { min-width: 0; }
-.pos-sales-line-chart .revenue-line-chart { height: 240px; }
+.pos-sales-line-chart .revenue-line-chart { height: 300px; }
 .pos-sales-line-chart .revenue-line { stroke: #d8ae16; }
 .pos-sales-line-chart .revenue-line-point circle { fill: #d8ae16; }
 .pos-cart table { font-size: 0.85rem; }

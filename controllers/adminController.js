@@ -2,7 +2,7 @@ const { Customer, Pet, GroomingAppointment, HotelReservation, CashTransaction } 
 const { firestore } = require('../config/firebase');
 const { createQrPhCheckout, getPayMongoKey } = require('../util/paymongo');
 const { isValidMobileNumber } = require('../util/mobileNumber');
-const { isDigitsOnly, isDecimalNumber, isOptionalPhoneNumber } = require('../util/numericValidation');
+const { isDigitsOnly, isDecimalNumber } = require('../util/numericValidation');
 const groomingController = require('./groomingController');
 const hotelController = require('./hotelController');
 const { SERVICE_PRICES } = groomingController;
@@ -1042,13 +1042,10 @@ const createCashTransaction = async (req, res, next) => {
       const petName = String(body.petName || '').trim();
       const contact = body.contact == null ? '' : body.contact;
       const paymentMethod = String(body.paymentMethod || 'cash').trim().toLowerCase();
-      if (contact !== '' && !isValidMobileNumber(contact)) {
-        return res.status(400).json({ error: 'Contact number must contain exactly 11 digits.' });
+      if (!isValidMobileNumber(contact) || !contact.startsWith('09')) {
+        return res.status(400).json({ error: 'Contact number must start with 09 and contain exactly 11 digits.' });
       }
       const hasItems = Array.isArray(body.items);
-      if (!isOptionalPhoneNumber(body.contact)) {
-        return res.status(400).json({ error: 'Contact number must contain digits only.' });
-      }
       if (hasItems && body.items.some((item) => !isDigitsOnly(item && item.quantity) || !isDecimalNumber(item && item.unitPrice))) {
         return res.status(400).json({ error: 'Item quantities must be whole numbers and prices must contain numbers only.' });
       }

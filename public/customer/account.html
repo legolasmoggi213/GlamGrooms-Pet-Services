@@ -4,13 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Account — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=customer-reschedule-centered-20261029" />
+  <link rel="stylesheet" href="/css/style.css?v=customer-dashboard-ux-20261029" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 </head>
 <body>
+  <a class="customer-skip-link" href="#dashboard">Skip to dashboard content</a>
   <div id="toast" class="toast" aria-live="polite">Account created successfully.</div>
   <dialog id="payment-summary-dialog" aria-labelledby="payment-summary-title">
     <div class="panel">
@@ -96,22 +97,44 @@
         </section>
 
         <section id="grooming-section" class="customer-account-section">
-          <h2>Active Grooming</h2>
+          <div class="customer-section-heading">
+            <div>
+              <h2>Active Grooming</h2>
+              <p>Upcoming grooming visits and their latest status.</p>
+            </div>
+            <a class="btn btn-outline btn-sm" href="/grooming.html">Book grooming</a>
+          </div>
           <div id="grooming-bookings">Loading grooming appointments…</div>
         </section>
 
         <section id="hotel-section" class="customer-account-section">
-          <h2>Active Pet Hotel</h2>
+          <div class="customer-section-heading">
+            <div>
+              <h2>Active Pet Hotel</h2>
+              <p>Your upcoming stays and current hotel visits.</p>
+            </div>
+            <a class="btn btn-outline btn-sm" href="/hotel.html">Book a stay</a>
+          </div>
           <div id="hotel-bookings">Loading pet hotel stays…</div>
         </section>
 
         <section id="transactions-section" class="customer-account-section">
-          <h2>Transactions</h2>
+          <div class="customer-section-heading">
+            <div>
+              <h2>Transactions</h2>
+              <p>Review recent activity or expand previous bookings.</p>
+            </div>
+          </div>
           <div id="recent-transactions">Loading transactions…</div>
         </section>
 
         <section id="pets-section" class="customer-account-section">
-          <h2>Your Pets</h2>
+          <div class="customer-section-heading">
+            <div>
+              <h2>Your Pets</h2>
+              <p>Keep your pets’ details up to date for their visits.</p>
+            </div>
+          </div>
           <div class="account-card">
             <div id="pets">Loading pets…</div>
             <div id="pet-editor" class="profile-edit"></div>
@@ -148,10 +171,15 @@
     let paymentRetryStarted = false;
     const customerNav = document.querySelector('.customer-account-nav');
     const customerNavLinks = [...customerNav.querySelectorAll('a[href^="#"]')];
-    const updateCustomerNav = (hash = location.hash || '#dashboard', keepLinkVisible = false) => {
+    const observedSections = customerNavLinks
+      .map((link) => document.querySelector(link.getAttribute('href')))
+      .filter(Boolean);
+    const updateCustomerNav = (hash = location.hash || '#dashboard') => {
       let activeLink = null;
+      let activeLinkChanged = false;
       customerNavLinks.forEach((link) => {
         const isActive = link.getAttribute('href') === hash;
+        if (isActive && !link.classList.contains('active')) activeLinkChanged = true;
         link.classList.toggle('active', isActive);
         if (isActive) {
           link.setAttribute('aria-current', 'location');
@@ -160,26 +188,31 @@
           link.removeAttribute('aria-current');
         }
       });
-      if (keepLinkVisible && activeLink) activeLink.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      if (activeLinkChanged && activeLink) activeLink.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    };
+    let customerNavUpdateScheduled = false;
+    const updateCustomerNavForScroll = () => {
+      if (customerNavUpdateScheduled) return;
+      customerNavUpdateScheduled = true;
+      window.requestAnimationFrame(() => {
+        customerNavUpdateScheduled = false;
+        const atPageBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+        const currentSection = atPageBottom
+          ? observedSections[observedSections.length - 1]
+          : [...observedSections].reverse().find((section) => section.getBoundingClientRect().top <= window.innerHeight * 0.3)
+            || observedSections[0];
+        if (currentSection) updateCustomerNav(`#${currentSection.id}`);
+      });
     };
     customerNav.addEventListener('click', (event) => {
       const link = event.target.closest('a[href^="#"]');
-      if (link) updateCustomerNav(link.getAttribute('href'), true);
+      if (link) updateCustomerNav(link.getAttribute('href'));
     });
     window.addEventListener('hashchange', () => updateCustomerNav());
     updateCustomerNav();
-    const observedSections = customerNavLinks
-      .map((link) => document.querySelector(link.getAttribute('href')))
-      .filter(Boolean);
-    if ('IntersectionObserver' in window) {
-      const sectionObserver = new IntersectionObserver((entries) => {
-        const activeSection = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top)[0];
-        if (activeSection) updateCustomerNav(`#${activeSection.target.id}`, true);
-      }, { rootMargin: '-15% 0px -65% 0px', threshold: 0 });
-      observedSections.forEach((section) => sectionObserver.observe(section));
-    }
+    window.addEventListener('scroll', updateCustomerNavForScroll, { passive: true });
+    window.addEventListener('resize', updateCustomerNavForScroll);
+    updateCustomerNavForScroll();
     document.addEventListener('click', (event) => {
       const logoutLink = event.target.closest('[data-confirm-logout]');
       if (logoutLink && !window.confirm('Are you sure you want to log out?')) {
@@ -681,7 +714,7 @@
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
           `;
-        }).join('') || '<div class="empty-state">No active grooming appointments.</div>';
+        }).join('') || '<li class="active-bookings-empty"><p>No active grooming appointments right now.</p><a class="btn btn-outline btn-sm" href="/grooming.html">Book grooming</a></li>';
 
         const hotel = activeHotelBookings.map(item => {
           const statusClass = item.status === 'checked-out' ? 'success' : item.status === 'cancelled' ? 'danger' : item.status === 'confirmed' ? 'confirmed' : 'secondary';
@@ -700,7 +733,7 @@
               <span class="status-pill ${statusClass}">${escapeHtml(item.status || 'pending')}</span>
             </li>
           `;
-        }).join('') || '<div class="empty-state">No active pet hotel reservations.</div>';
+        }).join('') || '<li class="active-bookings-empty"><p>No active pet hotel stays right now.</p><a class="btn btn-outline btn-sm" href="/hotel.html">Book a stay</a></li>';
 
         const allTransactions = [
           ...groomingBookings.map(item => ({ type: 'Grooming', bookingType: 'grooming', booking: item, date: item.date, createdAt: item.createdAt, label: Array.isArray(item.petServices) && item.petServices.length ? item.petServices.map(assignment => `${assignment.petName || 'Pet'}: ${String(assignment.service || '').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())}`).join(' · ') : (item.service || 'Grooming'), details: `${formatDate(item.date)} • ${item.time || 'Time TBA'}${item.pickupTime ? ` • Pickup ${item.pickupTime}` : ''} • ${formatMoney(item.price)}`, status: item.status, pets: item.petNames && item.petNames.length ? item.petNames.join(', ') : (item.Pet ? item.Pet.name : 'Pet') })),

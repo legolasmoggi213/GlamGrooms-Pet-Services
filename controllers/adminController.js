@@ -569,6 +569,7 @@ const getOperationalReport = async (req, res, next) => {
     const paymentMethodLabel = (method) => String(method || 'cash').toLowerCase() === 'qrph' ? 'GCash' : 'Cash';
     const includePaymentMethod = (method) => paymentFilter === 'all'
       || (paymentFilter === 'gcash' ? paymentMethodLabel(method) === 'GCash' : paymentMethodLabel(method) === 'Cash');
+    const isPaidBooking = (booking) => String(booking.paymentStatus || '').toLowerCase() === 'paid';
     const includeDateRange = (value) => {
       if (!startDate && !endDate) return true;
       const date = formatReportDate(value).slice(0, 10);
@@ -598,7 +599,9 @@ const getOperationalReport = async (req, res, next) => {
       const customerMap = Object.fromEntries(customers.map((customer) => [String(customer.id), customer]));
       const petMap = Object.fromEntries(pets.map((pet) => [String(pet.id), pet]));
       const rows = appointments
-        .filter((booking) => includePaymentMethod(booking.paymentMethod) && includeDateRange(booking.date))
+        .filter((booking) => isPaidBooking(booking)
+          && includePaymentMethod(booking.paymentMethod)
+          && includeDateRange(booking.date))
         .map((booking) => {
           const petNames = bookingPetNames(booking, petMap, booking.petServices);
           const services = Array.isArray(booking.petServices) && booking.petServices.length
@@ -632,7 +635,9 @@ const getOperationalReport = async (req, res, next) => {
       const customerMap = Object.fromEntries(customers.map((customer) => [String(customer.id), customer]));
       const petMap = Object.fromEntries(pets.map((pet) => [String(pet.id), pet]));
       const rows = reservations
-        .filter((booking) => includePaymentMethod(booking.paymentMethod) && includeDateRange(booking.checkIn))
+        .filter((booking) => isPaidBooking(booking)
+          && includePaymentMethod(booking.paymentMethod)
+          && includeDateRange(booking.checkIn))
         .map((booking) => {
           const petNames = bookingPetNames(booking, petMap, booking.petRooms);
           const rooms = Array.isArray(booking.petRooms) && booking.petRooms.length
@@ -663,7 +668,9 @@ const getOperationalReport = async (req, res, next) => {
       order: [['createdAt', 'DESC']],
     });
     const rows = transactions
-      .filter((transaction) => includePaymentMethod(transaction.paymentMethod) && includeDateRange(transaction.paidAt || transaction.createdAt))
+      .filter((transaction) => isPaidWalkInTransaction(transaction)
+        && includePaymentMethod(transaction.paymentMethod)
+        && includeDateRange(transaction.paidAt || transaction.createdAt))
       .map((transaction) => [
         transaction.id,
         transaction.customerName || 'Walk-in customer',

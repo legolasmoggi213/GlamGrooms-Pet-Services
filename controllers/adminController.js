@@ -3,8 +3,18 @@ const { firestore } = require('../config/firebase');
 const { createQrPhCheckout, getPayMongoKey } = require('../util/paymongo');
 const { isValidMobileNumber } = require('../util/mobileNumber');
 const { isDigitsOnly, isDecimalNumber, isOptionalPhoneNumber } = require('../util/numericValidation');
-const { SERVICE_PRICES } = require('./groomingController');
-const { ROOM_PRICES } = require('./hotelController');
+const groomingController = require('./groomingController');
+const hotelController = require('./hotelController');
+const { SERVICE_PRICES } = groomingController;
+const { ROOM_PRICES } = hotelController;
+const { quoteHotelStay, groomingRecordDuration } = require('../util/bookingCalculations');
+const {
+  hotelLockIdsForAssignments,
+  hotelLockIdsForSlots,
+  hotelLockIdsForTypes,
+  releaseBookingSlotsByIds,
+  releaseGroomingBookingSlots,
+} = require('../util/bookingLocks');
 
 const ACTIVE_GROOMING_STATUSES = ['pending', 'scheduled', 'confirmed', 'in-progress'];
 const TODAY_GROOMING_STATUSES = ['scheduled', 'confirmed', 'in-progress'];
@@ -780,6 +790,7 @@ const listCashTransactions = async (req, res, next) => {
       paymentStatus: record.paymentStatus || (record.paymentMethod === 'qrph' ? 'pending' : 'paid'),
       bookingType: record.bookingType || null,
       bookingId: record.bookingId || null,
+      bookingReferences: Array.isArray(record.bookingReferences) ? record.bookingReferences : [],
       items: Array.isArray(record.items) ? record.items : [],
       tenderedAmount: Number(record.tenderedAmount || record.amount || 0),
       changeDue: Number(record.changeDue || 0),
@@ -804,7 +815,226 @@ const listCashTransactions = async (req, res, next) => {
   }
 };
 
+const invokeBookingController = (handler, req) => new Promise((resolve, reject) => {
+  let statusCode = 200;
+  const res = {
+    status(code) {
+      statusCode = code;
+      return this;
+    },
+    json(payload) {
+      if (statusCode >= 400) {
+        const error = new Error(payload.error || 'Unable to create the service booking.');
+        error.status = statusCode;
+        reject(error);
+      } else {
+        resolve(payload);
+      }
+      return this;
+    },
+  };
+  Promise.resolve(handler(req, res, reject)).catch(reject);
+});
+
+const releasePosBookings = async (bookings) => {
+  for (const { type, id } of [...bookings].reverse()) {
+    if (type === 'grooming') {
+      const appointment = await GroomingAppointment.findByPk(id);
+      if (!appointment) continue;
+      await appointment.destroy();
+      await releaseGroomingBookingSlots(
+        appointment.date,
+        appointment.time,
+        groomingRecordDuration(appointment),
+        appointment.groomingSlotNumber,
+      );
+      continue;
+    }
+    const reservation = await HotelReservation.findByPk(id);
+    if (!reservation) continue;
+    const lockIds = reservation.hotelSlotAssignments
+      ? hotelLockIdsForAssignments(reservation.hotelSlotAssignments)
+      : Array.isArray(reservation.hotelSlotNumbers)
+        ? hotelLockIdsForSlots(reservation.hotelSlotNumbers, reservation.checkIn, reservation.checkOut)
+        : reservation.capacityManaged && Array.isArray(reservation.capacityLockIds)
+          ? reservation.capacityLockIds
+          : hotelLockIdsForTypes(
+          reservation.roomTypes?.length
+            ? reservation.roomTypes
+            : reservation.petRooms?.length
+              ? reservation.petRooms.map((room) => room.roomType)
+              : [reservation.roomType],
+          reservation.checkIn,
+          reservation.checkOut,
+        );
+    await reservation.destroy();
+    await releaseBookingSlotsByIds(lockIds);
+  }
+};
+
+const createPosBookings = async (req, body, items, paymentMethod) => {
+  const bookingData = body.posBooking;
+  const groomingItems = items.filter((item) => ['grooming', 'ayurveda'].includes(item.kind));
+  const hotelItems = items.filter((item) => item.kind === 'hotel');
+  if (!groomingItems.length && !hotelItems.length) {
+    if (bookingData) {
+      const error = new Error('No grooming or hotel service was selected for booking.');
+      error.status = 400;
+      throw error;
+    }
+    return [];
+  }
+  if (!bookingData || typeof bookingData !== 'object') {
+    const error = new Error('Add the required appointment or hotel dates to book a service at checkout.');
+    error.status = 400;
+    throw error;
+  }
+  if (hotelItems.length > 1) {
+    const error = new Error('Complete one pet hotel room reservation per checkout.');
+    error.status = 400;
+    throw error;
+  }
+  if (groomingItems.some((item) => item.quantity !== 1)) {
+    const error = new Error('Grooming service quantities must be 1. Add separate pets in separate checkouts.');
+    error.status = 400;
+    throw error;
+  }
+  if (!isValidMobileNumber(body.contact)) {
+    const error = new Error('Enter an 11-digit customer contact number to create a service booking.');
+    error.status = 400;
+    throw error;
+  }
+  const customerName = String(body.customerName || '').trim();
+  const petName = String(body.petName || '').trim();
+  const petSpecies = String(body.petSpecies || '').trim().toLowerCase();
+  if (!customerName || !petName || !['dog', 'cat'].includes(petSpecies)) {
+    const error = new Error('Enter the customer name, pet name, and pet type to book a service.');
+    error.status = 400;
+    throw error;
+  }
+
+  const services = groomingItems.map((item) => String(item.catalogId || '').trim());
+  if (services.some((service) => !Object.prototype.hasOwnProperty.call(SERVICE_PRICES, service))) {
+    const error = new Error('A selected grooming service is no longer available.');
+    error.status = 400;
+    throw error;
+  }
+  if (groomingItems.some((item, index) => Math.abs(item.unitPrice - SERVICE_PRICES[services[index]]) > 0.01)) {
+    const error = new Error('A grooming service price changed. Refresh the service list and try again.');
+    error.status = 409;
+    throw error;
+  }
+
+  let hotelQuote = null;
+  if (hotelItems.length) {
+    const roomType = String(bookingData.hotelRoomType || '').trim();
+    const itemRoomType = String(hotelItems[0].catalogId || '').replace(/-(weekday|weekend)$/, '');
+    if (!Object.prototype.hasOwnProperty.call(ROOM_PRICES, roomType) || roomType !== itemRoomType) {
+      const error = new Error('The selected pet hotel room is no longer available.');
+      error.status = 400;
+      throw error;
+    }
+    hotelQuote = quoteHotelStay({
+      petRoomTypes: [roomType],
+      checkIn: bookingData.hotelCheckIn,
+      checkOut: bookingData.hotelCheckOut,
+    });
+    if (!hotelQuote.ok) {
+      const error = new Error(hotelQuote.error);
+      error.status = 400;
+      throw error;
+    }
+    if (hotelItems[0].quantity !== 1 || Math.abs(hotelItems[0].lineTotal - hotelQuote.total) > 0.01) {
+      const error = new Error('The pet hotel total does not match the selected stay dates. Review the updated checkout total and try again.');
+      error.status = 409;
+      throw error;
+    }
+  }
+
+  const createdBookings = [];
+  let createdCustomer = null;
+  let createdPet = null;
+  try {
+    let customer = await Customer.findOne({ where: { phone: String(body.contact).trim() } });
+    if (!customer) {
+      customer = await Customer.create({ name: customerName, phone: String(body.contact).trim() });
+      createdCustomer = customer;
+    }
+    const customerPets = await Pet.findAll({ where: { customerId: customer.id } });
+    let pet = customerPets.find((record) => String(record.name || '').trim().toLowerCase() === petName.toLowerCase()
+      && String(record.species || '').trim().toLowerCase() === petSpecies);
+    if (!pet) {
+      pet = await Pet.create({
+        name: petName,
+        species: petSpecies,
+        breed: 'Not provided',
+        customerId: customer.id,
+      });
+      createdPet = pet;
+    }
+    const paidAt = paymentMethod === 'cash' ? new Date() : null;
+    const paymentStatus = paymentMethod === 'cash' ? 'paid' : 'pending';
+    const paymentFields = {
+      paymentMethod,
+      paymentStatus,
+      ...(paidAt ? { paymentPaidAt: paidAt } : {}),
+    };
+
+    if (groomingItems.length) {
+      const result = await invokeBookingController(groomingController.createAppointment, Object.assign(Object.create(req), {
+        body: {
+          services: [...new Set(services)],
+          date: bookingData.groomingDate,
+          time: bookingData.groomingTime,
+          customerId: customer.id,
+          petId: pet.id,
+          status: 'pending',
+        },
+      }));
+      const appointment = result.appointment || result;
+      if (!appointment) throw new Error('Grooming appointment was not created.');
+      createdBookings.push({ type: 'grooming', id: appointment.id });
+      const appointmentRecord = await GroomingAppointment.findByPk(appointment.id);
+      if (!appointmentRecord) throw new Error('Grooming appointment could not be loaded after creation.');
+      await appointmentRecord.update(paymentFields);
+    }
+
+    if (hotelItems.length) {
+      const result = await invokeBookingController(hotelController.createReservation, Object.assign(Object.create(req), {
+        body: {
+          roomType: bookingData.hotelRoomType,
+          checkIn: bookingData.hotelCheckIn,
+          checkInTime: bookingData.hotelCheckInTime,
+          checkOut: bookingData.hotelCheckOut,
+          checkOutTime: bookingData.hotelCheckOutTime,
+          customerId: customer.id,
+          petId: pet.id,
+          status: 'pending',
+        },
+      }));
+      const reservation = result.reservation || result;
+      if (!reservation) throw new Error('Pet hotel reservation was not created.');
+      createdBookings.push({ type: 'hotel', id: reservation.id });
+      const reservationRecord = await HotelReservation.findByPk(reservation.id);
+      if (!reservationRecord) throw new Error('Pet hotel reservation could not be loaded after creation.');
+      await reservationRecord.update(paymentFields);
+    }
+    return createdBookings;
+  } catch (error) {
+    try {
+      await releasePosBookings(createdBookings);
+      if (createdPet) await createdPet.destroy();
+      if (createdCustomer) await createdCustomer.destroy();
+    } catch (rollbackError) {
+      console.error('Unable to release a partially created Counter Checkout booking:', rollbackError);
+      error.message = `${error.message} A partial booking may need staff review.`;
+    }
+    throw error;
+  }
+};
+
 const createCashTransaction = async (req, res, next) => {
+  let posBookingsToRollback = [];
   try {
     const body = req.body || {};
     if (body.type === 'walk-in') {
@@ -832,6 +1062,10 @@ const createCashTransaction = async (req, res, next) => {
           unitPrice,
           lineTotal: Math.round(unitPrice * 100) * quantity / 100,
           category: String(item && item.category || 'Custom').trim().slice(0, 80),
+          kind: ['grooming', 'ayurveda', 'hotel', 'product'].includes(String(item && item.kind))
+            ? String(item.kind)
+            : 'product',
+          ...(item && item.catalogId ? { catalogId: String(item.catalogId).trim() } : {}),
           ...(item && item.inventoryId ? { inventoryId: String(item.inventoryId).trim() } : {}),
         };
       }) : [];
@@ -861,6 +1095,14 @@ const createCashTransaction = async (req, res, next) => {
       if (paymentMethod === 'qrph' && !getPayMongoKey()) {
         return res.status(503).json({ error: 'PayMongo is not configured. Add PAYMONGO_SECRET_KEY to .env.' });
       }
+      const expectedTender = paymentMethod === 'cash'
+        ? Number(body.tenderedAmount == null ? amount : body.tenderedAmount)
+        : amount;
+      if (paymentMethod === 'cash' && (!Number.isFinite(expectedTender) || expectedTender < amount || expectedTender > 10000000)) {
+        return res.status(400).json({ error: 'Cash received must cover the sale total.' });
+      }
+      posBookingsToRollback = await createPosBookings(req, body, items, paymentMethod);
+      const bookingReferences = posBookingsToRollback.map(({ type, id }) => ({ type, id }));
       if (items.some((item) => item.inventoryId)) {
         const transactionRef = firestore.collection('cashTransactions').doc();
         let responseTransaction;
@@ -954,6 +1196,7 @@ const createCashTransaction = async (req, res, next) => {
             recordedBy: 'ADMIN',
             notes: String(body.notes || '').trim(),
             receipt,
+            bookingReferences,
             createdAt: paidAt,
             updatedAt: paidAt,
           });
@@ -964,8 +1207,10 @@ const createCashTransaction = async (req, res, next) => {
             changeDue: saleChangeDue,
             paidAt,
             receipt,
+            bookingReferences,
           };
         });
+        posBookingsToRollback = [];
         return res.status(201).json({ success: true, transaction: responseTransaction });
       }
       const tenderedAmount = paymentMethod === 'cash'
@@ -990,6 +1235,7 @@ const createCashTransaction = async (req, res, next) => {
         paidAt,
         recordedBy: 'ADMIN',
         notes: String(body.notes || '').trim(),
+        bookingReferences,
         receipt: {
           receiptNumber: '',
           customerName,
@@ -1025,18 +1271,25 @@ const createCashTransaction = async (req, res, next) => {
             throw new Error('PayMongo did not return a checkout session and payment URL.');
           }
           await transaction.update({ paymentReference: checkout.id });
+          await Promise.all(bookingReferences.map(async ({ type, id }) => {
+            const Model = type === 'grooming' ? GroomingAppointment : HotelReservation;
+            const booking = await Model.findByPk(id);
+            if (booking) await booking.update({ paymentReference: checkout.id });
+          }));
         } catch (error) {
           await transaction.update({ paymentStatus: 'failed' });
           throw error;
         }
+        posBookingsToRollback = [];
         return res.status(201).json({
           success: true,
-          transaction: { id: transaction.id, amount, tenderedAmount, changeDue, paidAt: transaction.paidAt },
+          transaction: { id: transaction.id, amount, tenderedAmount, changeDue, paidAt: transaction.paidAt, bookingReferences },
           checkoutUrl: checkout.checkoutUrl,
         });
       }
 
-      return res.status(201).json({ success: true, transaction: { id: transaction.id, amount, tenderedAmount, changeDue, paidAt: transaction.paidAt } });
+      posBookingsToRollback = [];
+      return res.status(201).json({ success: true, transaction: { id: transaction.id, amount, tenderedAmount, changeDue, paidAt: transaction.paidAt, bookingReferences } });
     }
 
     if (body.type !== 'booking-payment' || !['grooming', 'hotel'].includes(body.bookingType) || !body.bookingId) {
@@ -1104,6 +1357,14 @@ const createCashTransaction = async (req, res, next) => {
 
     return res.status(201).json({ success: true, transaction: { id: transactionRef.id } });
   } catch (error) {
+    if (posBookingsToRollback.length) {
+      try {
+        await releasePosBookings(posBookingsToRollback);
+      } catch (rollbackError) {
+        console.error('Unable to release Counter Checkout bookings after sale failure:', rollbackError);
+        error.message = `${error.message} A partial appointment or reservation may need staff review.`;
+      }
+    }
     next(error);
   }
 };

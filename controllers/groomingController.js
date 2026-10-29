@@ -101,7 +101,11 @@ const getAppointment = async (req, res, next) => {
 
 const createAppointment = async (req, res, next) => {
   try {
-    const { service, date, time, pickupTime, notes, customerId, petId, status } = req.body;
+    const { service, services: submittedServices, date, time, pickupTime, notes, customerId, petId, status } = req.body;
+    const services = Array.isArray(submittedServices) && submittedServices.length
+      ? submittedServices.map((item) => String(item || '').trim())
+      : [String(service || '').trim()];
+    const distinctServices = [...new Set(services)];
 
     const [customer, pet] = await Promise.all([
       Customer.findByPk(customerId),
@@ -113,7 +117,7 @@ const createAppointment = async (req, res, next) => {
     if (!pet) {
       return res.status(400).json({ error: 'A valid petId is required' });
     }
-    if (!Object.prototype.hasOwnProperty.call(SERVICE_PRICES, service)) {
+    if (!distinctServices.length || distinctServices.some((item) => !Object.prototype.hasOwnProperty.call(SERVICE_PRICES, item))) {
       return res.status(400).json({ error: 'A valid service is required' });
     }
     if (req.body.status && !VALID_STATUSES.includes(req.body.status)) {
@@ -123,7 +127,7 @@ const createAppointment = async (req, res, next) => {
       const check = validateTime(date, time);
       if (!check.ok) return res.status(400).json({ error: check.error });
     }
-    const durationMinutes = groomingBookingDuration([service]);
+    const durationMinutes = groomingBookingDuration(distinctServices);
     if (!durationMinutes) return res.status(400).json({ error: 'A valid service duration is required.' });
     const futureTimeCheck = validateFutureBookingTime(date, time, 'Appointment');
     if (!futureTimeCheck.ok) return res.status(400).json({ error: futureTimeCheck.error });
@@ -160,7 +164,17 @@ const createAppointment = async (req, res, next) => {
     let appointment;
     try {
       appointment = await GroomingAppointment.create({
-        service,
+        service: distinctServices.length === 1 ? distinctServices[0] : 'multiple-services',
+        ...(distinctServices.length > 1 ? {
+          petServices: distinctServices.map((item) => ({
+            petId: pet.id,
+            petName: pet.name,
+            service: item,
+            price: SERVICE_PRICES[item],
+          })),
+          petIds: [pet.id],
+          petNames: [pet.name],
+        } : {}),
         date,
         time,
         ...(slotClaim ? { groomingSlotNumber: slotClaim.slotNumber } : {}),
@@ -169,7 +183,7 @@ const createAppointment = async (req, res, next) => {
         customerId,
         petId,
         status: status || 'pending',
-        price: SERVICE_PRICES[service],
+        price: distinctServices.reduce((total, item) => total + SERVICE_PRICES[item], 0),
       });
       created = true;
     } finally {

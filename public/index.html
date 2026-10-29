@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Glam Grooms Pet Spa & Hotel</title>
-  <link rel="stylesheet" href="/css/style.css?v=guest-home-navbar-20261028" />
+  <link rel="stylesheet" href="/css/style.css?v=mobile-dropdown-navigation-20261029" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 </head>
 <body class="home-page">
-  <header class="navbar home-navbar">
-    <nav class="home-nav-links" aria-label="Main navigation">
+  <header class="navbar home-navbar mobile-nav" data-mobile-nav>
+    <nav class="home-nav-links" id="home-primary-nav" aria-label="Main navigation">
       <a href="/" class="active">Home</a>
       <details class="home-services-menu">
         <summary>Services</summary>
@@ -28,10 +28,13 @@
       <img src="/favicon-48x48.png" alt="" width="36" height="36" />
       <span>Glam Grooms Pet Spa &amp; Hotel</span>
     </a>
-    <nav class="home-nav-account" aria-label="Account">
+    <nav class="home-nav-account" id="home-account-nav" aria-label="Account">
       <a href="/customer/login.html">Login</a>
       <a class="btn btn-primary btn-sm" href="/customer/register.html">Sign Up</a>
     </nav>
+    <button class="mobile-nav-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false" aria-controls="home-primary-nav home-account-nav">
+      <span></span><span></span><span></span>
+    </button>
   </header>
 
   <section class="hero">
@@ -174,6 +177,7 @@
   </footer>
   <script src="/js/heroCarousel.js?v=2"></script>
   <script src="/js/lightbox.js?v=2"></script>
+  <script src="/js/mobile-nav.js?v=dropdown-menu-20261029" defer></script>
   <script>
     document.addEventListener('click', async (event) => {
       const link = event.target.closest('a[href]');

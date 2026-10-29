@@ -27,6 +27,7 @@ const handlePayMongoWebhook = async (req, res) => {
       return res.status(400).json({ error: 'Invalid webhook payload' });
     }
 
+    const eventAttributes = event.attributes || {};
     if (eventType !== 'checkout_session.payment.paid') {
       return res.json({ received: true, skipped: true });
     }
@@ -57,6 +58,23 @@ const handlePayMongoWebhook = async (req, res) => {
           paidAt: new Date(),
         });
       }
+      await Promise.all((Array.isArray(transaction.bookingReferences) ? transaction.bookingReferences : [])
+        .map(async (reference) => {
+          if (!['grooming', 'hotel'].includes(reference.type) || !reference.id) return;
+          const BookingModel = reference.type === 'grooming' ? GroomingAppointment : HotelReservation;
+          const booking = await BookingModel.findByPk(reference.id);
+          if (!booking || booking.paymentMethod !== 'qrph' || booking.status === 'cancelled') return;
+          if (booking.paymentStatus === 'paid' && (reference.type !== 'hotel' || booking.status === 'confirmed')) return;
+          await booking.update({
+            paymentStatus: 'paid',
+            paymentReference: sessionId,
+            paymentPaidAt: booking.paymentPaidAt || new Date(),
+            ...(reference.type === 'hotel' ? {
+              status: 'confirmed',
+              confirmedAt: booking.confirmedAt || new Date(),
+            } : {}),
+          });
+        }));
       return res.json({ received: true, transactionId, status: 'paid', alreadyPaid });
     }
 

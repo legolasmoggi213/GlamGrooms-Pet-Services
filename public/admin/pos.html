@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Counter Checkout — Glam Grooms Admin</title>
-  <link rel="stylesheet" href="/css/style.css?v=counter-checkout-line-chart-20261029" />
+  <link rel="stylesheet" href="/css/style.css?v=counter-checkout-service-only-20261029" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -18,7 +18,7 @@
       <div class="flex-between">
         <div>
           <h1>Counter Checkout</h1>
-          <p class="page-sub">Walk-in product and service sales.</p>
+          <p class="page-sub pos-page-subtitle">Walk-in service sales.</p>
         </div>
       </div>
 
@@ -29,7 +29,6 @@
             <button type="button" data-category="grooming" aria-pressed="false">Grooming</button>
             <button type="button" data-category="ayurveda" aria-pressed="false">Ayurveda</button>
             <button type="button" data-category="hotel" aria-pressed="false">Hotel</button>
-            <button type="button" data-category="products" aria-pressed="false">Products</button>
           </div>
           <div id="pos-products" class="pos-products"><div class="loading">Loading services…</div></div>
         </section>
@@ -58,6 +57,27 @@
             <div class="field" id="sale-pet-field" hidden>
               <label for="sale-pet">Pet name</label>
               <input id="sale-pet" maxlength="120" />
+              <label for="sale-pet-species">Pet type</label>
+              <select id="sale-pet-species">
+                <option value="dog">Dog</option>
+                <option value="cat">Cat</option>
+              </select>
+            </div>
+            <div id="grooming-schedule-fields" class="pos-booking-fields" hidden>
+              <strong>Grooming appointment schedule</strong>
+              <div class="pos-booking-schedule">
+                <label class="field" for="grooming-date">Appointment date<input id="grooming-date" type="date" /></label>
+                <label class="field" for="grooming-time">Appointment time<input id="grooming-time" type="time" /></label>
+              </div>
+            </div>
+            <div id="hotel-schedule-fields" class="pos-booking-fields" hidden>
+              <strong>Pet hotel reservation schedule</strong>
+              <div class="pos-booking-schedule">
+                <label class="field" for="hotel-check-in">Check-in date<input id="hotel-check-in" type="date" /></label>
+                <label class="field" for="hotel-check-in-time">Check-in time<input id="hotel-check-in-time" type="time" /></label>
+                <label class="field" for="hotel-check-out">Check-out date<input id="hotel-check-out" type="date" /></label>
+                <label class="field" for="hotel-check-out-time">Check-out time<input id="hotel-check-out-time" type="time" /></label>
+              </div>
             </div>
             <div class="field">
               <span class="field-label">Payment method</span>
@@ -80,7 +100,7 @@
 
       <section class="panel pos-sales-panel" aria-label="Walk-in sales overview">
         <div class="flex-between pos-sales-heading">
-          <div><h3>Walk-in sales</h3><p class="text-muted">Sales from every completed POS transaction</p></div>
+          <div><h3>Walk-in sales</h3></div>
           <label class="field"><span>Graph period</span><select id="pos-sales-period"><option value="daily">Daily · 7 days</option><option value="weekly">Weekly · 8 weeks</option><option value="monthly">Monthly · 6 months</option></select></label>
         </div>
         <div class="pos-sales-summary">
@@ -116,6 +136,9 @@
     const cashField = document.getElementById('cash-received-field');
     const petField = document.getElementById('sale-pet-field');
     const petNameInput = document.getElementById('sale-pet');
+    const petSpeciesInput = document.getElementById('sale-pet-species');
+    const groomingScheduleFields = document.getElementById('grooming-schedule-fields');
+    const hotelScheduleFields = document.getElementById('hotel-schedule-fields');
     const salesPeriod = document.getElementById('pos-sales-period');
     const salesChart = document.getElementById('pos-sales-chart');
     const salesMessage = document.getElementById('pos-sales-message');
@@ -141,9 +164,6 @@
           ? `${product.occupancy ? `Fits up to ${product.occupancy} pets. ` : ''}${product.amenities.join(' · ')}.`
           : 'Overnight accommodation for your pet.');
       }
-      if (product.kind === 'product') {
-        return product.description || `${product.category || 'Retail item'} available for walk-in purchase.`;
-      }
       if (product.kind === 'ayurveda') {
         return 'Ayurveda-inspired grooming and wellness treatment; included care is listed below.';
       }
@@ -152,19 +172,18 @@
 
     function renderProducts() {
       const visible = catalog.filter((product) => {
-        const matchesCategory = categoryFilter === 'all'
-          || (categoryFilter === 'products' ? product.kind === 'product' : product.kind === categoryFilter);
+        const matchesCategory = categoryFilter === 'all' || product.kind === categoryFilter;
         return matchesCategory;
       });
       productContainer.innerHTML = visible.length ? visible.map((product) => `
-        <button type="button" class="pos-product pos-product-${escapeHtml(product.kind)}" data-product-id="${escapeHtml(product.id)}" ${product.kind === 'product' && (!product.price || product.quantity < 1) ? 'disabled' : ''}>
+        <button type="button" class="pos-product pos-product-${escapeHtml(product.kind)}" data-product-id="${escapeHtml(product.id)}">
           <span class="pos-product-category">${escapeHtml(product.category || capitalize(product.kind))}</span>
           <strong>${escapeHtml(product.label)}</strong>
           <span class="pos-product-description">${escapeHtml(productDescription(product))}</span>
           ${product.details.length ? `<span class="pos-product-details">${product.details.slice(0, 3).map((detail) => `<span>${escapeHtml(detail)}</span>`).join('')}</span>` : ''}
           <span class="pos-product-footer">
-            <span>${product.kind === 'product' ? `${Number(product.quantity || 0).toLocaleString('en-PH')} ${escapeHtml(product.unit || 'unit(s)')} in stock` : product.kind === 'hotel' ? `Weekday ${money(product.weekdayRate)} · Weekend ${money(product.weekendRate)} / ${escapeHtml(product.unit || 'night')}` : product.duration ? `About ${product.duration} min` : 'Price per service'}</span>
-            <strong>${product.kind === 'product' && product.quantity < 1 ? 'Out of stock' : product.price ? `${money(product.price)}${product.unit ? ` / ${escapeHtml(product.unit)}` : ''}` : 'Set price in Inventory'}</strong>
+            <span>${product.kind === 'hotel' ? `Weekday ${money(product.weekdayRate)} · Weekend ${money(product.weekendRate)} / ${escapeHtml(product.unit || 'night')}` : product.duration ? `About ${product.duration} min` : 'Price per service'}</span>
+            <strong>${product.price ? `${money(product.price)}${product.unit ? ` / ${escapeHtml(product.unit)}` : ''}` : 'Price unavailable'}</strong>
           </span>
         </button>`).join('') : '<div class="empty">No matching services.</div>';
     }
@@ -188,9 +207,24 @@
       cartTotal.textContent = money(saleTotal());
       checkoutButton.disabled = !cart.length;
       const includesHotel = cart.some((item) => item.kind === 'hotel');
-      petField.hidden = !includesHotel;
-      petNameInput.required = includesHotel;
-      if (!includesHotel) petNameInput.value = '';
+      const includesGrooming = cart.some((item) => ['grooming', 'ayurveda'].includes(item.kind));
+      const includesService = includesHotel || includesGrooming;
+      petField.hidden = !includesService;
+      petNameInput.required = includesService;
+      groomingScheduleFields.hidden = !includesGrooming;
+      hotelScheduleFields.hidden = !includesHotel;
+      ['grooming-date', 'grooming-time'].forEach((id) => {
+        document.getElementById(id).required = includesGrooming;
+      });
+      ['hotel-check-in', 'hotel-check-in-time', 'hotel-check-out', 'hotel-check-out-time'].forEach((id) => {
+        document.getElementById(id).required = includesHotel;
+      });
+      if (!includesService) {
+        petNameInput.value = '';
+        petSpeciesInput.value = 'dog';
+      }
+      const needsContact = includesService;
+      document.getElementById('sale-contact').required = needsContact;
       updateTender();
     }
 
@@ -375,6 +409,8 @@
         unitPrice: product.price,
         category: product.category,
         kind: product.kind,
+        catalogId: product.id,
+        id: product.id,
         unit: product.unit,
         ...(product.kind === 'product' ? {
           inventoryId: product.inventoryId,
@@ -433,6 +469,41 @@
         return;
       }
       const sale = cart.map((item) => ({ ...item }));
+      const groomingItems = sale.filter((item) => ['grooming', 'ayurveda'].includes(item.kind));
+      const hotelItems = sale.filter((item) => item.kind === 'hotel');
+      if (groomingItems.some((item) => item.quantity !== 1)) {
+        showMessage('Set each grooming service quantity to 1. Add separate pets in separate checkouts.', 'error');
+        return;
+      }
+      if (hotelItems.length > 1) {
+        showMessage('Complete one pet hotel room reservation per checkout.', 'error');
+        return;
+      }
+      if (hotelItems.length) {
+        const hotelItem = hotelItems[0];
+        const roomType = String(hotelItem.catalogId || '').replace(/-(weekday|weekend)$/, '');
+        const query = new URLSearchParams({
+          roomType,
+          checkIn: document.getElementById('hotel-check-in').value,
+          checkOut: document.getElementById('hotel-check-out').value,
+        });
+        try {
+          const quote = await apiGet(`/bookings/hotel/quote?${query}`);
+          const quotedTotal = Math.round(Number(quote.total) * 100) / 100;
+          if (!Number.isFinite(quotedTotal) || quotedTotal <= 0) throw new Error('Unable to calculate the hotel stay total.');
+          if (Math.abs(hotelItem.unitPrice * hotelItem.quantity - quotedTotal) > 0.01) {
+            hotelItem.unitPrice = quotedTotal;
+            hotelItem.quantity = 1;
+            hotelItem.unit = 'stay';
+            renderCart();
+            showMessage(`The hotel price for the selected dates is ${money(quotedTotal)}. Review the updated total and complete checkout again.`, 'success');
+            return;
+          }
+        } catch (error) {
+          showMessage(error.message || 'Unable to calculate the hotel stay total.', 'error');
+          return;
+        }
+      }
       const customerName = document.getElementById('sale-customer').value.trim() || 'Walk-in customer';
       checkoutButton.disabled = true;
       checkoutButton.textContent = 'Processing…';
@@ -444,8 +515,19 @@
           paymentMethod,
           tenderedAmount,
           petName: petNameInput.value.trim(),
-          items: sale.map(({ name, quantity, unitPrice, category, inventoryId }) => ({
-            name, quantity, unitPrice, category,
+          petSpecies: petSpeciesInput.value,
+          posBooking: groomingItems.length || hotelItems.length ? {
+            groomingServices: groomingItems.map((item) => item.catalogId),
+            groomingDate: document.getElementById('grooming-date').value,
+            groomingTime: document.getElementById('grooming-time').value,
+            hotelRoomType: hotelItems.length ? String(hotelItems[0].catalogId).replace(/-(weekday|weekend)$/, '') : null,
+            hotelCheckIn: document.getElementById('hotel-check-in').value,
+            hotelCheckInTime: document.getElementById('hotel-check-in-time').value,
+            hotelCheckOut: document.getElementById('hotel-check-out').value,
+            hotelCheckOutTime: document.getElementById('hotel-check-out-time').value,
+          } : null,
+          items: sale.map(({ name, quantity, unitPrice, category, inventoryId, kind, id }) => ({
+            name, quantity, unitPrice, category, kind, catalogId: id,
             ...(inventoryId ? { inventoryId } : {}),
           })),
         });
@@ -475,7 +557,7 @@
       }
     });
 
-    Promise.all([apiGet('/admin/services'), apiGet('/inventory/products')]).then(([services, products]) => {
+    apiGet('/admin/services').then((services) => {
       const grooming = Array.isArray(services.grooming) ? services.grooming : [];
       const groomingCatalog = grooming
         .filter((service) => service && service.name && (service.name.startsWith('grooming-') || service.name.startsWith('ayurveda-')))
@@ -509,20 +591,6 @@
         details: Array.isArray(service.details && service.details.amenities) ? service.details.amenities : [],
       }))).filter((service) => Number.isFinite(service.price) && service.price > 0);
       catalog = [...groomingCatalog, ...hotelCatalog];
-      catalog.push(...(Array.isArray(products) ? products : []).map((product) => ({
-        id: `inventory-${product.id}`,
-        inventoryId: String(product.id),
-        label: product.name,
-        price: Number(product.price),
-        category: product.category || 'Product',
-        kind: 'product',
-        quantity: Number(product.quantity || 0),
-        unit: product.unit || 'unit(s)',
-        description: product.description || '',
-        includes: [],
-        amenities: [],
-        details: [],
-      })));
       renderProducts();
     }).catch((error) => {
       productContainer.innerHTML = '<div class="alert alert-error show">Unable to load services. Sign in again and retry.</div>';

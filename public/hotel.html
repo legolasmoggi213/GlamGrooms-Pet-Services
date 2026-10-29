@@ -4,18 +4,24 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pet Hotel Reservation — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=service-header-center-20261028" />
+  <link rel="stylesheet" href="/css/style.css?v=mobile-dropdown-navigation-20261029" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 </head>
 <body>
-  <header class="navbar">
+  <header class="navbar mobile-nav" data-mobile-nav>
     <a class="brand" href="/customer/account.html" aria-label="Glam Grooms customer dashboard"><img src="/favicon-48x48.png" alt="" width="48" height="48" /></a>
-    <nav aria-label="Services">
+    <nav id="hotel-mobile-navigation" aria-label="Services">
+      <a class="mobile-menu-link" href="/">Home</a>
+      <a class="mobile-menu-link" href="/grooming.html">Grooming</a>
       <a href="/hotel.html" class="active" aria-current="page">Pet Hotel</a>
+      <a class="mobile-menu-link" href="/customer/account.html">My Account</a>
     </nav>
+    <button class="mobile-nav-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false" aria-controls="hotel-mobile-navigation">
+      <span></span><span></span><span></span>
+    </button>
   </header>
 
   <section class="section">
@@ -113,5 +119,6 @@
   <script src="/js/mobile-number.js"></script>
   <script src="/js/api.js?v=2"></script>
   <script src="/js/hotel.js?v=17"></script>
+  <script src="/js/mobile-nav.js?v=dropdown-menu-20261029" defer></script>
 </body>
 </html>

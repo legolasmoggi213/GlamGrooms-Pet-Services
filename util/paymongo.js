@@ -60,6 +60,7 @@ const createQrPhCheckout = async ({ amount, description, metadata, successUrl, c
 
 const getCheckoutSession = (sessionId) => paymongoRequest(`/checkout_sessions/${encodeURIComponent(sessionId)}`);
 const expireCheckoutSession = (sessionId) => paymongoRequest(`/checkout_sessions/${encodeURIComponent(sessionId)}/expire`, { method: 'POST' });
+const getRefund = (refundId) => paymongoRequest(`/refunds/${encodeURIComponent(refundId)}`);
 
 const resourceId = (resource) => typeof resource === 'string' ? resource : resource?.id;
 
@@ -103,11 +104,24 @@ const resolvePaidPayment = async (checkoutAttributes) => {
   };
 };
 
-const refundCheckoutSession = async (sessionId) => {
+const refundCheckoutSession = async (sessionId, existingRefundId = null) => {
   const checkout = await getCheckoutSession(sessionId);
   const attributes = checkout.data?.attributes || {};
   const payment = await resolvePaidPayment(attributes);
-  const refunds = Array.isArray(payment.refunds) ? payment.refunds : [];
+  const refunds = [...(Array.isArray(payment.refunds) ? payment.refunds : [])];
+  if (existingRefundId) {
+    const latestRefundResponse = await getRefund(existingRefundId);
+    const latestRefund = latestRefundResponse.data;
+    if (!latestRefund?.id || !latestRefund.attributes?.status) {
+      throw new Error('PayMongo did not return the current status for this refund.');
+    }
+    const existingRefundIndex = refunds.findIndex((refund) => resourceId(refund) === latestRefund.id);
+    if (existingRefundIndex >= 0) {
+      refunds[existingRefundIndex] = latestRefund;
+    } else {
+      refunds.push(latestRefund);
+    }
+  }
   const pendingRefund = refunds.find((refund) => ['pending', 'processing', 'refunding'].includes(
     refund?.attributes?.status || refund?.status,
   ));
@@ -165,6 +179,7 @@ module.exports = {
   createQrPhCheckout,
   getCheckoutSession,
   expireCheckoutSession,
+  getRefund,
   refundCheckoutSession,
   getPayMongoKey,
   isCheckoutSessionPaid,

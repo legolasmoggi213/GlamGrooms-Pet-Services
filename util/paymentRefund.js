@@ -5,7 +5,7 @@ const requestGcashBookingRefund = async (booking) => {
 
   try {
     await booking.update({ paymentRefundStatus: 'processing', paymentRefundError: null });
-    const refund = await refundCheckoutSession(booking.paymentReference);
+    const refund = await refundCheckoutSession(booking.paymentReference, booking.paymentRefundReference || null);
     await booking.update({
       paymentRefundStatus: refund.status,
       paymentRefundReference: refund.id,

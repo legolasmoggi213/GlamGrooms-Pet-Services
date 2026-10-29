@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Staff Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=dashboard-bookings-table-20261029" />
+  <link rel="stylesheet" href="/css/style.css?v=pending-appointment-arrivals-20261029" />
 </head>
 <body>
   <div class="admin-layout">
@@ -20,19 +20,60 @@
       <div class="stat-grid" id="staff-stats">
         <div class="loading">Loading schedule…</div>
       </div>
-      <section class="panel" id="staff-pending-grooming" aria-labelledby="staff-pending-grooming-heading">
+      <section class="panel" id="staff-pending-arrivals" aria-labelledby="staff-pending-arrivals-heading">
         <div class="flex-between">
           <div>
-            <h3 id="staff-pending-grooming-heading">Pending Grooming Arrivals</h3>
-            <p class="text-muted">Confirm today’s pending appointments when the customer arrives.</p>
+            <h3 id="staff-pending-arrivals-heading">Pending Appointment Arrivals</h3>
+            <p class="text-muted">Confirm today’s pending grooming appointments and pet hotel arrivals.</p>
           </div>
-          <button type="button" class="btn btn-outline btn-sm" id="staff-refresh-pending-grooming">Refresh</button>
+          <button type="button" class="btn btn-outline btn-sm" id="staff-refresh-pending-arrivals">Refresh</button>
         </div>
-        <div class="table-wrap">
-          <table class="dashboard-booking-table">
-            <thead><tr><th>Date</th><th>Customer</th><th>Service</th><th>Pet</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody id="staff-pending-grooming-rows"><tr><td colspan="7" class="loading">Loading pending arrivals…</td></tr></tbody>
-          </table>
+        <div class="appointments-columns">
+          <section class="appointments-section" aria-labelledby="staff-pending-grooming-heading">
+            <h2 id="staff-pending-grooming-heading">Grooming</h2>
+            <div class="table-wrap">
+              <table class="appointments-table">
+                <thead><tr><th>Customer</th><th>Pet &amp; Service</th><th>Schedule</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody id="staff-pending-grooming-rows"><tr><td colspan="5" class="loading">Loading grooming arrivals…</td></tr></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="appointments-section" aria-labelledby="staff-pending-hotel-heading">
+            <h2 id="staff-pending-hotel-heading">Pet Hotel</h2>
+            <div class="table-wrap">
+              <table class="appointments-table">
+                <thead><tr><th>Customer</th><th>Pet &amp; Room</th><th>Stay</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody id="staff-pending-hotel-rows"><tr><td colspan="5" class="loading">Loading pet hotel arrivals…</td></tr></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+        <p id="staff-pending-arrivals-message" class="text-muted" role="status" aria-live="polite"></p>
+      </section>
+      <section class="panel" id="staff-today-active-arrivals" aria-labelledby="staff-today-active-arrivals-heading">
+        <div>
+          <h3 id="staff-today-active-arrivals-heading">Today's Active Appointment Arrivals</h3>
+          <p class="text-muted">Today’s grooming appointments and pet hotel check-ins.</p>
+        </div>
+        <div class="appointments-columns">
+          <section class="appointments-section" aria-labelledby="staff-today-active-grooming-heading">
+            <h2 id="staff-today-active-grooming-heading">Grooming</h2>
+            <div class="table-wrap">
+              <table class="appointments-table">
+                <thead><tr><th>Customer</th><th>Pet &amp; Service</th><th>Schedule</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody id="staff-today-active-grooming-rows"><tr><td colspan="5" class="loading">Loading grooming arrivals…</td></tr></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="appointments-section" aria-labelledby="staff-today-active-hotel-heading">
+            <h2 id="staff-today-active-hotel-heading">Pet Hotel</h2>
+            <div class="table-wrap">
+              <table class="appointments-table">
+                <thead><tr><th>Customer</th><th>Pet &amp; Room</th><th>Stay</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody id="staff-today-active-hotel-rows"><tr><td colspan="5" class="loading">Loading pet hotel arrivals…</td></tr></tbody>
+              </table>
+            </div>
+          </section>
         </div>
       </section>
       <section class="panel" id="staff-upcoming-arrivals" aria-labelledby="staff-upcoming-arrivals-heading">
@@ -43,11 +84,25 @@
           </div>
           <a class="btn btn-outline btn-sm" href="/admin/grooming.html?filter=upcoming">View arrivals</a>
         </div>
-        <div class="table-wrap">
-          <table class="dashboard-booking-table">
-            <thead><tr><th>Date</th><th>Customer</th><th>Service</th><th>Pet</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody id="staff-upcoming-arrivals-rows"><tr><td colspan="7" class="loading">Loading upcoming arrivals…</td></tr></tbody>
-          </table>
+        <div class="appointments-columns">
+          <section class="appointments-section" aria-labelledby="staff-upcoming-grooming-heading">
+            <h2 id="staff-upcoming-grooming-heading">Grooming</h2>
+            <div class="table-wrap">
+              <table class="appointments-table">
+                <thead><tr><th>Customer</th><th>Pet &amp; Service</th><th>Schedule</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody id="staff-upcoming-grooming-rows"><tr><td colspan="5" class="loading">Loading grooming arrivals…</td></tr></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="appointments-section" aria-labelledby="staff-upcoming-hotel-heading">
+            <h2 id="staff-upcoming-hotel-heading">Pet Hotel</h2>
+            <div class="table-wrap">
+              <table class="appointments-table">
+                <thead><tr><th>Customer</th><th>Pet &amp; Room</th><th>Stay</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody id="staff-upcoming-hotel-rows"><tr><td colspan="5" class="loading">Loading pet hotel arrivals…</td></tr></tbody>
+              </table>
+            </div>
+          </section>
         </div>
       </section>
       <section class="panel" id="staff-revenue" aria-label="Revenue analytics">
@@ -120,6 +175,6 @@
   <script src="/js/admin.js"></script>
   <script src="/js/revenue-chart.js?v=service-line-chart-20261029"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="/js/staff-dashboard.js?v=dashboard-load-priority-20261029"></script>
+  <script src="/js/staff-dashboard.js?v=todays-upcoming-arrivals-split-20261029"></script>
 </body>
 </html>

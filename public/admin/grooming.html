@@ -19,7 +19,7 @@
         <button class="btn btn-primary" id="add-btn">+ New Appointment</button>
       </div>
 
-      <div class="table-wrap">
+      <div class="table-wrap" id="grooming-table-wrap">
         <table class="grooming-table">
           <thead id="grooming-table-head">
             <tr><th>ID</th><th>Date</th><th>Time</th><th>Pickup</th><th>Service</th><th>Pet</th><th>Customer</th><th>Price</th><th>Status</th><th>Actions</th></tr>
@@ -28,6 +28,26 @@
             <tr><td colspan="10" class="loading">Loading…</td></tr>
           </tbody>
         </table>
+      </div>
+      <div class="appointments-columns" id="arrivals-columns" hidden>
+        <section class="appointments-section" aria-labelledby="arrivals-grooming-heading">
+          <h2 id="arrivals-grooming-heading">Grooming</h2>
+          <div class="table-wrap">
+            <table class="appointments-table">
+              <thead><tr><th>Customer</th><th>Pet &amp; Service</th><th>Schedule</th><th>Status</th></tr></thead>
+              <tbody id="arrival-grooming-rows"><tr><td colspan="4" class="loading">Loading grooming arrivals…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="appointments-section" aria-labelledby="arrivals-hotel-heading">
+          <h2 id="arrivals-hotel-heading">Pet Hotel</h2>
+          <div class="table-wrap">
+            <table class="appointments-table">
+              <thead><tr><th>Customer</th><th>Pet &amp; Room</th><th>Stay</th><th>Status</th></tr></thead>
+              <tbody id="arrival-hotel-rows"><tr><td colspan="4" class="loading">Loading pet hotel arrivals…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </main>
   </div>
@@ -38,6 +58,10 @@
     renderSidebar('Grooming');
 
     const rowsEl = document.getElementById('rows');
+    const groomingTableWrap = document.getElementById('grooming-table-wrap');
+    const arrivalsColumns = document.getElementById('arrivals-columns');
+    const groomingArrivalRows = document.getElementById('arrival-grooming-rows');
+    const hotelArrivalRows = document.getElementById('arrival-hotel-rows');
     const arrivalFilter = new URLSearchParams(location.search).get('filter');
     const todayOnly = arrivalFilter === 'today';
     const upcomingOnly = arrivalFilter === 'upcoming';
@@ -58,15 +82,19 @@
     const bookingServices = (appointment) => Array.isArray(appointment.petServices) && appointment.petServices.length
       ? appointment.petServices.map((item) => `${escapeHtml(item.petName || 'Pet')}: ${escapeHtml(serviceLabel(item.service))}`).join('<br>')
       : escapeHtml(serviceLabel(appointment.service));
+    const roomLabel = (reservation) => Array.isArray(reservation.petRooms) && reservation.petRooms.length
+      ? reservation.petRooms.map((item) => `${item.petName || 'Pet'}: ${String(item.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join('; ')
+      : String(reservation.roomType || 'Pet Hotel').replace(/^staycation-/, '').replace(/-/g, ' ');
 
     if (todayOnly || upcomingOnly) {
-      const title = upcomingOnly ? 'Upcoming Arrivals' : "Today's Active Arrivals";
+      const title = upcomingOnly ? 'Upcoming Arrivals' : "Today's Active Appointment Arrivals";
       document.title = `${title} — Glam Grooms Admin`;
       document.getElementById('grooming-page-title').textContent = title;
+      groomingTableWrap.hidden = true;
+      arrivalsColumns.hidden = false;
       document.getElementById('grooming-page-subtitle').textContent = upcomingOnly
         ? 'Upcoming grooming appointments and pet hotel check-ins.'
         : `Active grooming appointments and pet hotel check-ins for ${new Date(`${today}T12:00:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`;
-      document.getElementById('grooming-table-head').innerHTML = '<tr><th>Type</th><th>Customer</th><th>Pet &amp; Service / Room</th><th>Schedule</th></tr>';
     }
 
     async function loadAppointments() {
@@ -76,46 +104,32 @@
         const petsFor = (booking) => Array.isArray(booking.petNames) && booking.petNames.length
           ? booking.petNames.join(', ')
           : (booking.Pets || (booking.Pet ? [booking.Pet] : [])).map((pet) => pet.name).filter(Boolean).join(', ') || '—';
-        const arrivals = [
-          ...appointments
-            .filter((appointment) => isArrivalInRange(appointment.date)
-              && activeStatuses.has(String(appointment.status || '').toLowerCase()))
-            .map((appointment) => ({
-              type: 'Grooming',
-              date: String(appointment.date || ''),
-              time: String(appointment.time || ''),
-              customer: appointment.Customer?.name || appointment.customerDetails?.name || '—',
-              pets: petsFor(appointment),
-              detail: Array.isArray(appointment.petServices) && appointment.petServices.length
-                ? appointment.petServices.map((item) => `${item.petName || 'Pet'}: ${serviceLabel(item.service)}`).join('; ')
-                : serviceLabel(appointment.service),
-              schedule: `${fmtDate(appointment.date)} at ${appointment.time || 'Time not set'}${appointment.pickupTime ? ` · Pickup ${appointment.pickupTime}` : ''}`,
-            })),
-          ...reservations
-            .filter((reservation) => isArrivalInRange(reservation.checkIn)
-              && ['pending', 'reserved', 'confirmed'].includes(String(reservation.status || '').toLowerCase()))
-            .map((reservation) => ({
-              type: 'Pet Hotel',
-              date: String(reservation.checkIn || ''),
-              time: String(reservation.checkInTime || ''),
-              customer: reservation.Customer?.name || reservation.customerDetails?.name || '—',
-              pets: petsFor(reservation),
-              detail: Array.isArray(reservation.petRooms) && reservation.petRooms.length
-                ? reservation.petRooms.map((item) => `${item.petName || 'Pet'}: ${String(item.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join('; ')
-                : String(reservation.roomType || 'Pet Hotel').replace(/^staycation-/, '').replace(/-/g, ' '),
-              schedule: `Check-in: ${fmtDate(reservation.checkIn)} ${reservation.checkInTime || ''} · Check-out: ${fmtDate(reservation.checkOut)} ${reservation.checkOutTime || ''}`,
-            })),
-        ].sort((left, right) => left.date.localeCompare(right.date) || left.time.localeCompare(right.time));
-        rowsEl.innerHTML = arrivals.length
-          ? arrivals.map((arrival) => `<tr>
-              <td>${arrival.type}</td>
-              <td>${escapeHtml(arrival.customer)}</td>
-              <td><span class="appointment-primary">${escapeHtml(arrival.pets)}</span><span class="appointment-detail">${escapeHtml(arrival.detail)}</span></td>
-              <td>${escapeHtml(arrival.schedule)}</td>
+        const grooming = appointments
+          .filter((appointment) => isArrivalInRange(appointment.date)
+            && activeStatuses.has(String(appointment.status || '').toLowerCase()))
+          .sort((left, right) => String(left.date || '').localeCompare(String(right.date || ''))
+            || String(left.time || '').localeCompare(String(right.time || '')));
+        const hotel = reservations
+          .filter((reservation) => isArrivalInRange(reservation.checkIn)
+            && ['pending', 'reserved', 'confirmed'].includes(String(reservation.status || '').toLowerCase()))
+          .sort((left, right) => String(left.checkIn || '').localeCompare(String(right.checkIn || ''))
+            || String(left.checkInTime || '').localeCompare(String(right.checkInTime || '')));
+        groomingArrivalRows.innerHTML = grooming.length
+          ? grooming.map((appointment) => `<tr>
+              <td>${escapeHtml(appointment.Customer?.name || appointment.customerDetails?.name || '—')}</td>
+              <td><span class="appointment-primary">${escapeHtml(petsFor(appointment))}</span><span class="appointment-detail">${bookingServices(appointment)}</span></td>
+              <td>${escapeHtml(fmtDate(appointment.date))} at ${escapeHtml(appointment.time || 'Time not set')}${appointment.pickupTime ? ` · Pickup ${escapeHtml(appointment.pickupTime)}` : ''}</td>
+              <td>${statusBadge(appointment.status)}</td>
             </tr>`).join('')
-          : `<tr><td colspan="4" class="empty">${upcomingOnly
-            ? 'No upcoming grooming appointments or pet hotel check-ins.'
-            : 'No active grooming appointments or pet hotel check-ins today.'}</td></tr>`;
+          : `<tr><td colspan="4" class="empty">No ${upcomingOnly ? 'upcoming' : 'active'} grooming appointments${upcomingOnly ? '.' : ' today.'}</td></tr>`;
+        hotelArrivalRows.innerHTML = hotel.length
+          ? hotel.map((reservation) => `<tr>
+              <td>${escapeHtml(reservation.Customer?.name || reservation.customerDetails?.name || '—')}</td>
+              <td><span class="appointment-primary">${escapeHtml(petsFor(reservation))}</span><span class="appointment-detail">${escapeHtml(roomLabel(reservation))}</span></td>
+              <td>Check-in: ${escapeHtml(fmtDate(reservation.checkIn))} ${escapeHtml(reservation.checkInTime || '')} · Check-out: ${escapeHtml(fmtDate(reservation.checkOut))} ${escapeHtml(reservation.checkOutTime || '')}</td>
+              <td>${statusBadge(reservation.status)}</td>
+            </tr>`).join('')
+          : `<tr><td colspan="4" class="empty">No ${upcomingOnly ? 'upcoming' : 'active'} pet hotel check-ins${upcomingOnly ? '.' : ' today.'}</td></tr>`;
         return;
       }
 
@@ -337,7 +351,13 @@
         [customersCache, petsCache] = await Promise.all([apiGet('/customers'), apiGet('/pets')]);
         await loadAppointments();
       } catch (e) {
-        rowsEl.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(e.message)}</td></tr>`;
+        if (todayOnly || upcomingOnly) {
+          const errorRow = `<tr><td colspan="4" class="empty">${escapeHtml(e.message)}</td></tr>`;
+          groomingArrivalRows.innerHTML = errorRow;
+          hotelArrivalRows.innerHTML = errorRow;
+        } else {
+          rowsEl.innerHTML = `<tr><td colspan="10" class="empty">${escapeHtml(e.message)}</td></tr>`;
+        }
       }
     })();
   </script>

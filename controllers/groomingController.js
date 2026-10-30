@@ -123,6 +123,9 @@ const createAppointment = async (req, res, next) => {
     if (req.body.status && !VALID_STATUSES.includes(req.body.status)) {
       return res.status(400).json({ error: 'A valid status is required' });
     }
+    if (status === 'completed') {
+      return res.status(409).json({ error: 'An appointment must be in progress and paid before checkout.' });
+    }
     if (time) {
       const check = validateTime(date, time);
       if (!check.ok) return res.status(400).json({ error: check.error });
@@ -212,8 +215,8 @@ const updateAppointment = async (req, res, next) => {
       if (!['paid', 'unpaid'].includes(paymentStatus)) {
         return res.status(400).json({ error: 'Payment status must be paid or unpaid.' });
       }
-      if (appointment.status !== 'in-progress' || !appointment.confirmedAt) {
-        return res.status(409).json({ error: 'Payment can only be updated for confirmed, in-progress appointments.' });
+      if (appointment.status !== 'in-progress') {
+        return res.status(409).json({ error: 'Payment can only be updated for in-progress appointments.' });
       }
       if (appointment.paymentMethod === 'qrph') {
         return res.status(409).json({ error: 'GCash payment status is updated automatically after payment verification.' });
@@ -227,6 +230,9 @@ const updateAppointment = async (req, res, next) => {
     const { service, date, time, pickupTime, status, notes, customerId, petId } = body;
     if (status && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'A valid status is required' });
+    }
+    if (status === 'completed' && String(appointment.paymentStatus || '').toLowerCase() !== 'paid') {
+      return res.status(409).json({ error: 'Record payment before checking out this appointment.' });
     }
     if (customerId !== undefined && !(await Customer.findByPk(customerId))) {
       return res.status(400).json({ error: 'A valid customerId is required' });

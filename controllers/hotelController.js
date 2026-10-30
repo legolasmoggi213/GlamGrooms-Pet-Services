@@ -175,6 +175,9 @@ const createReservation = async (req, res, next) => {
     if (req.body.status && !VALID_STATUSES.includes(req.body.status)) {
       return res.status(400).json({ error: 'A valid status is required' });
     }
+    if (status === 'checked-out') {
+      return res.status(409).json({ error: 'A reservation must be checked in and paid before checkout.' });
+    }
     if (!checkInTime || !checkOutTime) {
       return res.status(400).json({ error: 'Check-in and check-out times are required' });
     }
@@ -258,8 +261,8 @@ const updateReservation = async (req, res, next) => {
       if (!['paid', 'unpaid'].includes(paymentStatus)) {
         return res.status(400).json({ error: 'Payment status must be paid or unpaid.' });
       }
-      if (reservation.status !== 'checked-in' || !reservation.confirmedAt) {
-        return res.status(409).json({ error: 'Payment can only be updated for confirmed, checked-in reservations.' });
+      if (reservation.status !== 'checked-in') {
+        return res.status(409).json({ error: 'Payment can only be updated for checked-in reservations.' });
       }
       if (reservation.paymentMethod === 'qrph') {
         return res.status(409).json({ error: 'GCash payment status is updated automatically after payment verification.' });
@@ -273,6 +276,14 @@ const updateReservation = async (req, res, next) => {
     const { roomType, checkIn, checkInTime, checkOut, checkOutTime, status, notes, customerId, petId } = body;
     if (status && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'A valid status is required' });
+    }
+    if (status === 'checked-out') {
+      if (reservation.status !== 'checked-in') {
+        return res.status(409).json({ error: 'Only checked-in reservations can be checked out.' });
+      }
+      if (String(reservation.paymentStatus || '').toLowerCase() !== 'paid') {
+        return res.status(409).json({ error: 'Record payment before checking out this reservation.' });
+      }
     }
     if (checkInTime) {
       const check = validateTime(checkIn, checkInTime);
@@ -427,6 +438,10 @@ const sendReservationTicketEmail = async (req, res, next) => {
     if (!reservation) return res.status(404).json({ error: 'Reservation not found' });
     if (!['checked-in', 'checked-out'].includes(String(reservation.status || '').toLowerCase())) {
       return res.status(409).json({ error: 'Check in the pet hotel reservation before sending its ticket.' });
+    }
+    if (String(reservation.status || '').toLowerCase() === 'checked-in'
+      && String(reservation.paymentStatus || '').toLowerCase() !== 'paid') {
+      return res.status(409).json({ error: 'Record payment before checking out this reservation.' });
     }
 
     const [customer, pets] = await Promise.all([

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=dashboard-reference-20261031" />
+  <link rel="stylesheet" href="/css/style.css?v=dashboard-disclosures-20261031" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -113,39 +113,41 @@
         </div>
       </section>
 
-      <section class="panel">
-        <h3>Hotel Occupancy — This Month</h3>
-        <div id="occupancy"><div class="loading">Loading…</div></div>
-      </section>
-      <section class="panel" aria-labelledby="recent-activity-heading">
-        <h3 id="recent-activity-heading">Recent Activities</h3>
-        <div id="activity" class="activity-columns">
-          <section class="activity-group" aria-labelledby="grooming-activity-heading">
-            <h4 id="grooming-activity-heading">Grooming</h4>
-            <div id="grooming-activity"><div class="loading">Loading grooming activity…</div></div>
-          </section>
-          <section class="activity-group" aria-labelledby="hotel-activity-heading">
-            <h4 id="hotel-activity-heading">Pet Hotel</h4>
-            <div id="hotel-activity"><div class="loading">Loading hotel activity…</div></div>
-          </section>
+      <details class="panel dashboard-disclosure" open aria-labelledby="hotel-occupancy-heading">
+        <summary><h3 id="hotel-occupancy-heading">Hotel Occupancy — This Month</h3></summary>
+        <div class="dashboard-disclosure-content" id="occupancy"><div class="loading">Loading…</div></div>
+      </details>
+      <details class="panel dashboard-disclosure" open aria-labelledby="recent-activity-heading">
+        <summary><h3 id="recent-activity-heading">Recent Activities</h3></summary>
+        <div class="dashboard-disclosure-content">
+          <div id="activity" class="activity-columns">
+            <section class="activity-group" aria-labelledby="grooming-activity-heading">
+              <h4 id="grooming-activity-heading">Grooming</h4>
+              <div id="grooming-activity"><div class="loading">Loading grooming activity…</div></div>
+            </section>
+            <section class="activity-group" aria-labelledby="hotel-activity-heading">
+              <h4 id="hotel-activity-heading">Pet Hotel</h4>
+              <div id="hotel-activity"><div class="loading">Loading hotel activity…</div></div>
+            </section>
+          </div>
         </div>
-      </section>
-      <section class="panel" aria-labelledby="dashboard-transaction-history-heading">
-        <div>
-          <h3 id="dashboard-transaction-history-heading">Transaction History</h3>
+      </details>
+      <details class="panel dashboard-disclosure" open aria-labelledby="dashboard-transaction-history-heading">
+        <summary><h3 id="dashboard-transaction-history-heading">Transaction History</h3></summary>
+        <div class="dashboard-disclosure-content">
           <p class="text-muted">Completed services and booking activity older than one week.</p>
+          <div class="table-wrap">
+            <table class="appointments-table transaction-history-table">
+              <thead>
+                <tr><th>Service</th><th>Customer</th><th>Pet &amp; Service / Room</th><th>Completed / Last activity</th><th>Booking status</th><th>Payment status</th><th>Payment method</th><th>Amount</th><th></th></tr>
+              </thead>
+              <tbody id="dashboard-transaction-history-rows">
+                <tr><td colspan="9" class="loading">Loading transaction history…</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div class="table-wrap">
-          <table class="appointments-table transaction-history-table">
-            <thead>
-              <tr><th>Service</th><th>Customer</th><th>Pet &amp; Service / Room</th><th>Completed / Last activity</th><th>Booking status</th><th>Payment status</th><th>Payment method</th><th>Amount</th><th></th></tr>
-            </thead>
-            <tbody id="dashboard-transaction-history-rows">
-              <tr><td colspan="9" class="loading">Loading transaction history…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+      </details>
 
       <section class="panel" id="revenue" aria-label="Revenue analytics">
         <div class="analytics-heading">

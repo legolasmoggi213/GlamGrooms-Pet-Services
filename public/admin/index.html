@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=pending-appointment-arrivals-20261029" />
+  <link rel="stylesheet" href="/css/style.css?v=dashboard-reference-20261031" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -217,7 +217,7 @@
 
   <script src="/js/revenue-chart.js?v=dashboard-pdf-reference-20261029"></script>
   <script src="/js/api.js?v=php-currency-20261027"></script>
-  <script src="/js/admin.js?v=staff-dashboard-access-20261028"></script>
+  <script src="/js/admin.js?v=dashboard-cash-revenue-20261031"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script>
     const initDashboard = () => {
@@ -313,7 +313,9 @@
           statCard('Grooming Revenue', fmtMoney(s.grooming.revenue), 'green', '#revenue') +
           statCard('Hotel Revenue', fmtMoney(s.hotel.revenue), 'green', '#revenue') +
           statCard('Walk-in Cash Sales', fmtMoney(s.overTheCounterRevenue), 'green', '/admin/pos.html') +
-          statCard('Total Revenue', fmtMoney(s.totalRevenue), 'purple', '#revenue');
+          statCard('Total Revenue', fmtMoney(s.totalRevenue), 'purple', '#revenue') +
+          statCard('Grooming Revenue (Cash)', fmtMoney(s.grooming.cashRevenue), 'green', '#revenue') +
+          statCard('Hotel Revenue (Cash)', fmtMoney(s.hotel.cashRevenue), 'green', '#revenue');
       }
 
       async function loadPendingArrivals() {

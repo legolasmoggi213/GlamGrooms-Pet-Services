@@ -222,6 +222,8 @@
       statCard('Hotel Revenue', fmtMoney(stats.hotel.revenue), 'green', '#staff-revenue'),
       statCard('Walk-in Cash Sales', fmtMoney(stats.overTheCounterRevenue), 'green', '#staff-revenue'),
       statCard('Total Revenue', fmtMoney(stats.totalRevenue), 'purple', '#staff-revenue'),
+      statCard('Grooming Revenue (Cash)', fmtMoney(stats.grooming.cashRevenue), 'green', '#staff-revenue'),
+      statCard('Hotel Revenue (Cash)', fmtMoney(stats.hotel.cashRevenue), 'green', '#staff-revenue'),
     ].join('');
 
     pendingGroomingRows.innerHTML = pendingGroomingToday.length

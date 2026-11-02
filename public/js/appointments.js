@@ -268,7 +268,9 @@
         <div class="field full"><label>Pet Details</label><textarea rows="5" readonly>${escapeHtml(petInfo || '—')}</textarea></div>
         <div class="field full"><label>Customer Details</label><textarea rows="4" readonly>${escapeHtml(customerInfo || '—')}</textarea></div>
         <div class="field full"><label>Customer Notes</label><textarea rows="3" readonly>${escapeHtml(record.notes || 'No notes.')}</textarea></div>
+        <div class="form-actions full"><button type="button" class="btn btn-outline" data-close-booking-details>Close</button></div>
       </div>`);
+      document.getElementById('modal-body').querySelector('[data-close-booking-details]').addEventListener('click', closeModal);
   };
 
   const renderRows = (type, rowsEl, emptyMessage) => {
@@ -734,7 +736,19 @@
     });
   });
 
-  loadAppointments().catch((error) => {
+  const dashboardBookingParams = new URLSearchParams(location.search);
+  const dashboardBookingType = dashboardBookingParams.get('bookingType');
+  const dashboardBookingId = dashboardBookingParams.get('bookingId');
+  loadAppointments().then(async () => {
+    if (!['grooming', 'hotel'].includes(dashboardBookingType) || !dashboardBookingId) return;
+    try {
+      await viewBooking({ id: dashboardBookingId }, dashboardBookingType);
+      history.replaceState(null, '', location.pathname);
+    } catch (error) {
+      messageEl.className = 'text-error';
+      messageEl.textContent = error.message;
+    }
+  }).catch((error) => {
     showLoadError(error);
   });
 })();

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=revenue-modal-colors-20261103" />
+  <link rel="stylesheet" href="/css/style.css?v=dashboard-occupancy-20261103" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -219,7 +219,7 @@
 
   <script src="/js/revenue-chart.js?v=dashboard-pdf-reference-20261029"></script>
   <script src="/js/api.js?v=php-currency-20261027"></script>
-  <script src="/js/admin.js?v=confirmation-status-refresh-20261103"></script>
+  <script src="/js/admin.js?v=dashboard-occupancy-20261103"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script>
     const initDashboard = () => {
@@ -464,31 +464,7 @@
 
       async function loadOccupancy() {
         const days = await apiGet('/admin/occupancy');
-        const container = document.getElementById('occupancy');
-        if (!days.length) {
-          container.innerHTML = '<div class="empty">No occupancy data available.</div>';
-          return;
-        }
-        container.innerHTML = `<div class="occupancy-days">${days.map((day) => {
-          const statusText = day.bookings.length ? 'Active' : 'Available';
-          const statusClass = day.bookings.length ? 'active' : 'available';
-          return `
-          <section class="occ-day">
-            <div class="occ-day-header">
-              <strong>${fmtDate(day.date)}</strong>
-              <span>${day.customers} ${day.customers === 1 ? 'customer' : 'customers'} · ${day.reservationCount} ${day.reservationCount === 1 ? 'booking' : 'bookings'}</span>
-              <span class="occ-status-badge ${statusClass}">${statusText}</span>
-              <span class="occ-arrivals">${day.arrivals} arriving</span>
-            </div>
-            ${day.bookings.length ? `<div class="occ-booking-list">${day.bookings.map((booking) => `
-              <button type="button" class="occ-booking occ-booking-button" data-booking-id="${escapeHtml(booking.id)}" data-booking-type="hotel" aria-label="View full hotel booking details for ${escapeHtml(booking.customerName)}">
-                <div class="occ-booking-title"><strong>${escapeHtml(booking.customerName)}</strong>${statusBadge(booking.status)}</div>
-                <div class="occ-booking-meta">${escapeHtml((booking.petNames || []).join(', ') || 'No pet listed')}${booking.customerPhone ? ` · ${escapeHtml(booking.customerPhone)}` : ''}</div>
-                <div class="occ-booking-meta">${escapeHtml((booking.roomAssignments || []).join(' · '))}</div>
-                <div class="occ-booking-times">Check-in: ${fmtDate(booking.checkIn)} ${escapeHtml(booking.checkInTime || 'Time not set')} <span>→</span> Check-out: ${fmtDate(booking.checkOut)} ${escapeHtml(booking.checkOutTime || 'Time not set')}</div>
-              </button>`).join('')}</div>` : '<div class="occ-empty">No active hotel bookings. Room is available.</div>'}
-          </section>`;
-        }).join('')}</div>`;
+        renderHotelOccupancy(days, document.getElementById('occupancy'));
       }
 
       async function loadActivity() {

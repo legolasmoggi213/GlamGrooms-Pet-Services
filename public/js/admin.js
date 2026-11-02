@@ -162,6 +162,42 @@ function openRevenueCustomersModal(bookings, service, paymentType) {
     </div>`);
 }
 
+function renderHotelOccupancy(days, container) {
+  if (!Array.isArray(days) || !days.length) {
+    container.innerHTML = '<div class="empty">No occupancy data available.</div>';
+    return;
+  }
+
+  container.innerHTML = `<div class="occupancy-days">${days.map((day) => {
+    const bookings = Array.isArray(day.bookings) ? day.bookings : [];
+    const capacity = Math.max(1, Number(day.capacity) || 35);
+    const occupiedPets = Math.max(0, Number(day.occupiedPets) || 0);
+    const occupancyPercent = Math.round(occupiedPets / capacity * 100);
+    const statusText = occupancyPercent >= 100 ? 'At capacity' : bookings.length ? 'Occupied' : 'Available';
+    const statusClass = occupancyPercent >= 100 ? 'full' : bookings.length ? 'active' : 'available';
+    return `
+      <section class="occ-day">
+        <div class="occ-day-header">
+          <strong>${escapeHtml(fmtDate(day.date))}</strong>
+          <span>${Number(day.customers) || 0} ${Number(day.customers) === 1 ? 'customer' : 'customers'} · ${Number(day.reservationCount) || 0} ${Number(day.reservationCount) === 1 ? 'booking' : 'bookings'}</span>
+          <span class="occ-status-badge ${statusClass}">${statusText}</span>
+          <span class="occ-arrivals">${Number(day.arrivals) || 0} arriving</span>
+        </div>
+        <div class="occ-capacity" role="meter" aria-label="Pet capacity for ${escapeHtml(fmtDate(day.date))}" aria-valuemin="0" aria-valuemax="${capacity}" aria-valuenow="${occupiedPets}">
+          <div class="occ-capacity-label"><span>Pet capacity</span><strong>${occupiedPets} / ${capacity}</strong></div>
+          <div class="occ-capacity-track"><span style="width: ${Math.min(100, occupancyPercent)}%"></span></div>
+        </div>
+        ${bookings.length ? `<div class="occ-booking-list">${bookings.map((booking) => `
+          <button type="button" class="occ-booking occ-booking-button" data-booking-id="${escapeHtml(booking.id)}" data-booking-type="hotel" aria-label="View hotel booking for ${escapeHtml(booking.customerName)}">
+            <div class="occ-booking-title"><strong>${escapeHtml(booking.customerName)}</strong>${statusBadge(booking.status)}</div>
+            <div class="occ-booking-meta">${escapeHtml((booking.petNames || []).join(', ') || 'No pet listed')}${booking.customerPhone ? ` · ${escapeHtml(booking.customerPhone)}` : ''}</div>
+            <div class="occ-booking-meta">${escapeHtml((booking.roomAssignments || []).join(' · '))}</div>
+            <div class="occ-booking-times">Check-in: ${escapeHtml(fmtDate(booking.checkIn))} ${escapeHtml(booking.checkInTime || 'Time not set')} <span>→</span> Check-out: ${escapeHtml(fmtDate(booking.checkOut))} ${escapeHtml(booking.checkOutTime || 'Time not set')}</div>
+          </button>`).join('')}</div>` : '<div class="occ-empty">No hotel bookings occupy this date.</div>'}
+      </section>`;
+  }).join('')}</div>`;
+}
+
 async function confirmDelete(message, onConfirm) {
   if (window.confirm(message)) {
     await onConfirm();

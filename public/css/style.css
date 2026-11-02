@@ -1786,6 +1786,15 @@ tr:hover td { background: #f5f1e5; }
   background: rgba(144, 155, 61, 0.12);
   color: #606b1a;
 }
+.occ-status-badge.full { background: rgba(170, 61, 47, 0.12); color: #a0342a; }
+.occ-capacity { display: grid; gap: 0.3rem; max-width: 420px; margin: 0.45rem 0 0.7rem; }
+.occ-capacity-label { display: flex; justify-content: space-between; gap: 1rem; color: var(--admin-muted); font-size: 0.72rem; }
+.occ-capacity-label strong { color: var(--admin-text); }
+.occ-capacity-track { height: 7px; overflow: hidden; border-radius: 999px; background: #e7eae5; }
+.occ-capacity-track > span { display: block; height: 100%; border-radius: inherit; background: #28766f; transition: width 180ms ease; }
+.occ-status-badge.full ~ .occ-capacity .occ-capacity-track > span { background: #b44d3d; }
+.occupancy-toolbar { align-items: center; margin-bottom: 0.75rem; }
+.occupancy-toolbar p { margin: 0; }
 .occ-empty {
   margin-top: 0.45rem;
   color: var(--admin-muted);

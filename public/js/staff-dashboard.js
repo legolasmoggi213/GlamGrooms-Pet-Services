@@ -13,6 +13,7 @@
   const upcomingHotelRows = document.getElementById('staff-upcoming-hotel-rows');
   const groomingActivityEl = document.getElementById('staff-grooming-activity');
   const hotelActivityEl = document.getElementById('staff-hotel-activity');
+  const occupancyEl = document.getElementById('staff-occupancy');
   const transactionHistoryRows = document.getElementById('staff-transaction-history-rows');
   const statsEl = document.getElementById('staff-stats');
   const messageEl = document.getElementById('staff-dashboard-message');
@@ -55,7 +56,7 @@
         const schedule = type === 'grooming'
           ? `${fmtDate(booking.date)} at ${booking.time || 'Time not set'}`
           : `${fmtDate(booking.checkIn)} to ${fmtDate(booking.checkOut)}`;
-        return `<a class="activity-item activity-booking-button staff-dashboard-activity-link" href="/admin/appointments.html" aria-label="View ${escapeHtml(label)} appointment">
+        return `<a class="activity-item activity-booking-button staff-dashboard-activity-link" href="/admin/appointments.html?bookingType=${type}&amp;bookingId=${encodeURIComponent(booking.id)}" aria-label="View ${escapeHtml(label)} booking details for ${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || 'customer')}">
           <span class="dot">${label}</span>
           <span><span>${escapeHtml(summary)} ${statusBadge(booking.status)}</span><span class="meta">${escapeHtml(schedule)} · ${escapeHtml(fmtDateTime(activityTime(booking)))}</span></span>
         </a>`;
@@ -129,6 +130,28 @@
     if (window.requestIdleCallback) window.requestIdleCallback(callback, { timeout: 1500 });
     else window.setTimeout(callback, 300);
   };
+  const loadHotelOccupancy = async () => {
+    const days = await apiGet('/admin/occupancy');
+    renderHotelOccupancy(days, occupancyEl);
+  };
+  occupancyEl.addEventListener('click', (event) => {
+    const booking = event.target.closest('[data-booking-id][data-booking-type="hotel"]');
+    if (!booking) return;
+    window.location.href = `/admin/appointments.html?bookingType=hotel&bookingId=${encodeURIComponent(booking.dataset.bookingId)}`;
+  });
+  document.getElementById('staff-refresh-occupancy').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = 'Refreshing…';
+    try {
+      await loadHotelOccupancy();
+    } catch (error) {
+      occupancyEl.innerHTML = `<div class="alert alert-error show">Unable to load occupancy: ${escapeHtml(error.message)}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Refresh';
+    }
+  });
 
   const loadRevenue = async () => {
     const selectedPeriod = document.querySelector('#staff-revenue .revenue-periods button[aria-pressed="true"]')?.dataset.period || 'monthly';
@@ -192,6 +215,9 @@
   document.getElementById('staff-export-revenue').addEventListener('click', exportRevenuePdf);
 
   const loadDashboard = async () => {
+    loadHotelOccupancy().catch((error) => {
+      occupancyEl.innerHTML = `<div class="alert alert-error show">Unable to load occupancy: ${escapeHtml(error.message)}</div>`;
+    });
     const [grooming, hotel, stats] = await Promise.all([
       apiGet('/grooming'),
       apiGet('/hotel'),

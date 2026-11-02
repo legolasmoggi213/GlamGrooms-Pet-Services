@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Staff Dashboard — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=revenue-modal-colors-20261103" />
+  <link rel="stylesheet" href="/css/style.css?v=dashboard-occupancy-20261103" />
 </head>
 <body>
   <div class="admin-layout">
@@ -105,6 +105,16 @@
           </section>
         </div>
       </section>
+      <details class="panel dashboard-disclosure" open aria-labelledby="staff-hotel-occupancy-heading">
+        <summary><h3 id="staff-hotel-occupancy-heading">Hotel Occupancy — This Month</h3></summary>
+        <div class="dashboard-disclosure-content">
+          <div class="flex-between occupancy-toolbar">
+            <p class="text-muted">Daily bookings and pet capacity.</p>
+            <button type="button" class="btn btn-outline btn-sm" id="staff-refresh-occupancy">Refresh</button>
+          </div>
+          <div id="staff-occupancy"><div class="loading">Loading hotel occupancy…</div></div>
+        </div>
+      </details>
       <details class="panel dashboard-disclosure" open aria-labelledby="staff-recent-activity-heading">
         <summary><h3 id="staff-recent-activity-heading">Recent Activities</h3></summary>
         <div class="dashboard-disclosure-content">
@@ -207,9 +217,9 @@
     </main>
   </div>
   <script src="/js/api.js"></script>
-  <script src="/js/admin.js?v=payment-customer-modal-20261102"></script>
+  <script src="/js/admin.js?v=dashboard-occupancy-20261103"></script>
   <script src="/js/revenue-chart.js?v=dashboard-pdf-reference-20261029"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="/js/staff-dashboard.js?v=dashboard-kpi-order-20261103"></script>
+  <script src="/js/staff-dashboard.js?v=dashboard-occupancy-20261103"></script>
 </body>
 </html>

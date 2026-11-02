@@ -9,6 +9,7 @@ const { SERVICE_PRICES } = groomingController;
 const { ROOM_PRICES } = hotelController;
 const { quoteHotelStay, groomingRecordDuration } = require('../util/bookingCalculations');
 const {
+  HOTEL_DAILY_CAPACITY,
   hotelLockIdsForAssignments,
   hotelLockIdsForSlots,
   hotelLockIdsForTypes,
@@ -459,7 +460,7 @@ const getOccupancy = async (req, res, next) => {
     const [reservations, customers, pets] = await Promise.all([
       HotelReservation.findAll({
         where: {
-          status: ACTIVE_HOTEL_STATUSES,
+          status: [...ACTIVE_HOTEL_STATUSES, 'checked-out'],
           checkIn: { lte: end },
           checkOut: { gt: start },
         },
@@ -496,6 +497,13 @@ const getOccupancy = async (req, res, next) => {
             customerId: reservation.customerId,
             customerName: customer ? customer.name : 'Customer',
             customerPhone: customer ? customer.phone : null,
+            petCount: Array.isArray(reservation.petRooms) && reservation.petRooms.length
+              ? reservation.petRooms.length
+              : Array.isArray(reservation.petIds) && reservation.petIds.length
+                ? reservation.petIds.length
+                : Array.isArray(reservation.petNames) && reservation.petNames.length
+                  ? reservation.petNames.length
+                  : reservation.petId ? 1 : 0,
             petNames,
             roomAssignments,
             checkIn: reservation.checkIn,
@@ -506,10 +514,13 @@ const getOccupancy = async (req, res, next) => {
           };
         });
       const customerCount = new Set(bookings.map((booking) => String(booking.customerId))).size;
+      const occupiedPets = bookings.reduce((total, booking) => total + booking.petCount, 0);
       days.push({
         date: day,
         occupied: customerCount,
         customers: customerCount,
+        occupiedPets,
+        capacity: HOTEL_DAILY_CAPACITY,
         reservationCount: bookings.length,
         arrivals: bookings.filter((booking) => booking.checkIn === day).length,
         bookings,

@@ -235,10 +235,10 @@
       statCard('Upcoming Arrivals', upcomingGrooming.length + upcomingHotelArrivals.length, 'orange', '#staff-upcoming-arrivals'),
       revenueStatCard('Grooming Revenue (ONLINE PAYMENT)', fmtMoney(stats.grooming.onlinePaymentRevenue), 'grooming', 'online'),
       revenueStatCard('Hotel Revenue (ONLINE PAYMENT)', fmtMoney(stats.hotel.onlinePaymentRevenue), 'hotel', 'online'),
-      statCard('Walk-in Cash Sales', fmtMoney(stats.overTheCounterRevenue), 'green', '#staff-revenue'),
-      statCard('Total Revenue', fmtMoney(stats.totalRevenue), 'purple', '#staff-revenue'),
       revenueStatCard('Grooming Revenue (CASH)', fmtMoney(stats.grooming.cashRevenue), 'grooming', 'cash'),
       revenueStatCard('Hotel Revenue (CASH)', fmtMoney(stats.hotel.cashRevenue), 'hotel', 'cash'),
+      statCard('Walk-in Cash Sales', fmtMoney(stats.overTheCounterRevenue), 'green', '#staff-revenue'),
+      statCard('Total Revenue', fmtMoney(stats.totalRevenue), 'purple', '#staff-revenue'),
     ].join('');
 
     pendingGroomingRows.innerHTML = pendingGroomingToday.length

@@ -333,10 +333,10 @@
           statCard('Upcoming Arrivals', upcomingArrivalCount, 'orange', '/admin/grooming.html?filter=upcoming') +
           revenueStatCard('Grooming Revenue (ONLINE PAYMENT)', fmtMoney(s.grooming.onlinePaymentRevenue), 'grooming', 'online') +
           revenueStatCard('Hotel Revenue (ONLINE PAYMENT)', fmtMoney(s.hotel.onlinePaymentRevenue), 'hotel', 'online') +
-          statCard('Walk-in Cash Sales', fmtMoney(s.overTheCounterRevenue), 'green', '/admin/pos.html') +
-          statCard('Total Revenue', fmtMoney(s.totalRevenue), 'purple', '#revenue') +
           revenueStatCard('Grooming Revenue (CASH)', fmtMoney(s.grooming.cashRevenue), 'grooming', 'cash') +
-          revenueStatCard('Hotel Revenue (CASH)', fmtMoney(s.hotel.cashRevenue), 'hotel', 'cash');
+          revenueStatCard('Hotel Revenue (CASH)', fmtMoney(s.hotel.cashRevenue), 'hotel', 'cash') +
+          statCard('Walk-in Cash Sales', fmtMoney(s.overTheCounterRevenue), 'green', '/admin/pos.html') +
+          statCard('Total Revenue', fmtMoney(s.totalRevenue), 'purple', '#revenue');
       }
 
       async function loadPendingArrivals() {

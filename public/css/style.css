@@ -1888,8 +1888,13 @@ tr:hover td { background: #f5f1e5; }
 .modal:has(.customer-detail-section) { max-width: 760px; }
 .modal:has(.revenue-customers-list) { max-width: 960px; }
 .revenue-customers-list > .text-muted { margin-bottom: 0.75rem; }
-.revenue-customers-list .table-wrap { max-height: 60vh; overflow: auto; }
-.revenue-customers-table { min-width: 740px; }
+.revenue-customers-list .table-wrap { max-height: 60vh; overflow: auto; background: #fffefa; border-color: #e1e4df; box-shadow: none; }
+.revenue-customers-table { min-width: 740px; background: #fffefa; color: #253238; }
+.revenue-customers-table th { background: #f1f3ef; color: #58666b; }
+.revenue-customers-table td { background: #fffefa; color: #253238; border-color: #e1e4df; }
+.revenue-customers-table tbody tr:nth-child(even) td { background: #f6f7f3; }
+.revenue-customers-table tbody tr:hover td { background: #fff4c2; color: #253238; }
+.revenue-customers-table .empty { color: #66737a; }
 .revenue-customers-table th:nth-child(1) { width: 20%; }
 .revenue-customers-table th:nth-child(2) { width: 16%; }
 .revenue-customers-table th:nth-child(3) { width: 25%; }

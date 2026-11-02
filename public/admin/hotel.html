@@ -77,9 +77,17 @@
           <td>${statusBadge(r.status)}</td>
           <td class="hotel-actions-cell">
             <div class="hotel-actions">
-            ${r.status !== 'cancelled' && (r.confirmedAt || ['confirmed', 'checked-in', 'checked-out'].includes(r.status)) ? `<button class="btn btn-success btn-sm" data-ticket-resend="${Boolean(r.reservationTicketEmailSentAt || ['checked-in', 'checked-out'].includes(r.status))}" onclick="confirmRes('${r.id}', this)">Send Ticket</button>` : r.status !== 'cancelled' && r.status !== 'checked-in' && r.status !== 'checked-out' ? `<button class="btn btn-success btn-sm" onclick="confirmRes('${r.id}', this)">Confirm</button>` : ''}
+            ${['confirmed', 'checked-out'].includes(r.status) || (r.status === 'checked-in' && (Boolean(r.reservationTicketEmailSentAt) || r.paymentStatus === 'paid'))
+              ? `<button class="btn btn-success btn-sm" data-ticket-resend="${r.status === 'confirmed' || r.status === 'checked-out' || Boolean(r.reservationTicketEmailSentAt)}" onclick="confirmRes('${r.id}', this)">${r.status === 'checked-in' && !r.reservationTicketEmailSentAt ? 'Check Out & Send Ticket' : 'Send Ticket'}</button>`
+              : ['pending', 'reserved'].includes(r.status) ? `<button class="btn btn-success btn-sm" onclick="confirmRes('${r.id}', this)">Confirm</button>` : ''}
             ${['reserved', 'confirmed'].includes(r.status) ? `<button class="btn btn-outline btn-sm" onclick='setResStatus(${escapeHtml(JSON.stringify(r.id))}, "checked-in", this)'>Check In</button>` : ''}
-            ${r.status === 'checked-in' ? `<button class="btn btn-success btn-sm" onclick='setResStatus(${escapeHtml(JSON.stringify(r.id))}, "checked-out", this)'>Check Out</button>` : ''}
+            ${r.status === 'checked-in' ? `
+              <span class="appointment-payment-status">Payment: ${escapeHtml(String(r.paymentStatus || 'unpaid').toUpperCase())}</span>
+              ${r.paymentMethod !== 'qrph' ? `<button class="btn ${r.paymentStatus === 'paid' ? 'btn-outline' : 'btn-success'} btn-sm" data-next-payment="${r.paymentStatus === 'paid' ? 'unpaid' : 'paid'}" onclick='setResPayment(${escapeHtml(JSON.stringify(r.id))}, this)'>${r.paymentStatus === 'paid' ? 'Mark Unpaid' : 'Mark Paid'}</button>` : ''}
+              ${r.paymentStatus === 'paid'
+                ? `<button class="btn btn-success btn-sm" onclick='setResStatus(${escapeHtml(JSON.stringify(r.id))}, "checked-out", this)'>Check Out</button>`
+                : `<span class="appointment-payment-status">${r.paymentMethod === 'qrph' ? 'Awaiting online payment' : 'Mark paid before check out'}</span>`}
+            ` : ''}
             <button class="btn btn-outline btn-sm" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})'>View</button>
             ${r.status !== 'cancelled' && r.status !== 'checked-in' && r.status !== 'checked-out' ? `<button class="btn btn-danger btn-sm" onclick='rejectRes(${escapeHtml(JSON.stringify(r.id))}, ${escapeHtml(JSON.stringify(r.status))}, this)'>${r.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
             ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeRes(${escapeHtml(JSON.stringify(r.id))})'>Delete</button>` : ''}
@@ -138,7 +146,7 @@
 
     window.confirmRes = async (id, button) => {
       const actionLabel = button ? button.textContent : 'Confirm';
-      const sendingTicket = actionLabel === 'Send Ticket';
+      const sendingTicket = Boolean(button && button.hasAttribute('data-ticket-resend'));
       if (button) {
         button.disabled = true;
         button.textContent = sendingTicket ? 'Sending ticket...' : 'Confirming...';
@@ -150,9 +158,20 @@
         if (sendingTicket && !result.emailSent) {
           alert('The ticket email was not sent. Check the email configuration.');
         } else if (!sendingTicket) {
+          const row = button && button.closest('tr');
+          const badge = row && row.querySelector('.status-badge');
+          if (badge) {
+            badge.className = 'status-badge status-confirmed';
+            badge.textContent = 'confirmed';
+          }
+          if (button) button.textContent = 'Confirmed';
           alert('Reservation confirmed. Use Send Ticket to email the customer.');
         }
-        await loadReservations();
+        if (sendingTicket) {
+          await loadReservations();
+        } else {
+          loadReservations().catch((error) => console.error('Reservation confirmed, but refresh failed:', error));
+        }
       } catch (error) {
         if (button) {
           button.disabled = false;
@@ -168,6 +187,20 @@
       button.textContent = status === 'checked-out' ? 'Checking out...' : 'Checking in...';
       try {
         await apiPut(`/hotel/${id}`, { status });
+        await loadReservations();
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = previousLabel;
+        alert(error.message);
+      }
+    };
+
+    window.setResPayment = async (id, button) => {
+      const previousLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Saving payment…';
+      try {
+        await apiPut(`/hotel/${id}`, { paymentStatus: button.dataset.nextPayment });
         await loadReservations();
       } catch (error) {
         button.disabled = false;

@@ -56,7 +56,7 @@
             <button class="btn btn-outline btn-sm" data-password-id="${escape(account.id)}">Set password</button>
             <button class="btn btn-danger btn-sm" data-delete-id="${escape(account.id)}">Delete</button>
           </td>
-        </tr>`).join('') : '<tr><td colspan="4">No staff accounts yet.</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="5">No staff accounts yet.</td></tr>';
     }
 
     document.getElementById('staff-create-form').addEventListener('submit', async (event) => {

@@ -539,11 +539,15 @@
         document.getElementById('sale-contact').value = '09';
 
         if (paymentMethod === 'qrph' && result.checkoutUrl) {
-          const qrWindow = window.open(result.checkoutUrl, '_blank', 'width=430,height=760,noopener,noreferrer');
-          if (qrWindow) {
-            qrWindow.opener = null;
-          }
-          showMessage('PayMongo QR opened in a new window.', 'success');
+          window.open(result.checkoutUrl, '_blank', 'width=430,height=760,noopener,noreferrer');
+          showMessage('Complete the pending payment using the secure PayMongo checkout page.', 'success');
+          const checkoutLink = document.createElement('a');
+          checkoutLink.href = result.checkoutUrl;
+          checkoutLink.target = '_blank';
+          checkoutLink.rel = 'noopener noreferrer';
+          checkoutLink.className = 'btn btn-outline btn-sm';
+          checkoutLink.textContent = 'Open PayMongo checkout';
+          document.getElementById('pos-message').append(' ', checkoutLink);
           return;
         }
 

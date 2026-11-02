@@ -77,7 +77,7 @@
     const bookingActionsInProgress = new Set();
 
     const SERVICES = ['bath', 'nail-trim', 'haircut', 'deshedding', 'full-groom'];
-    const STATUSES = ['pending', 'scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled'];
+    const STATUSES = ['pending', 'scheduled', 'confirmed', 'in-progress', 'cancelled'];
     const serviceLabel = (value) => String(value || 'Grooming').replace(/^grooming-/, '').replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
     const bookingServices = (appointment) => Array.isArray(appointment.petServices) && appointment.petServices.length
       ? appointment.petServices.map((item) => `${escapeHtml(item.petName || 'Pet')}: ${escapeHtml(serviceLabel(item.service))}`).join('<br>')
@@ -151,7 +151,15 @@
           <td>${statusBadge(a.status)}</td>
           <td class="grooming-actions-cell">
             <div class="grooming-actions">
-            ${a.status !== 'cancelled' && (a.confirmedAt || ['confirmed', 'in-progress', 'completed'].includes(a.status)) ? `<button class="btn btn-success btn-sm" data-ticket-resend="${Boolean(a.reservationTicketEmailSentAt || ['in-progress', 'completed'].includes(a.status))}" onclick="confirmAppt('${a.id}', this)">Send Ticket</button>` : a.status !== 'cancelled' && a.status !== 'completed' ? `<button class="btn btn-success btn-sm" onclick="confirmAppt('${a.id}', this)">Confirm</button>` : ''}
+            ${['confirmed', 'in-progress', 'completed'].includes(a.status) && (a.status === 'confirmed' || a.paymentStatus === 'paid')
+              ? `<button class="btn btn-success btn-sm" data-ticket-resend="${a.status === 'confirmed' || Boolean(a.reservationTicketEmailSentAt)}" onclick="confirmAppt('${a.id}', this)">${a.status === 'in-progress' && !a.reservationTicketEmailSentAt ? 'Check Out & Send Ticket' : 'Send Ticket'}</button>`
+              : ['pending', 'scheduled'].includes(a.status) ? `<button class="btn btn-success btn-sm" onclick="confirmAppt('${a.id}', this)">Confirm</button>` : ''}
+            ${a.status === 'confirmed' ? `<button class="btn btn-outline btn-sm" onclick='setApptStatus(${escapeHtml(JSON.stringify(a.id))}, "in-progress", this)'>Check In</button>` : ''}
+            ${a.status === 'in-progress' ? `
+              <span class="appointment-payment-status">Payment: ${escapeHtml(String(a.paymentStatus || 'unpaid').toUpperCase())}</span>
+              ${a.paymentMethod !== 'qrph' ? `<button class="btn ${a.paymentStatus === 'paid' ? 'btn-outline' : 'btn-success'} btn-sm" data-payment-status="${a.paymentStatus === 'paid' ? 'unpaid' : 'paid'}" onclick='setApptPayment(${escapeHtml(JSON.stringify(a.id))}, this)'>${a.paymentStatus === 'paid' ? 'Mark Unpaid' : 'Mark Paid'}</button>` : ''}
+              ${a.paymentStatus === 'paid' ? `<button class="btn btn-success btn-sm" onclick='checkoutAppt(${escapeHtml(JSON.stringify(a.id))}, this)'>Check Out</button>` : `<span class="appointment-payment-status">${a.paymentMethod === 'qrph' ? 'Awaiting online payment' : 'Mark paid before check out'}</span>`}
+            ` : ''}
             <button class="btn btn-outline btn-sm" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})'>View</button>
             ${a.status !== 'cancelled' && a.status !== 'completed' ? `<button class="btn btn-danger btn-sm" onclick='rejectAppt(${escapeHtml(JSON.stringify(a.id))}, ${escapeHtml(JSON.stringify(a.status))}, this)'>${a.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
             ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeAppt(${escapeHtml(JSON.stringify(a.id))})'>Delete</button>` : ''}
@@ -283,7 +291,7 @@
 
     window.confirmAppt = async (id, button) => {
       const actionLabel = button ? button.textContent : 'Confirm';
-      const sendingTicket = actionLabel === 'Send Ticket';
+      const sendingTicket = Boolean(button && button.hasAttribute('data-ticket-resend'));
       if (button) {
         button.disabled = true;
         button.textContent = sendingTicket ? 'Sending ticket...' : 'Confirming...';
@@ -295,14 +303,67 @@
         if (sendingTicket && !result.emailSent) {
           alert('The ticket email was not sent. Check the email configuration.');
         } else if (!sendingTicket) {
+          const row = button && button.closest('tr');
+          const badge = row && row.querySelector('.status-badge');
+          if (badge) {
+            badge.className = 'status-badge status-confirmed';
+            badge.textContent = 'confirmed';
+          }
+          if (button) button.textContent = 'Confirmed';
           alert('Booking confirmed. Use Send Ticket to email the customer.');
         }
-        await loadAppointments();
+        if (sendingTicket) {
+          await loadAppointments();
+        } else {
+          loadAppointments().catch((error) => console.error('Appointment confirmed, but refresh failed:', error));
+        }
       } catch (error) {
         if (button) {
           button.disabled = false;
           button.textContent = actionLabel;
         }
+        alert(error.message);
+      }
+    };
+
+    window.setApptStatus = async (id, status, button) => {
+      const previousLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Saving…';
+      try {
+        await apiPut(`/grooming/${id}`, { status });
+        await loadAppointments();
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = previousLabel;
+        alert(error.message);
+      }
+    };
+
+    window.setApptPayment = async (id, button) => {
+      const previousLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Saving payment…';
+      try {
+        await apiPut(`/grooming/${id}`, { paymentStatus: button.dataset.paymentStatus });
+        await loadAppointments();
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = previousLabel;
+        alert(error.message);
+      }
+    };
+
+    window.checkoutAppt = async (id, button) => {
+      button.disabled = true;
+      button.textContent = 'Checking out…';
+      try {
+        const result = await apiPost(`/grooming/${id}/checkout`, {});
+        await loadAppointments();
+        alert(result.emailSent ? 'Appointment checked out and receipt sent.' : result.message || 'Appointment checked out.');
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = 'Check Out';
         alert(error.message);
       }
     };

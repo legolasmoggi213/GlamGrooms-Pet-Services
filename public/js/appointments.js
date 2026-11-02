@@ -71,15 +71,16 @@
     const actions = [];
     const bookingStatus = String(booking.status || '').toLowerCase();
     const ticketReady = type === 'grooming'
-      ? ['in-progress', 'completed'].includes(bookingStatus)
+      ? ['in-progress', 'completed'].includes(bookingStatus) && String(booking.paymentStatus || '').toLowerCase() === 'paid'
       : bookingStatus === 'checked-out' || (bookingStatus === 'checked-in' && booking.paymentStatus === 'paid');
     const ticketSent = Boolean(booking.reservationTicketEmailSentAt);
     if (type === 'grooming') {
       if (ticketReady) {
+        const ticketActionLabel = bookingStatus === 'in-progress' ? 'Check Out & Send Ticket' : 'Send Ticket';
         actions.push(ticketSent
           ? '<span class="appointment-payment-status">Ticket Sent</span>'
-          : actionButton(booking, type, 'send-ticket', 'Send Ticket', 'btn-success'));
-      } else if (booking.status !== 'cancelled' && booking.status !== 'completed') {
+          : actionButton(booking, type, 'send-ticket', ticketActionLabel, 'btn-success'));
+      } else if (['pending', 'scheduled'].includes(bookingStatus)) {
         actions.push(actionButton(booking, type, 'confirm', 'Confirm', 'btn-success'));
       }
       if (booking.status === 'confirmed') actions.push(actionButton(booking, type, 'check-in', 'Check In', 'btn-outline'));
@@ -106,7 +107,7 @@
         actions.push(ticketSent
           ? '<span class="appointment-payment-status">Ticket Sent</span>'
           : actionButton(booking, type, 'send-ticket', bookingStatus === 'checked-in' ? 'Check Out & Send Ticket' : 'Send Ticket', 'btn-success'));
-      } else if (booking.status !== 'cancelled' && booking.status !== 'checked-in' && booking.status !== 'checked-out') {
+      } else if (['pending', 'reserved'].includes(bookingStatus)) {
         actions.push(actionButton(booking, type, 'confirm', 'Confirm', 'btn-success'));
       }
       if (['reserved', 'confirmed'].includes(booking.status)) {

@@ -430,6 +430,9 @@ const sendAppointmentTicket = async (req, res, next) => {
     if (!['in-progress', 'completed'].includes(String(appointment.status || '').toLowerCase())) {
       return res.status(409).json({ error: 'Check in the grooming appointment before sending its ticket.' });
     }
+    if (String(appointment.paymentStatus || '').toLowerCase() !== 'paid') {
+      return res.status(409).json({ error: 'Record payment before checking out this appointment.' });
+    }
 
     const [customer, pets] = await Promise.all([
       Customer.findByPk(appointment.customerId),

@@ -581,8 +581,17 @@
           ? await apiPost(`/${type}/${encodeURIComponent(id)}/ticket`, {})
           : await apiPut(`/${type}/${encodeURIComponent(id)}`, { status: 'confirmed' });
         noteBookingActivity(type, id);
-        if (sendingTicket) await refreshBooking(type, id);
-        else await refreshManageBooking(type, id);
+        if (sendingTicket) {
+          await refreshBooking(type, id);
+        } else {
+          record.booking = {
+            ...record.booking,
+            status: 'confirmed',
+            confirmedAt: record.booking.confirmedAt || new Date().toISOString(),
+          };
+          storeBooking(type, record.booking);
+          openManage(record.booking, type);
+        }
         messageEl.className = result && sendingTicket && !result.emailSent ? 'text-error' : 'text-success';
         messageEl.textContent = result && sendingTicket && !result.emailSent
           ? 'The ticket email was not sent. Check the email configuration.'

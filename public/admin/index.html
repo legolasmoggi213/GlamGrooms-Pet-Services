@@ -219,7 +219,7 @@
 
   <script src="/js/revenue-chart.js?v=dashboard-pdf-reference-20261029"></script>
   <script src="/js/api.js?v=php-currency-20261027"></script>
-  <script src="/js/admin.js?v=payment-customer-modal-20261102"></script>
+  <script src="/js/admin.js?v=confirmation-status-refresh-20261103"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script>
     const initDashboard = () => {
@@ -419,10 +419,19 @@
         pendingArrivalsMessage.textContent = '';
         try {
           await apiPut(`/${bookingType}/${encodeURIComponent(bookingId)}`, { status: 'confirmed' });
-          dashboardBookingsPromise = null;
-          await Promise.all([loadPendingArrivals(), loadTodayActiveArrivals(), loadUpcomingArrivals(), loadStats()]);
+          const row = button.closest('tr');
+          if (row) {
+            row.cells[3].innerHTML = statusBadge('confirmed');
+            button.textContent = 'Confirmed';
+          }
           pendingArrivalsMessage.className = 'text-success';
-          pendingArrivalsMessage.textContent = 'Appointment confirmed and added to today’s active schedule.';
+          pendingArrivalsMessage.textContent = 'Appointment confirmed.';
+          dashboardBookingsPromise = null;
+          Promise.all([loadPendingArrivals(), loadTodayActiveArrivals(), loadUpcomingArrivals(), loadStats()])
+            .catch((error) => {
+              console.error('Appointment confirmed, but the dashboard refresh failed:', error);
+              pendingArrivalsMessage.textContent = 'Appointment confirmed. Refresh the dashboard to update all sections.';
+            });
         } catch (error) {
           button.disabled = false;
           button.textContent = 'Confirm';

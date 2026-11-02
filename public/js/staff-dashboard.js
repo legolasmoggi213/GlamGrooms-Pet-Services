@@ -317,9 +317,17 @@
     button.textContent = 'Confirming…';
     try {
       await apiPut(`/${button.dataset.bookingType}/${encodeURIComponent(bookingId)}`, { status: 'confirmed' });
-      await loadDashboard();
+      const row = button.closest('tr');
+      if (row) {
+        row.cells[3].innerHTML = statusBadge('confirmed');
+        button.textContent = 'Confirmed';
+      }
       pendingArrivalsMessage.className = 'text-success';
-      pendingArrivalsMessage.textContent = 'Appointment confirmed and added to today’s active schedule.';
+      pendingArrivalsMessage.textContent = 'Appointment confirmed.';
+      loadDashboard().catch((error) => {
+        console.error('Appointment confirmed, but the dashboard refresh failed:', error);
+        pendingArrivalsMessage.textContent = 'Appointment confirmed. Refresh the dashboard to update all sections.';
+      });
     } catch (error) {
       button.disabled = false;
       button.textContent = 'Confirm';

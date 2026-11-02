@@ -16,6 +16,7 @@
   const transactionHistoryRows = document.getElementById('staff-transaction-history-rows');
   const statsEl = document.getElementById('staff-stats');
   const messageEl = document.getElementById('staff-dashboard-message');
+  let revenueBookings = { grooming: [], hotel: [] };
   const businessDate = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Manila',
     year: 'numeric',
@@ -109,6 +110,19 @@
       <div class="value ${color}"${valueId ? ` id="${valueId}"` : ''}>${value}</div>
       <span class="stat-card-hint" aria-hidden="true">View appointments →</span>
     </a>`;
+  const revenueStatCard = (label, value, service, paymentType) => `
+    <a class="stat-card stat-card-link" href="#payment-customers" data-revenue-service="${service}" data-payment-type="${paymentType}" aria-label="View ${escapeHtml(label)} customers">
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="value green">${value}</div>
+      <span class="stat-card-hint" aria-hidden="true">View customers →</span>
+    </a>`;
+  statsEl.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-revenue-service][data-payment-type]');
+    if (!card) return;
+    event.preventDefault();
+    openRevenueCustomersModal(revenueBookings[card.dataset.revenueService] || [],
+      card.dataset.revenueService, card.dataset.paymentType);
+  });
   const revenuePeriods = { daily: 'Last 7 days', weekly: 'Last 8 weeks', monthly: 'Last 6 months', yearly: 'Last 5 years' };
   let revenueAnalyticsData = null;
   const scheduleIdle = (callback) => {
@@ -183,6 +197,7 @@
       apiGet('/hotel'),
       apiGet('/admin/stats'),
     ]);
+    revenueBookings = { grooming, hotel };
     const groomingBookings = activeGrooming(grooming);
     const hotelBookings = activeHotel(hotel);
     renderRecentActivity('grooming', grooming, groomingActivityEl);
@@ -218,12 +233,12 @@
       statCard("Today's Active Appointment Arrivals", groomingToday.length + todaysHotelArrivals.length, 'green', '#staff-today-active-arrivals'),
       statCard('Pending Appointment Arrivals', pendingGroomingToday.length + pendingHotelToday.length, 'orange', '#staff-pending-arrivals', 'staff-pending-arrivals-count'),
       statCard('Upcoming Arrivals', upcomingGrooming.length + upcomingHotelArrivals.length, 'orange', '#staff-upcoming-arrivals'),
-      statCard('Grooming Revenue', fmtMoney(stats.grooming.revenue), 'green', '#staff-revenue'),
-      statCard('Hotel Revenue', fmtMoney(stats.hotel.revenue), 'green', '#staff-revenue'),
+      revenueStatCard('Grooming Revenue (ONLINE PAYMENT)', fmtMoney(stats.grooming.onlinePaymentRevenue), 'grooming', 'online'),
+      revenueStatCard('Hotel Revenue (ONLINE PAYMENT)', fmtMoney(stats.hotel.onlinePaymentRevenue), 'hotel', 'online'),
       statCard('Walk-in Cash Sales', fmtMoney(stats.overTheCounterRevenue), 'green', '#staff-revenue'),
       statCard('Total Revenue', fmtMoney(stats.totalRevenue), 'purple', '#staff-revenue'),
-      statCard('Grooming Revenue (Cash)', fmtMoney(stats.grooming.cashRevenue), 'green', '#staff-revenue'),
-      statCard('Hotel Revenue (Cash)', fmtMoney(stats.hotel.cashRevenue), 'green', '#staff-revenue'),
+      revenueStatCard('Grooming Revenue (CASH)', fmtMoney(stats.grooming.cashRevenue), 'grooming', 'cash'),
+      revenueStatCard('Hotel Revenue (CASH)', fmtMoney(stats.hotel.cashRevenue), 'hotel', 'cash'),
     ].join('');
 
     pendingGroomingRows.innerHTML = pendingGroomingToday.length

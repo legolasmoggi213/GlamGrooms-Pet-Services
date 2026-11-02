@@ -166,6 +166,8 @@ const isPaidWalkInTransaction = (transaction) => transaction.paymentStatus
   : transaction.paymentMethod !== 'qrph';
 const isPaidCashBooking = (booking) => String(booking.paymentStatus || '').toLowerCase() === 'paid'
   && String(booking.paymentMethod || 'cash').toLowerCase() !== 'qrph';
+const isPaidOnlineBooking = (booking) => String(booking.paymentStatus || '').toLowerCase() === 'paid'
+  && String(booking.paymentMethod || '').toLowerCase() === 'qrph';
 
 const revenuePeriodKey = (dateKey, period) => {
   if (period === 'weekly') {
@@ -323,6 +325,12 @@ const getStats = async (req, res, next) => {
     const hotelCashRevenue = hotelRecords
       .filter(isPaidCashBooking)
       .reduce((total, record) => total + Number(record.totalPrice || 0), 0);
+    const groomingOnlinePaymentRevenue = groomingRecords
+      .filter(isPaidOnlineBooking)
+      .reduce((total, record) => total + Number(record.price || 0), 0);
+    const hotelOnlinePaymentRevenue = hotelRecords
+      .filter(isPaidOnlineBooking)
+      .reduce((total, record) => total + Number(record.totalPrice || 0), 0);
     const overTheCounterRevenue = cashTransactions
       .filter(isPaidWalkInTransaction)
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
@@ -342,6 +350,7 @@ const getStats = async (req, res, next) => {
         active: groomingActive,
         revenue: groomingRevenue || 0,
         cashRevenue: groomingCashRevenue || 0,
+        onlinePaymentRevenue: groomingOnlinePaymentRevenue || 0,
       },
       hotel: {
         total: hotelTotal,
@@ -349,6 +358,7 @@ const getStats = async (req, res, next) => {
         upcomingArrivals,
         revenue: hotelRevenue || 0,
         cashRevenue: hotelCashRevenue || 0,
+        onlinePaymentRevenue: hotelOnlinePaymentRevenue || 0,
       },
       overTheCounterRevenue,
       productSalesRevenue,

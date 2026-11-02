@@ -1,10 +1,10 @@
 // Shared admin helpers: sidebar injection + modal utilities.
 
 const ADMIN_PAGES = [
+  { href: '/admin/index.html', label: 'Dashboard' },
   { href: '/admin/appointments.html', label: 'Appointments' },
   { href: '/admin/notifications.html', label: 'Notifications' },
   { href: '/admin/reports.html', label: 'Reports' },
-  { href: '/admin/index.html', label: 'Dashboard' },
   { href: '/admin/customers.html', label: 'Customers' },
   { href: '/admin/pets.html', label: 'Pets' },
   { href: '/admin/pos.html', label: 'Counter Checkout' },
@@ -115,6 +115,51 @@ function openModal(title, bodyHtml) {
 function closeModal() {
   const backdrop = document.getElementById('modal-backdrop');
   if (backdrop) backdrop.classList.remove('open');
+}
+
+function openRevenueCustomersModal(bookings, service, paymentType) {
+  const isOnlinePayment = paymentType === 'online';
+  const paymentLabel = isOnlinePayment ? 'ONLINE PAYMENT' : 'CASH';
+  const paidBookings = bookings
+    .filter((booking) => String(booking.paymentStatus || '').toLowerCase() === 'paid'
+      && (isOnlinePayment
+        ? String(booking.paymentMethod || '').toLowerCase() === 'qrph'
+        : String(booking.paymentMethod || 'cash').toLowerCase() !== 'qrph'))
+    .sort((left, right) => (Date.parse(right.paymentPaidAt || '') || 0) - (Date.parse(left.paymentPaidAt || '') || 0));
+  const rows = paidBookings.length
+    ? paidBookings.map((booking) => {
+      const petNames = Array.isArray(booking.petNames) && booking.petNames.length
+        ? booking.petNames.join(', ')
+        : (booking.Pets || (booking.Pet ? [booking.Pet] : [])).map((pet) => pet.name).filter(Boolean).join(', ') || '—';
+      const serviceDetails = service === 'grooming'
+        ? (Array.isArray(booking.petServices) && booking.petServices.length
+          ? booking.petServices.map((item) => `${item.petName || 'Pet'}: ${String(item.service || '').replace(/^grooming-/, '').replace(/-/g, ' ')}`).join('; ')
+          : String(booking.service || 'Grooming').replace(/^grooming-/, '').replace(/-/g, ' '))
+        : (Array.isArray(booking.petRooms) && booking.petRooms.length
+          ? booking.petRooms.map((item) => `${item.petName || 'Pet'}: ${String(item.roomType || '').replace(/^staycation-/, '').replace(/-/g, ' ')}`).join('; ')
+          : String(booking.roomType || 'Pet Hotel').replace(/^staycation-/, '').replace(/-/g, ' '));
+      const bookingDate = booking.paymentPaidAt || (service === 'grooming' ? booking.date : booking.checkIn);
+      const amount = service === 'grooming' ? booking.price : booking.totalPrice;
+      return `<tr>
+        <td>${escapeHtml(booking.Customer?.name || booking.customerDetails?.name || '—')}</td>
+        <td>${escapeHtml(petNames)}</td>
+        <td>${escapeHtml(serviceDetails)}</td>
+        <td>${escapeHtml(bookingDate ? fmtDateTime(bookingDate) : '—')}</td>
+        <td>${escapeHtml(fmtMoney(amount))}</td>
+      </tr>`;
+    }).join('')
+    : `<tr><td colspan="5" class="empty">No paid ${service} bookings found for ${paymentLabel}.</td></tr>`;
+  const serviceLabel = service === 'grooming' ? 'Grooming' : 'Pet Hotel';
+  openModal(`${serviceLabel} Revenue (${paymentLabel})`, `
+    <div class="revenue-customers-list">
+      <p class="text-muted">${paidBookings.length} paid booking${paidBookings.length === 1 ? '' : 's'}.</p>
+      <div class="table-wrap">
+        <table class="appointments-table revenue-customers-table">
+          <thead><tr><th>Customer</th><th>Pet(s)</th><th>Service / Room</th><th>Paid / Booking Date</th><th>Amount</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`);
 }
 
 async function confirmDelete(message, onConfirm) {

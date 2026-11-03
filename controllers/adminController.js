@@ -7,7 +7,11 @@ const groomingController = require('./groomingController');
 const hotelController = require('./hotelController');
 const { SERVICE_PRICES } = groomingController;
 const { ROOM_PRICES } = hotelController;
-const { quoteHotelStay, groomingRecordDuration } = require('../util/bookingCalculations');
+const {
+  quoteHotelStay,
+  groomingRecordDuration,
+  validateFutureBookingTime,
+} = require('../util/bookingCalculations');
 const {
   HOTEL_DAILY_CAPACITY,
   hotelLockIdsForAssignments,
@@ -924,6 +928,49 @@ const createPosBookings = async (req, body, items, paymentMethod) => {
     const error = new Error('Add the required appointment or hotel dates to book a service at checkout.');
     error.status = 400;
     throw error;
+  }
+  if (groomingItems.length && (!bookingData.groomingDate || !bookingData.groomingTime)) {
+    const error = new Error('Enter a future grooming date and time for every grooming service in this sale.');
+    error.status = 400;
+    throw error;
+  }
+  if (hotelItems.length && (!bookingData.hotelCheckIn || !bookingData.hotelCheckOut || !bookingData.hotelCheckInTime || !bookingData.hotelCheckOutTime)) {
+    const error = new Error('Enter a complete hotel check-in and check-out schedule for the selected room.');
+    error.status = 400;
+    throw error;
+  }
+  if (groomingItems.length) {
+    const date = String(bookingData.groomingDate || '').trim();
+    const time = String(bookingData.groomingTime || '').trim();
+    const check = validateFutureBookingTime(date, time, 'Appointment');
+    if (!check.ok) {
+      const error = new Error(check.error);
+      error.status = 400;
+      throw error;
+    }
+  }
+  if (hotelItems.length) {
+    const checkIn = String(bookingData.hotelCheckIn || '').trim();
+    const checkOut = String(bookingData.hotelCheckOut || '').trim();
+    const checkInTime = String(bookingData.hotelCheckInTime || '').trim();
+    const checkOutTime = String(bookingData.hotelCheckOutTime || '').trim();
+    if (!checkIn || !checkOut || !checkInTime || !checkOutTime) {
+      const error = new Error('Complete the hotel stay schedule before processing this checkout.');
+      error.status = 400;
+      throw error;
+    }
+    const checkInFuture = validateFutureBookingTime(checkIn, checkInTime, 'Hotel check-in');
+    if (!checkInFuture.ok) {
+      const error = new Error(checkInFuture.error);
+      error.status = 400;
+      throw error;
+    }
+    const checkOutFuture = validateFutureBookingTime(checkOut, checkOutTime, 'Hotel check-out');
+    if (!checkOutFuture.ok) {
+      const error = new Error(checkOutFuture.error);
+      error.status = 400;
+      throw error;
+    }
   }
   if (hotelItems.length > 1) {
     const error = new Error('Complete one pet hotel room reservation per checkout.');

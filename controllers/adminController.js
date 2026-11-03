@@ -336,9 +336,10 @@ const getStats = async (req, res, next) => {
     const hotelOnlinePaymentRevenue = hotelRecords
       .filter(isPaidOnlineBooking)
       .reduce((total, record) => total + Number(record.totalPrice || 0), 0);
-    const overTheCounterRevenue = cashTransactions
+    const walkInRevenue = cashTransactions
       .filter(isPaidWalkInTransaction)
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
+    const overTheCounterRevenue = walkInRevenue;
     const productSalesRevenue = cashTransactions
       .filter(isPaidWalkInTransaction)
       .reduce((total, transaction) => total + (Array.isArray(transaction.items) ? transaction.items : [])
@@ -365,6 +366,7 @@ const getStats = async (req, res, next) => {
         cashRevenue: hotelCashRevenue || 0,
         onlinePaymentRevenue: hotelOnlinePaymentRevenue || 0,
       },
+      walkInRevenue,
       overTheCounterRevenue,
       productSalesRevenue,
       totalRevenue: (groomingRevenue || 0) + (hotelRevenue || 0) + overTheCounterRevenue,

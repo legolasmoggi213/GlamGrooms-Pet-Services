@@ -263,7 +263,7 @@
       revenueStatCard('Hotel Revenue (ONLINE PAYMENT)', fmtMoney(stats.hotel.onlinePaymentRevenue), 'hotel', 'online'),
       revenueStatCard('Grooming Revenue (CASH)', fmtMoney(stats.grooming.cashRevenue), 'grooming', 'cash'),
       revenueStatCard('Hotel Revenue (CASH)', fmtMoney(stats.hotel.cashRevenue), 'hotel', 'cash'),
-      statCard('Walk-in Cash Sales', fmtMoney(stats.overTheCounterRevenue), 'green', '#staff-revenue'),
+      statCard('Walk-In Revenue', fmtMoney(stats.walkInRevenue ?? stats.overTheCounterRevenue), 'green', '#staff-revenue'),
       statCard('Total Revenue', fmtMoney(stats.totalRevenue), 'purple', '#staff-revenue'),
     ].join('');
 

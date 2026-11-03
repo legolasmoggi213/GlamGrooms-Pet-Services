@@ -99,7 +99,8 @@
       }
       actions.push(actionButton(booking, type, 'view', 'View', 'btn-outline'));
       if (canReschedule(booking, type)) actions.push(actionButton(booking, type, 'reschedule', 'Reschedule', 'btn-outline'));
-      if (booking.status !== 'cancelled' && booking.status !== 'completed') {
+      if (booking.status !== 'cancelled' && booking.status !== 'completed'
+        && String(booking.paymentStatus || '').toLowerCase() !== 'paid') {
         actions.push(actionButton(booking, type, 'cancel', booking.status === 'pending' ? 'Reject' : 'Cancel', 'btn-danger'));
       }
     } else {
@@ -124,7 +125,8 @@
           : '<span class="appointment-payment-status">Mark paid before check out</span>');
       }
       actions.push(actionButton(booking, type, 'view', 'View', 'btn-outline'));
-      if (booking.status !== 'cancelled' && booking.status !== 'checked-in' && booking.status !== 'checked-out') {
+      if (booking.status !== 'cancelled' && booking.status !== 'checked-in' && booking.status !== 'checked-out'
+        && String(booking.paymentStatus || '').toLowerCase() !== 'paid') {
         actions.push(actionButton(booking, type, 'cancel', booking.status === 'pending' ? 'Reject' : 'Cancel', 'btn-danger'));
       }
       if (canReschedule(booking, type)) actions.push(actionButton(booking, type, 'reschedule', 'Reschedule', 'btn-outline'));

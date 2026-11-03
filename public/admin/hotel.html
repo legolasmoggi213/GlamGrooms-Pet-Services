@@ -89,7 +89,7 @@
                 : `<span class="appointment-payment-status">${r.paymentMethod === 'qrph' ? 'Awaiting online payment' : 'Mark paid before check out'}</span>`}
             ` : ''}
             <button class="btn btn-outline btn-sm" onclick='viewRes(${escapeHtml(JSON.stringify(r.id))})'>View</button>
-            ${r.status !== 'cancelled' && r.status !== 'checked-in' && r.status !== 'checked-out' ? `<button class="btn btn-danger btn-sm" onclick='rejectRes(${escapeHtml(JSON.stringify(r.id))}, ${escapeHtml(JSON.stringify(r.status))}, this)'>${r.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
+            ${r.status !== 'cancelled' && r.status !== 'checked-in' && r.status !== 'checked-out' && String(r.paymentStatus || '').toLowerCase() !== 'paid' ? `<button class="btn btn-danger btn-sm" onclick='rejectRes(${escapeHtml(JSON.stringify(r.id))}, ${escapeHtml(JSON.stringify(r.status))}, this)'>${r.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
             ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeRes(${escapeHtml(JSON.stringify(r.id))})'>Delete</button>` : ''}
             </div>
           </td>`;

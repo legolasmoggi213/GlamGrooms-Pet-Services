@@ -37,7 +37,7 @@ const cancelBooking = async (req, res, next) => {
       return res.status(409).json({ error: 'This booking can no longer be cancelled online because it is no longer awaiting approval.' });
     }
     if (booking.paymentStatus === 'paid') {
-      return res.status(409).json({ error: 'This booking is paid. Please contact the business to cancel it and discuss any refund.' });
+      return res.status(409).json({ error: 'Paid bookings cannot be cancelled online. Request a reschedule instead.' });
     }
     if (booking.paymentMethod === 'qrph' && booking.paymentStatus === 'pending') {
       req.body = { bookingType: type, bookingId: booking.id };

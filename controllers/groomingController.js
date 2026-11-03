@@ -1,7 +1,6 @@
 const { GroomingAppointment, Customer, Pet } = require('../models');
 const { getRequestRole } = require('../util/adminAuth');
 const { sendReservationTicket, sendPaymentReceipt, sendBookingCancellation } = require('../util/mailer');
-const { requestGcashBookingRefund } = require('../util/paymentRefund');
 const {
   GROOMING_HOURLY_CAPACITY,
   groomingLockIds,
@@ -231,6 +230,9 @@ const updateAppointment = async (req, res, next) => {
     if (status && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'A valid status is required' });
     }
+    if (status === 'cancelled' && String(appointment.paymentStatus || '').toLowerCase() === 'paid') {
+      return res.status(409).json({ error: 'Paid grooming bookings cannot be cancelled. Request a reschedule instead.' });
+    }
     if (status === 'completed' && String(appointment.paymentStatus || '').toLowerCase() !== 'paid') {
       return res.status(409).json({ error: 'Record payment before checking out this appointment.' });
     }
@@ -354,10 +356,7 @@ const updateAppointment = async (req, res, next) => {
         console.error(`Unable to send cancellation notice for grooming appointment ${appointment.id}:`, notificationError);
       }
     }
-    const refund = updates.status === 'cancelled' && !wasAlreadyCancelled
-      ? await requestGcashBookingRefund(appointment)
-      : null;
-    res.json({ success: true, refund });
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

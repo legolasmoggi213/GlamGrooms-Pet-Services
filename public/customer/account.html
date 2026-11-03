@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>My Account — Glam Grooms</title>
-  <link rel="stylesheet" href="/css/style.css?v=customer-refund-help-history-20261029" />
+  <link rel="stylesheet" href="/css/style.css?v=paid-booking-reschedule-20261103" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -272,23 +272,21 @@
 
     const bookingCanCancel = (item, type) => {
       const status = String(item.status || '').toLowerCase();
-      if (['cancelled', 'canceled'].includes(status)) {
-        return item.paymentMethod === 'qrph'
-          && item.paymentStatus === 'paid'
-          && item.paymentRefundStatus === 'failed';
-      }
+      if (['cancelled', 'canceled'].includes(status) || String(item.paymentStatus || '').toLowerCase() === 'paid') return false;
       const unavailableStatuses = type === 'hotel'
         ? ['cancelled', 'checked-in', 'checked-out']
         : ['cancelled', 'in-progress', 'completed'];
       const date = type === 'hotel' ? item.checkIn : item.date;
       const time = type === 'hotel' ? item.checkInTime : item.time || '00:00';
+      const onlinePaymentPending = item.paymentMethod === 'qrph' && item.paymentStatus === 'pending';
+      const counterPaymentPending = item.paymentMethod !== 'qrph' && status === 'pending' && !item.confirmedAt;
       return !unavailableStatuses.includes(status)
         && Boolean(date && new Date(`${date}T${time || '00:00'}:00`) > new Date())
-        && (item.paymentMethod === 'qrph' || (status === 'pending' && !item.confirmedAt));
+        && (onlinePaymentPending || counterPaymentPending);
     };
 
     const bookingCanRequestReschedule = (item, type) => {
-      if (item.paymentMethod === 'qrph') return false;
+      if (item.paymentMethod === 'qrph' && String(item.paymentStatus || '').toLowerCase() !== 'paid') return false;
       const status = String(item.status || '').toLowerCase();
       if (type === 'grooming' && ['completed', 'cancelled'].includes(status)) return false;
       if (type === 'hotel' && ['checked-in', 'checked-out', 'cancelled'].includes(status)) return false;
@@ -316,13 +314,6 @@
         actions.push(`<div class="profile-actions"><button class="btn btn-outline btn-sm" type="button" data-request-reschedule-type="${type}" data-request-reschedule-id="${escapeHtml(item.id)}">Request reschedule</button></div>`);
       };
 
-      if (item.paymentMethod === 'qrph') {
-        if (!['cancelled', 'canceled'].includes(String(item.status || '').toLowerCase()) && bookingCanCancel(item, type)) {
-          actions.push('<p class="transaction-meta">GCash bookings can be cancelled but not rescheduled. Refunds are subject to PayMongo processing.</p>');
-          actions.push(`<div class="profile-actions"><button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}" data-cancel-paid-online="${item.paymentStatus === 'paid'}">Cancel booking</button></div>`);
-        }
-        return actions.join('');
-      }
       if (bookingCanCancel(item, type)) {
         actions.push(`<div class="profile-actions"><button class="btn btn-danger btn-sm" type="button" data-cancel-type="${type}" data-cancel-id="${escapeHtml(item.id)}">Cancel booking</button></div>`);
       }
@@ -330,46 +321,10 @@
     };
 
     document.querySelector('.customer-account-content').addEventListener('click', async (event) => {
-      const refundIssueButton = event.target.closest('[data-refund-issue]');
-      if (refundIssueButton) {
-        const { refundIssueType: type, refundIssueId: id } = refundIssueButton.dataset;
-        if (!window.confirm('Tell staff that the PayMongo refund transfer could not be sent? They will arrange a replacement through PayMongo.')) return;
-        refundIssueButton.disabled = true;
-        try {
-          const response = await fetch(`/api/v1/bookings/customer/${type}/${encodeURIComponent(id)}/refund-claim-issue`, {
-            method: 'POST',
-            credentials: 'include',
-          });
-          const result = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(result.error || 'Unable to notify staff about the failed refund transfer.');
-          await loadProfile();
-          const toast = document.getElementById('toast');
-          toast.textContent = result.alreadyReported
-            ? 'Staff have already been notified about this refund transfer.'
-            : 'Staff have been notified and will arrange a replacement refund transfer.';
-          toast.classList.add('show');
-          setTimeout(() => toast.classList.remove('show'), 3500);
-        } catch (error) {
-          alert(error.message);
-          refundIssueButton.disabled = false;
-        }
-        return;
-      }
-
       const cancelButton = event.target.closest('[data-cancel-type]');
       if (cancelButton) {
         const { cancelType: type, cancelId: id } = cancelButton.dataset;
-        const isRefundRefresh = cancelButton.dataset.refundRefresh === 'true';
-        if (!window.confirm(isRefundRefresh
-          ? 'Check PayMongo for an updated refund link? If the current transfer is still processing, PayMongo may return the same link.'
-          : cancelButton.dataset.refundRetry === 'true'
-          ? 'Retry the refund request for this cancelled GCash booking?'
-          : cancelButton.dataset.cancelPaidOnline === 'true'
-          ? 'Cancel this GCash booking? PayMongo will be asked to refund the payment, subject to provider processing.'
-          : 'Cancel this upcoming booking?')) return;
-        const currentCard = [...document.querySelectorAll('.recent-booking-card')]
-          .find((card) => card.dataset.bookingId === String(id) && card.dataset.bookingType === type);
-        const previousClaimLink = currentCard?.querySelector('[data-refund-claim]')?.href || '';
+        if (!window.confirm('Cancel this unpaid booking?')) return;
         cancelButton.disabled = true;
         try {
           const response = await fetch(`/api/v1/bookings/customer/${type}/${encodeURIComponent(id)}/cancel`, {
@@ -379,32 +334,12 @@
           const result = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(result.error || 'Unable to cancel booking.');
           if (result.paid && !result.deleted && result.status !== 'cancelled') {
-            alert('The GCash payment completed before cancellation. The booking is still active; select Cancel booking again to request cancellation and refund.');
-          } else if (isRefundRefresh && result.refund?.transferLink === previousClaimLink) {
-            alert('PayMongo still marks this transfer as processing. No second refund was created to avoid duplicate payment. If the link says it could not be sent, use “Report failed link” so staff can arrange a replacement.');
-          } else if (isRefundRefresh && result.refund?.transferLink) {
-            alert('PayMongo issued a new refund claim link. Use the updated button on this booking.');
-          } else if (result.refund?.status === 'failed') {
-            alert(isRefundRefresh
-              ? 'PayMongo could not refresh the refund link. Please contact the business for help.'
-              : 'PayMongo could not start the refund. Please contact the business for help.');
-          } else if (result.refund && !result.refund.transferLink) {
-            alert('The booking was cancelled and the refund request was sent to PayMongo. Refund completion may take time.');
+            alert('Payment completed before cancellation. This paid booking remains active; request a reschedule instead.');
           }
           if (result.notificationSent === false) {
             alert('Your booking was canceled, but staff could not be notified automatically. Please contact the team.');
           }
           await loadProfile();
-          if (result.refund?.transferLink) {
-            const cancelledCard = [...document.querySelectorAll('.recent-booking-card')]
-              .find((card) => card.dataset.bookingId === String(id) && card.dataset.bookingType === type);
-            const claimLink = cancelledCard?.querySelector('[data-refund-claim]');
-            if (cancelledCard && claimLink) {
-              cancelledCard.querySelector('.recent-booking-expand').open = true;
-              cancelledCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              claimLink.focus({ preventScroll: true });
-            }
-          }
         } catch (error) {
           alert(error.message);
           cancelButton.disabled = false;
@@ -865,41 +800,6 @@
       const payment = booking.paymentMethod === 'qrph'
         ? (booking.paymentStatus === 'paid' ? 'Paid online via GCash' : 'GCash payment pending')
         : (booking.paymentStatus === 'paid' ? 'Cash paid' : 'Cash due at counter');
-      const refundTransferLink = booking.paymentRefundTransferLink;
-      const refundStatus = String(booking.paymentRefundStatus || '').toLowerCase();
-      const isCancelledPaidGcash = ['cancelled', 'canceled'].includes(String(booking.status || '').toLowerCase())
-        && booking.paymentMethod === 'qrph'
-        && booking.paymentStatus === 'paid';
-      const refundClaimIssueOpen = booking.paymentRefundClaimIssueStatus === 'open';
-      const canClaimRefund = ['cancelled', 'canceled'].includes(String(booking.status || '').toLowerCase())
-        && booking.paymentMethod === 'qrph'
-        && !['failed', 'succeeded', 'refunded'].includes(refundStatus)
-        && typeof refundTransferLink === 'string'
-        && ['https://transfer.paymongo.com/', 'https://transfer.paymongo-stg.com/'].some((prefix) => refundTransferLink.startsWith(prefix));
-      const canRefreshRefund = isCancelledPaidGcash
-        && ['failed', 'pending', 'processing', 'refunding'].includes(refundStatus);
-      const refundClaimMarkup = canClaimRefund || canRefreshRefund
-        ? `<div class="refund-claim-banner${refundStatus === 'failed' ? ' refund-claim-banner--failed' : ''}">
-            <div><strong>${refundStatus === 'failed' ? 'GCash refund needs a new link' : 'GCash refund status'}</strong>
-              <p>${refundStatus === 'failed'
-                ? 'The previous transfer could not be completed. Check PayMongo and request a replacement link.'
-                : canClaimRefund
-                  ? 'Choose where to receive your refund. This secure link expires in 3 days. If PayMongo could not send it, check for a replacement below.'
-                  : 'Your refund is being processed. Check PayMongo for the latest transfer status.'}</p>
-            </div>
-            <div class="refund-claim-actions">
-              ${canClaimRefund ? `<a class="btn btn-primary btn-sm" href="${escapeHtml(refundTransferLink)}" target="_blank" rel="noopener noreferrer" data-refund-claim>Claim GCash refund</a>` : ''}
-              ${canRefreshRefund ? `<button class="btn btn-outline btn-sm" type="button" data-cancel-type="${item.bookingType}" data-cancel-id="${escapeHtml(booking.id)}" data-refund-retry="true" data-refund-refresh="true">${refundStatus === 'failed' ? 'Request a new link' : 'Check for a new link'}</button>` : ''}
-            </div>
-          </div>`
-        : '';
-      const refundIssueMarkup = isCancelledPaidGcash
-        && booking.paymentRefundReference
-        && !['succeeded', 'refunded'].includes(refundStatus)
-        ? refundClaimIssueOpen
-          ? '<p class="refund-issue-reported" role="status">Staff have been notified. They will arrange a replacement PayMongo transfer.</p>'
-          : `<button class="btn btn-outline btn-sm refund-issue-button" type="button" data-refund-issue data-refund-issue-type="${item.bookingType}" data-refund-issue-id="${escapeHtml(booking.id)}">Report failed link</button>`
-        : '';
       const bookedAt = bookingCreatedAt(booking);
       const detailRows = [
         ['Booking reference', booking.id],
@@ -918,8 +818,6 @@
       if (booking.notes) detailRows.splice(detailRows.length - 2, 0, ['Special requests', booking.notes]);
 
       return `<li class="recent-booking-card" data-booking-id="${escapeHtml(booking.id)}" data-booking-type="${item.bookingType}">
-        ${refundClaimMarkup}
-        ${refundIssueMarkup}
         <details class="recent-booking-expand">
           <summary class="recent-booking-summary">
             <span class="recent-booking-heading"><strong>${escapeHtml(item.type)}: ${escapeHtml(item.label)}</strong><span class="transaction-meta">${escapeHtml(item.details)} • ${escapeHtml(item.pets)}</span></span>

@@ -2,7 +2,6 @@ const { HotelReservation, Customer, Pet } = require('../models');
 const { getRequestRole } = require('../util/adminAuth');
 const { randomUUID } = require('crypto');
 const { sendReservationTicket, sendBookingCancellation } = require('../util/mailer');
-const { requestGcashBookingRefund } = require('../util/paymentRefund');
 const {
   hotelDateKeys,
   hotelLockIdsForTypes,
@@ -277,6 +276,9 @@ const updateReservation = async (req, res, next) => {
     if (status && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'A valid status is required' });
     }
+    if (status === 'cancelled' && String(reservation.paymentStatus || '').toLowerCase() === 'paid') {
+      return res.status(409).json({ error: 'Paid hotel bookings cannot be cancelled. Request a reschedule instead.' });
+    }
     if (status === 'checked-out') {
       if (reservation.status !== 'checked-in') {
         return res.status(409).json({ error: 'Only checked-in reservations can be checked out.' });
@@ -423,10 +425,7 @@ const updateReservation = async (req, res, next) => {
         console.error(`Unable to send cancellation notice for hotel reservation ${reservation.id}:`, notificationError);
       }
     }
-    const refund = status === 'cancelled' && !wasAlreadyCancelled
-      ? await requestGcashBookingRefund(reservation)
-      : null;
-    res.json({ success: true, refund });
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

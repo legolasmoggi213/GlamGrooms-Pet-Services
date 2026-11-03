@@ -37,13 +37,11 @@ const {
 } = require('../util/bookingCalculations');
 const { sendPayMongoReceipt, sendReservationTicket } = require('../util/mailer');
 const { verifyQrPhRefundForCheckoutSession } = require('../util/paymongo');
-const { requestGcashBookingRefund } = require('../util/paymentRefund');
 const { isValidMobileNumber } = require('../util/mobileNumber');
 const { isDigitsOnly, isOptionalPhoneNumber } = require('../util/numericValidation');
 const {
   notifyStaffOfBooking,
   notifyStaffOfCancellation,
-  notifyStaffOfRefundClaimIssue,
   notifyStaffOfReschedule,
 } = require('../util/staffNotifications');
 
@@ -761,11 +759,6 @@ const cancelPayment = async (req, res, next) => {
       let attributes = checkout.data?.attributes || {};
       if (isCheckoutSessionPaid(attributes)) {
         await markBookingPaidAndConfirmed(booking, sessionId);
-        if (req.body?.cancelAfterPaid === true) {
-          const customer = await Customer.findByPk(booking.customerId);
-          const cancellation = await cancelCustomerBookingRecord(booking, bookingType, customer);
-          return res.json({ success: true, bookingId, paid: true, deleted: false, ...cancellation });
-        }
         return res.json({ success: true, bookingId, paid: true, deleted: false });
       }
 
@@ -778,11 +771,6 @@ const cancelPayment = async (req, res, next) => {
           attributes = checkout.data?.attributes || {};
           if (isCheckoutSessionPaid(attributes)) {
             await markBookingPaidAndConfirmed(booking, sessionId);
-            if (req.body?.cancelAfterPaid === true) {
-              const customer = await Customer.findByPk(booking.customerId);
-              const cancellation = await cancelCustomerBookingRecord(booking, bookingType, customer);
-              return res.json({ success: true, bookingId, paid: true, deleted: false, ...cancellation });
-            }
             return res.json({ success: true, bookingId, paid: true, deleted: false });
           }
           if (attributes.status !== 'expired') {
@@ -793,11 +781,6 @@ const cancelPayment = async (req, res, next) => {
 
       if (isCheckoutSessionPaid(attributes)) {
         await markBookingPaidAndConfirmed(booking, sessionId);
-        if (req.body?.cancelAfterPaid === true) {
-          const customer = await Customer.findByPk(booking.customerId);
-          const cancellation = await cancelCustomerBookingRecord(booking, bookingType, customer);
-          return res.json({ success: true, bookingId, paid: true, deleted: false, ...cancellation });
-        }
         return res.json({ success: true, bookingId, paid: true, deleted: false });
       }
       if (attributes.status !== 'expired') {
@@ -874,6 +857,10 @@ const ensureCustomerCanChangeBooking = (booking, bookingType, res) => {
 };
 
 const ensureCustomerCanCancelBooking = (booking, bookingType, res) => {
+  if (String(booking.paymentStatus || '').toLowerCase() === 'paid') {
+    res.status(409).json({ error: 'Paid bookings cannot be cancelled online. Request a reschedule instead.' });
+    return false;
+  }
   const status = String(booking.status || '').toLowerCase();
   const unavailableStatuses = bookingType === 'hotel'
     ? ['cancelled', 'canceled', 'checked-in', 'checked-out']
@@ -911,8 +898,7 @@ const cancelCustomerBookingRecord = async (booking, bookingType, customer) => {
     customer,
     pets: pets.length ? pets : fallbackPetNames.map((name) => ({ name })),
   });
-  const refund = await requestGcashBookingRefund(booking);
-  return { status: 'cancelled', notificationSent, refund };
+  return { status: 'cancelled', notificationSent };
 };
 
 const updateCustomerBooking = async (req, res, next) => {
@@ -1108,8 +1094,8 @@ const requestCustomerBookingReschedule = async (req, res, next) => {
     const context = await customerBookingContext(req, res, bookingType);
     if (!context) return;
     const { customer, booking } = context;
-    if (booking.paymentMethod === 'qrph') {
-      return res.status(409).json({ error: 'GCash bookings cannot be rescheduled. Cancel the booking to request a refund.' });
+    if (booking.paymentMethod === 'qrph' && String(booking.paymentStatus || '').toLowerCase() !== 'paid') {
+      return res.status(409).json({ error: 'Complete or cancel the pending online payment before requesting a reschedule.' });
     }
     const status = String(booking.status || '').toLowerCase();
     if (!isFutureBooking(booking, bookingType)
@@ -1295,69 +1281,17 @@ const cancelCustomerBooking = async (req, res, next) => {
     if (!context) return;
     const { customer, booking } = context;
     if (['cancelled', 'canceled'].includes(String(booking.status || '').toLowerCase())) {
-      if (booking.paymentMethod === 'qrph'
-        && booking.paymentStatus === 'paid'
-        && ['failed', 'pending', 'processing', 'refunding'].includes(String(booking.paymentRefundStatus || '').toLowerCase())) {
-        const refund = await requestGcashBookingRefund(booking);
-        return res.json({ success: true, bookingId: booking.id, status: 'cancelled', refund });
-      }
       return res.status(409).json({ error: 'This booking has already been cancelled.' });
     }
     if (!ensureCustomerCanCancelBooking(booking, bookingType, res)) return;
 
     if (booking.paymentMethod === 'qrph' && booking.paymentStatus === 'pending') {
-      req.body = { bookingType, bookingId: booking.id, cancelAfterPaid: true };
+      req.body = { bookingType, bookingId: booking.id };
       return cancelPayment(req, res, next);
     }
 
     const cancellation = await cancelCustomerBookingRecord(booking, bookingType, customer);
     return res.json({ success: true, bookingId: booking.id, ...cancellation });
-  } catch (error) {
-    next(error);
-  }
-};
-
-const reportCustomerRefundClaimIssue = async (req, res, next) => {
-  try {
-    const bookingType = req.params.bookingType;
-    if (!['grooming', 'hotel'].includes(bookingType)) {
-      return res.status(400).json({ error: 'Choose grooming or hotel as the booking type.' });
-    }
-    const context = await customerBookingContext(req, res, bookingType);
-    if (!context) return;
-    const { customer, booking } = context;
-    if (!['cancelled', 'canceled'].includes(String(booking.status || '').toLowerCase())
-      || booking.paymentMethod !== 'qrph'
-      || booking.paymentStatus !== 'paid'
-      || !booking.paymentRefundReference) {
-      return res.status(409).json({ error: 'This booking does not have a reportable PayMongo refund transfer.' });
-    }
-    if (booking.paymentRefundClaimIssueStatus === 'open') {
-      return res.json({ success: true, alreadyReported: true });
-    }
-
-    const petIds = Array.isArray(booking.petIds) && booking.petIds.length
-      ? booking.petIds
-      : booking.petId ? [booking.petId] : [];
-    const pets = (await Promise.all(petIds.map((id) => Pet.findByPk(id)))).filter(Boolean);
-    const fallbackPetNames = booking.petNames
-      || booking.petServices?.map((item) => item.petName)
-      || booking.petRooms?.map((item) => item.petName)
-      || [];
-    const notificationSent = await notifyStaffOfRefundClaimIssue({
-      type: bookingType,
-      booking,
-      customer,
-      pets: pets.length ? pets : fallbackPetNames.map((name) => ({ name })),
-    });
-    if (!notificationSent) {
-      return res.status(503).json({ error: 'Staff could not be notified. Please contact the business directly.' });
-    }
-    await booking.update({
-      paymentRefundClaimIssueStatus: 'open',
-      paymentRefundClaimIssueReportedAt: new Date(),
-    });
-    return res.json({ success: true, alreadyReported: false });
   } catch (error) {
     next(error);
   }
@@ -1570,7 +1504,6 @@ module.exports = {
   listPendingRescheduleRequests,
   decideCustomerRescheduleRequest,
   cancelCustomerBooking,
-  reportCustomerRefundClaimIssue,
   replaceGcashRefundTransferLink,
   getGroomingAvailability,
   getHotelAvailability,

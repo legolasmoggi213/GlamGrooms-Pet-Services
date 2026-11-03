@@ -191,7 +191,6 @@ router.put('/bookings/customer/:bookingType/:id', bookingController.updateCustom
 router.post('/bookings/customer/:bookingType/:id/reschedule-request', bookingController.requestCustomerBookingReschedule);
 router.get('/bookings/customer/reschedule-requests', bookingController.listCustomerRescheduleRequests);
 router.post('/bookings/customer/:bookingType/:id/cancel', bookingController.cancelCustomerBooking);
-router.post('/bookings/customer/:bookingType/:id/refund-claim-issue', bookingController.reportCustomerRefundClaimIssue);
 router.get('/bookings/grooming/availability', bookingController.getGroomingAvailability);
 router.get('/bookings/hotel/availability', bookingController.getHotelAvailability);
 router.get('/services', getServices);

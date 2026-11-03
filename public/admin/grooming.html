@@ -161,7 +161,7 @@
               ${a.paymentStatus === 'paid' ? `<button class="btn btn-success btn-sm" onclick='checkoutAppt(${escapeHtml(JSON.stringify(a.id))}, this)'>Check Out</button>` : `<span class="appointment-payment-status">${a.paymentMethod === 'qrph' ? 'Awaiting online payment' : 'Mark paid before check out'}</span>`}
             ` : ''}
             <button class="btn btn-outline btn-sm" onclick='viewAppt(${escapeHtml(JSON.stringify(a.id))})'>View</button>
-            ${a.status !== 'cancelled' && a.status !== 'completed' ? `<button class="btn btn-danger btn-sm" onclick='rejectAppt(${escapeHtml(JSON.stringify(a.id))}, ${escapeHtml(JSON.stringify(a.status))}, this)'>${a.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
+            ${a.status !== 'cancelled' && a.status !== 'completed' && String(a.paymentStatus || '').toLowerCase() !== 'paid' ? `<button class="btn btn-danger btn-sm" onclick='rejectAppt(${escapeHtml(JSON.stringify(a.id))}, ${escapeHtml(JSON.stringify(a.status))}, this)'>${a.status === 'pending' ? 'Reject' : 'Cancel'}</button>` : ''}
             ${session.role === 'ADMIN' ? `<button class="btn btn-danger btn-sm" onclick='removeAppt(${escapeHtml(JSON.stringify(a.id))})'>Delete</button>` : ''}
             </div>
           </td>`;

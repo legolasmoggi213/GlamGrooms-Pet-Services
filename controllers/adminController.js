@@ -166,9 +166,11 @@ const aggregateWalkInRevenueByCategory = (transactions, period, buckets) => {
     .sort((left, right) => right.revenue - left.revenue || left.label.localeCompare(right.label));
 };
 
-const isPaidWalkInTransaction = (transaction) => transaction.paymentStatus
-  ? transaction.paymentStatus === 'paid'
-  : transaction.paymentMethod !== 'qrph';
+const isPaidWalkInTransaction = (transaction) => {
+  const paymentStatus = String(transaction.paymentStatus || '').trim().toLowerCase();
+  return paymentStatus ? paymentStatus === 'paid'
+    : String(transaction.paymentMethod || '').trim().toLowerCase() !== 'qrph';
+};
 const isPaidCashBooking = (booking) => String(booking.paymentStatus || '').toLowerCase() === 'paid'
   && String(booking.paymentMethod || 'cash').toLowerCase() !== 'qrph';
 const isPaidOnlineBooking = (booking) => String(booking.paymentStatus || '').toLowerCase() === 'paid'
@@ -1272,6 +1274,7 @@ const createCashTransaction = async (req, res, next) => {
             amount: saleAmount,
             items: saleItems,
             paymentMethod,
+            paymentStatus: paymentMethod === 'cash' ? 'paid' : 'pending',
             tenderedAmount: saleTenderedAmount,
             changeDue: saleChangeDue,
             paidAt,

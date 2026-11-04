@@ -1,5 +1,6 @@
 (() => {
   const buttons = [...document.querySelectorAll('[data-report-type]')];
+  const downloadAllButton = document.querySelector('[data-report-all]');
   const paymentFilter = document.getElementById('report-payment-method');
   const startDateFilter = document.getElementById('report-start-date');
   const endDateFilter = document.getElementById('report-end-date');
@@ -15,6 +16,7 @@
     walkin: ['Transaction ID', 'Customer', 'Pet', 'Sale/items', 'Payment', 'Payment status', 'Amount (PHP)', 'Cash tendered', 'Change', 'Date'],
   };
   const titles = { grooming: 'Grooming', hotel: 'Hotel', walkin: 'Walk-in' };
+  const reportTypes = ['grooming', 'hotel', 'walkin'];
   const paymentIndexes = { grooming: 6, hotel: 7, walkin: 4 };
   const amountIndexes = { grooming: 8, hotel: 9, walkin: 6 };
 
@@ -114,11 +116,24 @@
     }
   };
 
-  const downloadReport = async (type, button) => {
-    if (!Object.prototype.hasOwnProperty.call(reportWidths, type)) {
-      setMessage('That report type is not available.', true);
-      return;
+  const drawPaymentSummary = (pdf, y, counts, totals, title, subtitle) => {
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    if (y + 8 > pageHeight - 14) {
+      pdf.addPage();
+      y = addPageHeading(pdf, title, subtitle);
     }
+    const totalRecords = counts.CASH + counts['ONLINE PAYMENT'];
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(37, 50, 56);
+    pdf.text(
+      `Records: ${totalRecords} | CASH: ${counts.CASH} (PHP ${totals.CASH.toFixed(2)}) | ONLINE PAYMENT: ${counts['ONLINE PAYMENT']} (PHP ${totals['ONLINE PAYMENT'].toFixed(2)})`,
+      12,
+      y + 3,
+    );
+  };
+
+  const downloadReports = async (types, button) => {
     if (!window.jspdf || !window.jspdf.jsPDF) {
       setMessage('PDF export is unavailable. Check your connection, refresh, and try again.', true);
       return;
@@ -136,64 +151,64 @@
     const dateRangeLabel = startDate || endDate
       ? `${startDate || 'Any date'} to ${endDate || 'Any date'}`
       : 'All dates';
+    const isCombined = types.length > 1;
     button.disabled = true;
-    setMessage(`Preparing the ${titles[type]} PDF...`);
+    setMessage(`Preparing ${isCombined ? 'all reports' : `the ${titles[types[0]]} report`} PDF...`);
     try {
-      const query = new URLSearchParams({ type, paymentMethod: filter });
-      if (startDate) query.set('startDate', startDate);
-      if (endDate) query.set('endDate', endDate);
-      const response = await fetch(`/api/v1/admin/reports?${query}`, {
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      const report = await response.json();
-      if (!response.ok) throw new Error(report.error || `Report request failed (${response.status}).`);
-      const headers = reportHeaders[type].map((fallback, index) => String(report.headers?.[index] || fallback));
-
       const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF('l', 'mm', 'a4');
       const subtitle = `${dateRangeLabel} | ${paymentLabel} | Generated ${new Date().toLocaleString()}`;
-      let y = addPageHeading(pdf, report.title, subtitle);
+      let pdf;
+      let reportCount = 0;
+      for (const type of types) {
+        const query = new URLSearchParams({ type, paymentMethod: filter });
+        if (startDate) query.set('startDate', startDate);
+        if (endDate) query.set('endDate', endDate);
+        const response = await fetch(`/api/v1/admin/reports?${query}`, {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        const report = await response.json();
+        if (!response.ok) throw new Error(report.error || `Report request failed (${response.status}).`);
+        const headers = reportHeaders[type].map((fallback, index) => String(report.headers?.[index] || fallback));
+        if (!pdf) pdf = new jsPDF('l', 'mm', 'a4');
+        else pdf.addPage();
 
-      const methodIndex = paymentIndexes[type];
-      const amountIndex = amountIndexes[type];
-      const totals = { CASH: 0, 'ONLINE PAYMENT': 0 };
-      const counts = { CASH: 0, 'ONLINE PAYMENT': 0 };
-      report.rows.forEach((row) => {
-        const method = row[methodIndex];
-        if (!Object.prototype.hasOwnProperty.call(totals, method)) return;
-        totals[method] += Number(row[amountIndex]) || 0;
-        counts[method] += 1;
-      });
-      const totalRecords = counts.CASH + counts['ONLINE PAYMENT'];
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8);
-      pdf.setTextColor(37, 50, 56);
-      pdf.text(
-        `Records: ${totalRecords} | CASH: ${counts.CASH} (PHP ${totals.CASH.toFixed(2)}) | ONLINE PAYMENT: ${counts['ONLINE PAYMENT']} (PHP ${totals['ONLINE PAYMENT'].toFixed(2)})`,
-        12,
-        y,
-      );
-      y += 7;
-      y = drawHeaderRow(pdf, headers, reportWidths[type], y);
-      drawRows(pdf, { ...report, headers }, type, y, subtitle);
+        let y = addPageHeading(pdf, report.title, subtitle);
+        y = drawHeaderRow(pdf, headers, reportWidths[type], y);
+        y = drawRows(pdf, { ...report, headers }, type, y, subtitle);
+
+        const methodIndex = paymentIndexes[type];
+        const amountIndex = amountIndexes[type];
+        const totals = { CASH: 0, 'ONLINE PAYMENT': 0 };
+        const counts = { CASH: 0, 'ONLINE PAYMENT': 0 };
+        report.rows.forEach((row) => {
+          const method = row[methodIndex];
+          if (!Object.prototype.hasOwnProperty.call(totals, method)) return;
+          totals[method] += Number(row[amountIndex]) || 0;
+          counts[method] += 1;
+        });
+        drawPaymentSummary(pdf, y + 2, counts, totals, report.title, subtitle);
+        reportCount += report.rows.length;
+      }
       addPageNumbers(pdf);
 
       const date = new Date().toISOString().slice(0, 10);
       const rangeSuffix = startDate || endDate ? `-${startDate || 'any'}-to-${endDate || 'any'}` : '';
       const filenameFilter = filter === 'gcash' ? 'online' : filter;
-      pdf.save(`${type}-report-${filenameFilter}-payments${rangeSuffix || `-${date}`}.pdf`);
-      setMessage(`${titles[type]} PDF downloaded (${report.rows.length} ${report.rows.length === 1 ? 'record' : 'records'}).`);
+      const reportName = isCombined ? 'all' : types[0];
+      pdf.save(`${reportName}-report-${filenameFilter}-payments${rangeSuffix || `-${date}`}.pdf`);
+      setMessage(`${isCombined ? 'All reports' : titles[types[0]]} PDF downloaded (${reportCount} ${reportCount === 1 ? 'record' : 'records'}).`);
     } catch (error) {
-      setMessage(error.message || `Unable to download the ${titles[type]} PDF.`, true);
+      setMessage(error.message || 'Unable to download the PDF.', true);
     } finally {
       button.disabled = false;
     }
   };
 
   buttons.forEach((button) => {
-    button.addEventListener('click', () => downloadReport(button.dataset.reportType, button));
+    button.addEventListener('click', () => downloadReports([button.dataset.reportType], button));
   });
+  downloadAllButton?.addEventListener('click', () => downloadReports(reportTypes, downloadAllButton));
 
   document.addEventListener('DOMContentLoaded', () => {
     const params = new URLSearchParams(window.location.search);
@@ -205,6 +220,10 @@
     if (startDate && startDateFilter) startDateFilter.value = startDate;
     if (endDate && endDateFilter) endDateFilter.value = endDate;
     if (params.get('download') !== '1' || !type) return;
+    if (type === 'all') {
+      downloadAllButton?.click();
+      return;
+    }
     const button = buttons.find((item) => item.dataset.reportType === type);
     if (button) button.click();
   });

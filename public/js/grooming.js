@@ -532,18 +532,7 @@
 
       setBusy(true, 'Booking...');
       clearAlert();
-      const response = await fetch('/api/v1/bookings/grooming', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        cache: 'no-store',
-        body: JSON.stringify(payload),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const details = Array.isArray(result.details) ? result.details.join(', ') : '';
-        throw new Error(details || result.error || `Booking failed (${response.status})`);
-      }
+      const result = await apiPost('/bookings/grooming', payload);
 
       if (payload.paymentMethod === 'qrph') {
         const checkoutUrl = result.checkout?.checkoutUrl;

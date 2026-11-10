@@ -1369,11 +1369,14 @@ const getGroomingAvailability = async (req, res, next) => {
     const services = Array.isArray(req.query.service) ? req.query.service : [req.query.service].filter(Boolean);
     const durationMinutes = services.length ? groomingBookingDuration(services) : 60;
     if (!durationMinutes) return res.status(400).json({ error: 'A valid grooming service is required.' });
-    const hours = validHoursFor(date);
+    const hours = validHoursFor(date)
+      .map((hour) => {
+        const time = fmtHour(hour);
+        return { time, schedule: validateAppointmentDuration(date, time, durationMinutes) };
+      })
+      .filter(({ schedule }) => schedule.ok);
     const existing = (await GroomingAppointment.findAll({ where: { date } })).filter((booking) => booking.status !== 'cancelled');
-    const slots = await Promise.all(hours.map(async (hour) => {
-      const time = fmtHour(hour);
-      const schedule = validateAppointmentDuration(date, time, durationMinutes);
+    const slots = await Promise.all(hours.map(async ({ time, schedule }) => {
       const future = validateFutureBookingTime(date, time, 'Appointment');
       const availableSlotNumbers = schedule.ok && future.ok
         ? await getGroomingAvailableSlotNumbers({

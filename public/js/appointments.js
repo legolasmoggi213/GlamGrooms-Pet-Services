@@ -89,9 +89,6 @@
         actions.push(`<span class="appointment-payment-status">Payment: ${paymentStatus.toUpperCase()}</span>`);
         actions.push(actionButton(booking, type, 'payment', paymentStatus === 'paid' ? 'Mark Unpaid' : 'Mark Paid', paymentStatus === 'paid' ? 'btn-outline' : 'btn-success'));
       }
-      if (booking.status === 'in-progress' && booking.paymentStatus === 'paid') {
-        actions.push(actionButton(booking, type, 'check-out', 'Check Out', 'btn-success'));
-      }
       if (booking.status === 'completed' && booking.paymentStatus === 'paid') {
         actions.push(booking.paymentReceiptEmailSentAt
           ? '<span class="appointment-payment-status">Receipt sent</span>'
@@ -120,9 +117,9 @@
         if (booking.paymentMethod !== 'qrph') {
           actions.push(actionButton(booking, type, 'payment', paymentStatus === 'paid' ? 'Mark Unpaid' : 'Mark Paid', paymentStatus === 'paid' ? 'btn-outline' : 'btn-success'));
         }
-        actions.push(paymentStatus === 'paid'
-          ? actionButton(booking, type, 'check-out', 'Check Out', 'btn-success')
-          : '<span class="appointment-payment-status">Mark paid before check out</span>');
+        if (paymentStatus !== 'paid') {
+          actions.push('<span class="appointment-payment-status">Mark paid before check out</span>');
+        }
       }
       actions.push(actionButton(booking, type, 'view', 'View', 'btn-outline'));
       if (booking.status !== 'cancelled' && booking.status !== 'checked-in' && booking.status !== 'checked-out'

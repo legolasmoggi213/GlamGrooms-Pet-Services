@@ -199,8 +199,12 @@ const walkInSalesDateKey = (transaction) => {
 const getWalkInSalesAnalytics = async (req, res, next) => {
   try {
     const period = ['daily', 'weekly', 'monthly', 'yearly'].includes(req.query.period) ? req.query.period : 'daily';
-    const transactions = (await CashTransaction.findAll({ where: { type: 'walk-in' } }))
-      .filter(isPaidWalkInTransaction);
+    const [cashTransactions, groomingRecords, hotelRecords] = await Promise.all([
+      CashTransaction.findAll({ where: { type: 'walk-in' } }),
+      findRevenueRecords(GroomingAppointment, REVENUE_GROOMING_STATUSES),
+      findRevenueRecords(HotelReservation, REVENUE_HOTEL_STATUSES),
+    ]);
+    const { transactions } = getWalkInRevenueRecords(cashTransactions, groomingRecords, hotelRecords);
     const buckets = createRevenueBuckets(period, businessDateKey());
     const values = new Map(buckets.map(({ key }) => [key, { sales: 0, count: 0 }]));
     let allTimeSales = 0;
@@ -258,6 +262,63 @@ const hotelRevenueItems = (reservation) => {
     category: room.roomType || reservation.roomType || 'Other',
     revenue: Number(petQuotes[index]?.total ?? fallbackRevenue),
   }));
+};
+
+const getWalkInRevenueRecords = (cashTransactions, groomingRecords, hotelRecords) => {
+  const paidTransactions = cashTransactions.filter(isPaidWalkInTransaction);
+  const posBookingReferences = new Set(paidTransactions.flatMap((transaction) =>
+    (transaction.bookingReferences || []).map((reference) => `${reference.type}:${reference.id}`)));
+  const checkedOutBookings = [
+    ...groomingRecords.filter((booking) => booking.status === 'completed').map((booking) => ({ booking, type: 'grooming' })),
+    ...hotelRecords.filter((booking) => booking.status === 'checked-out').map((booking) => ({ booking, type: 'hotel' })),
+  ].flatMap(({ booking, type }) => {
+    const amount = Number(type === 'grooming' ? booking.price : booking.totalPrice);
+    if (!isPaidCashBooking(booking)
+      || posBookingReferences.has(`${type}:${booking.id}`)
+      || !Number.isFinite(amount)
+      || amount <= 0) return [];
+
+    const items = (type === 'grooming' ? groomingRevenueItems(booking) : hotelRevenueItems(booking))
+      .map((item) => ({
+        name: item.category,
+        category: item.category,
+        quantity: 1,
+        unitPrice: item.revenue,
+        lineTotal: item.revenue,
+      }));
+    const paidAt = booking.checkedOutAt || booking.updatedAt || booking.paymentPaidAt || booking.createdAt;
+    return [{
+      id: `${type}-checkout-${booking.id}`,
+      type: 'walk-in',
+      bookingType: type,
+      bookingId: String(booking.id),
+      customerId: booking.customerId || null,
+      customerName: booking.customerDetails?.name || 'Walk-in customer',
+      petId: booking.petId || null,
+      petNames: Array.isArray(booking.petNames) ? booking.petNames : [],
+      description: type === 'grooming' ? booking.service || 'Grooming checkout' : booking.roomType || 'Hotel checkout',
+      amount,
+      paymentMethod: 'cash',
+      paymentStatus: 'paid',
+      paidAt,
+      createdAt: paidAt,
+      paymentPaidAt: paidAt,
+      items,
+      isCheckoutRevenue: true,
+    }];
+  });
+
+  return { transactions: [...paidTransactions, ...checkedOutBookings], checkedOutBookings };
+};
+
+const checkedOutCashRevenueForPeriod = (records, period, buckets) => {
+  const validKeys = new Set(buckets.map(({ key }) => key));
+  return records.reduce((total, record) => {
+    const dateKey = walkInSalesDateKey(record);
+    return dateKey && validKeys.has(revenuePeriodKey(dateKey, period))
+      ? total + Number(record.amount || 0)
+      : total;
+  }, 0);
 };
 
 const aggregateRevenueByCategory = (records, period, buckets, getItems, categories) => {
@@ -338,9 +399,15 @@ const getStats = async (req, res, next) => {
     const hotelOnlinePaymentRevenue = hotelRecords
       .filter(isPaidOnlineBooking)
       .reduce((total, record) => total + Number(record.totalPrice || 0), 0);
-    const walkInRevenue = cashTransactions
-      .filter(isPaidWalkInTransaction)
+    const { transactions: walkInRevenueRecords, checkedOutBookings } = getWalkInRevenueRecords(
+      cashTransactions,
+      groomingRecords,
+      hotelRecords,
+    );
+    const walkInRevenue = walkInRevenueRecords
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
+    const checkedOutCashRevenue = checkedOutBookings
+      .reduce((total, booking) => total + Number(booking.amount || 0), 0);
     const overTheCounterRevenue = walkInRevenue;
     const productSalesRevenue = cashTransactions
       .filter(isPaidWalkInTransaction)
@@ -371,7 +438,7 @@ const getStats = async (req, res, next) => {
       walkInRevenue,
       overTheCounterRevenue,
       productSalesRevenue,
-      totalRevenue: (groomingRevenue || 0) + (hotelRevenue || 0) + overTheCounterRevenue,
+      totalRevenue: (groomingRevenue || 0) + (hotelRevenue || 0) + overTheCounterRevenue - checkedOutCashRevenue,
     });
   } catch (error) {
     next(error);
@@ -549,7 +616,11 @@ const getRevenueAnalytics = async (req, res, next) => {
       findRevenueRecords(HotelReservation, REVENUE_HOTEL_STATUSES),
       CashTransaction.findAll({ where: { type: 'walk-in' } }),
     ]);
-    const paidWalkInTransactions = walkInTransactions.filter(isPaidWalkInTransaction);
+    const { transactions: paidWalkInTransactions, checkedOutBookings } = getWalkInRevenueRecords(
+      walkInTransactions,
+      grooming,
+      hotel,
+    );
     const buckets = createRevenueBuckets(period, businessDateKey());
     const groomingBuckets = aggregateRevenue(grooming, 'price', period, buckets);
     const hotelBuckets = aggregateRevenue(hotel, 'totalPrice', period, buckets);
@@ -572,6 +643,7 @@ const getRevenueAnalytics = async (req, res, next) => {
     const groomingRevenue = groomingBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
     const hotelRevenue = hotelBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
     const walkInRevenue = walkInBuckets.reduce((total, bucket) => total + bucket.revenue, 0);
+    const checkedOutCashRevenue = checkedOutCashRevenueForPeriod(checkedOutBookings, period, buckets);
     res.json({
       period,
       grooming: groomingBuckets,
@@ -584,7 +656,7 @@ const getRevenueAnalytics = async (req, res, next) => {
         grooming: groomingRevenue,
         hotel: hotelRevenue,
         walkIn: walkInRevenue,
-        combined: groomingRevenue + hotelRevenue + walkInRevenue,
+        combined: groomingRevenue + hotelRevenue + walkInRevenue - checkedOutCashRevenue,
       },
     });
   } catch (error) {
@@ -609,8 +681,12 @@ const getRevenueBreakdown = async (req, res, next) => {
       return groups;
     }, {}));
 
-    const walkInTransactions = (await CashTransaction.findAll({ where: { type: 'walk-in' } }))
-      .filter(isPaidWalkInTransaction);
+    const [cashTransactions, groomingRecords, hotelRecords] = await Promise.all([
+      CashTransaction.findAll({ where: { type: 'walk-in' } }),
+      findRevenueRecords(GroomingAppointment, REVENUE_GROOMING_STATUSES),
+      findRevenueRecords(HotelReservation, REVENUE_HOTEL_STATUSES),
+    ]);
+    const { transactions: walkInTransactions } = getWalkInRevenueRecords(cashTransactions, groomingRecords, hotelRecords);
     const overTheCounter = Object.values(walkInTransactions.reduce((groups, transaction) => {
       const label = transaction.description || 'Walk-in sale';
       const group = groups[label] || { label, count: 0, revenue: 0 };
@@ -787,28 +863,42 @@ const getOperationalReport = async (req, res, next) => {
       });
     }
 
-    const transactions = await CashTransaction.findAll({
-      where: { type: 'walk-in' },
-      order: [['createdAt', 'DESC']],
-    });
+    const [cashTransactions, groomingRecords, hotelRecords, customers, pets] = await Promise.all([
+      CashTransaction.findAll({ where: { type: 'walk-in' }, order: [['createdAt', 'DESC']] }),
+      findRevenueRecords(GroomingAppointment, REVENUE_GROOMING_STATUSES),
+      findRevenueRecords(HotelReservation, REVENUE_HOTEL_STATUSES),
+      Customer.findAll(),
+      Pet.findAll(),
+    ]);
+    const { transactions } = getWalkInRevenueRecords(cashTransactions, groomingRecords, hotelRecords);
+    const customerMap = new Map(customers.map((customer) => [String(customer.id), customer]));
+    const petMap = new Map(pets.map((pet) => [String(pet.id), pet]));
     const rows = transactions
       .filter((transaction) => isPaidWalkInTransaction(transaction)
         && includePaymentMethod(transaction.paymentMethod)
         && includeDateRange(transaction.paidAt || transaction.createdAt))
-      .map((transaction) => [
-        transaction.id,
-        transaction.customerName || 'Walk-in customer',
-        transaction.petName || '—',
-        transaction.description
-          || (Array.isArray(transaction.items) ? transaction.items.map((item) => `${item.quantity}x ${item.name}`).join('; ') : '')
-          || '—',
-        paymentMethodLabel(transaction.paymentMethod),
-        formatReportLabel(transaction.paymentStatus || (transaction.paymentMethod === 'qrph' ? 'pending' : 'paid')),
-        formatAmount(transaction.amount),
-        transaction.paymentMethod === 'qrph' ? '—' : formatAmount(transaction.tenderedAmount ?? transaction.amount),
-        transaction.paymentMethod === 'qrph' ? '—' : formatAmount(transaction.changeDue),
-        formatReportDate(transaction.paidAt || transaction.createdAt),
-      ]);
+      .map((transaction) => {
+        const savedPetNames = Array.isArray(transaction.petNames) ? transaction.petNames : [];
+        const petNames = savedPetNames.length
+          ? savedPetNames
+          : (transaction.petId ? [petMap.get(String(transaction.petId))?.name].filter(Boolean) : []);
+        return [
+          transaction.id,
+          transaction.customerName === 'Walk-in customer'
+            ? customerMap.get(String(transaction.customerId))?.name || transaction.customerName
+            : transaction.customerName || 'Walk-in customer',
+          transaction.petName || petNames.join(', ') || '—',
+          transaction.description
+            || (Array.isArray(transaction.items) ? transaction.items.map((item) => `${item.quantity}x ${item.name}`).join('; ') : '')
+            || '—',
+          paymentMethodLabel(transaction.paymentMethod),
+          formatReportLabel(transaction.paymentStatus || (transaction.paymentMethod === 'qrph' ? 'pending' : 'paid')),
+          formatAmount(transaction.amount),
+          transaction.paymentMethod === 'qrph' ? '—' : formatAmount(transaction.tenderedAmount ?? transaction.amount),
+          transaction.paymentMethod === 'qrph' ? '—' : formatAmount(transaction.changeDue),
+          formatReportDate(transaction.paidAt || transaction.createdAt),
+        ];
+      });
     return res.json({
       title: 'Walk-in Report',
       headers: ['Transaction ID', 'Customer', 'Pet', 'Sale/items', 'Payment', 'Payment status', 'Amount (PHP)', 'Cash tendered', 'Change', 'Date'],

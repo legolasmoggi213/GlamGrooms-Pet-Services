@@ -1,4 +1,5 @@
 const path = require('path');
+const crypto = require('crypto');
 const dotenv = require('dotenv');
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 const express = require('express');
@@ -13,6 +14,122 @@ const app = express();
 const port = process.env.PORT || 3000;
 let databaseConnected = false;
 
+const csrfSecret = process.env.CSRF_SECRET || crypto.randomBytes(32).toString('hex');
+const csrfCookieName = 'csrf_token';
+const loginAttemptWindowMs = 60 * 1000;
+const loginAttempts = new Map();
+
+const readCookieValue = (cookieHeader, name) => {
+  const value = String(cookieHeader || '').split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  if (!value) return null;
+  return decodeURIComponent(value.slice(name.length + 1));
+};
+
+const createCsrfToken = () => {
+  const value = crypto.randomBytes(24).toString('hex');
+  const signature = crypto.createHmac('sha256', csrfSecret).update(value).digest('hex');
+  return `${value}.${signature}`;
+};
+
+const isValidCsrfToken = (token) => {
+  if (typeof token !== 'string' || !token.includes('.')) return false;
+  const [value, signature] = token.split('.');
+  if (!value || !signature) return false;
+  const expected = crypto.createHmac('sha256', csrfSecret).update(value).digest('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  } catch (error) {
+    return false;
+  }
+};
+
+const setCsrfCookie = (res) => {
+  const token = createCsrfToken();
+  res.cookie(csrfCookieName, token, {
+    path: '/',
+    httpOnly: false,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 30 * 60 * 1000,
+  });
+  return token;
+};
+
+const requireCsrfToken = (req, res, next) => {
+  const isAuthRoute = [
+    '/admin/login',
+    '/admin/login/verify-code',
+    '/customer/login',
+    '/customer/login/send-code',
+    '/customer/session',
+    '/customer/register',
+    '/customer/register-profile',
+    '/customer/registration-email-check',
+    '/customer/password/change',
+    '/customer/password/change/send-code',
+  ].includes(req.path) || req.path.startsWith('/customer/logout') || req.path.startsWith('/admin/logout');
+
+  if (isAuthRoute || !req.path.startsWith('/api/v1')) {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      const existing = readCookieValue(req.headers.cookie || '', csrfCookieName);
+      if (!existing || !isValidCsrfToken(existing)) {
+        setCsrfCookie(res);
+      }
+    }
+    return next();
+  }
+
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    const existing = readCookieValue(req.headers.cookie || '', csrfCookieName);
+    if (!existing || !isValidCsrfToken(existing)) {
+      setCsrfCookie(res);
+    }
+    return next();
+  }
+
+  const cookieToken = readCookieValue(req.headers.cookie || '', csrfCookieName);
+  const headerToken = String(req.headers['x-csrf-token'] || req.headers['x-xsrf-token'] || '');
+  if (!cookieToken || !headerToken || cookieToken !== headerToken || !isValidCsrfToken(cookieToken)) {
+    return res.status(403).json({ error: 'Invalid or missing CSRF token.' });
+  }
+  next();
+};
+
+const applySecurityHeaders = (req, res, next) => {
+  app.disable('x-powered-by');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('X-XSS-Protection', '0');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  res.setHeader('Content-Security-Policy', "default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https://api.paymongo.com https://*.firebaseio.com https://*.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com;" );
+  next();
+};
+
+const applyRateLimit = (req, res, next) => {
+  const key = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const now = Date.now();
+  const existing = loginAttempts.get(key) || { count: 0, resetAt: now };
+  if (now - existing.resetAt > loginAttemptWindowMs) {
+    existing.count = 0;
+    existing.resetAt = now;
+  }
+  if (existing.count >= 8) {
+    return res.status(429).json({ error: 'Too many attempts. Please wait a minute before trying again.' });
+  }
+  existing.count += 1;
+  loginAttempts.set(key, existing);
+  next();
+};
+
+app.use(applySecurityHeaders);
+app.use(requireCsrfToken);
+
 app.use((req, res, next) => {
   if (String(req.hostname || '').toLowerCase() === 'glamgrooms.net') {
     return res.redirect(308, `https://www.glamgrooms.net${req.originalUrl}`);
@@ -21,6 +138,7 @@ app.use((req, res, next) => {
 });
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
+app.use(['/admin/login', '/admin/login/verify-code', '/customer/login/send-code', '/customer/session', '/customer/password/change/send-code', '/customer/password/change'], applyRateLimit);
 app.use(express.json({
   verify: (req, res, buffer) => {
     if (req.originalUrl.split('?')[0] === '/webhooks/paymongo') req.rawBody = Buffer.from(buffer);

@@ -84,11 +84,24 @@ document.addEventListener('input', (event) => {
   if (event.target instanceof HTMLInputElement) sanitizeNumericInput(event.target);
 });
 
+const getCookie = (name) => {
+  const value = document.cookie.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  if (!value) return '';
+  return decodeURIComponent(value.slice(name.length + 1));
+};
+
 async function api(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  const csrfToken = getCookie('csrf_token');
+  if (csrfToken && !/^(GET|HEAD|OPTIONS)$/i.test(String(options.method || 'GET'))) {
+    headers['X-CSRF-Token'] = csrfToken;
+  }
+
   const res = await fetch(API_BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     credentials: 'include',
     ...options,
+    headers: { ...headers, ...(options.headers || {}) },
   });
 
   let data = null;

@@ -192,18 +192,16 @@ const getGroomingAvailableSlotNumbers = async ({
   excludeBookingId = null,
   oldLockIds = [],
 }) => {
-  const legacyLockIds = groomingLockIds(date, time, durationMinutes);
   const laneLockIds = Array.from({ length: GROOMING_HOURLY_CAPACITY }, (_, index) =>
     groomingCapacityLockIds(date, time, durationMinutes, index + 1));
-  const unavailable = await getUnavailableBookingSlotIds([...legacyLockIds, ...laneLockIds.flat()]);
+  const unavailable = await getUnavailableBookingSlotIds(laneLockIds.flat());
   const oldLocks = new Set(oldLockIds);
   const occupiedByRecords = groomingOccupiedSlotsFromBookings(bookings, date, time, durationMinutes, excludeBookingId);
-  const legacyLaneOccupied = legacyLockIds.some((id) => unavailable.has(id) && !oldLocks.has(id));
 
   return laneLockIds.flatMap((lockIds, index) => {
     const slotNumber = index + 1;
     const lockOccupied = lockIds.some((id) => unavailable.has(id) && !oldLocks.has(id));
-    if (occupiedByRecords.has(slotNumber) || lockOccupied || (slotNumber === 1 && legacyLaneOccupied)) return [];
+    if (occupiedByRecords.has(slotNumber) || lockOccupied) return [];
     return [slotNumber];
   });
 };
@@ -218,11 +216,9 @@ const claimGroomingBookingSlot = async ({
   oldLockIds = [],
 }) => {
   const oldLocks = new Set(oldLockIds);
-  const legacyLockIds = groomingLockIds(date, time, durationMinutes);
   const laneLockIds = Array.from({ length: GROOMING_HOURLY_CAPACITY }, (_, index) =>
     groomingCapacityLockIds(date, time, durationMinutes, index + 1));
-  const allLockIds = [...legacyLockIds, ...laneLockIds.flat()];
-  const refs = allLockIds.map((id) => lockCollection.doc(id));
+  const refs = laneLockIds.flat().map((id) => lockCollection.doc(id));
   const slotOrder = [preferredSlotNumber, ...Array.from({ length: GROOMING_HOURLY_CAPACITY }, (_, index) => index + 1)]
     .filter((slotNumber, index, slots) => Number.isInteger(slotNumber)
       && slotNumber >= 1
@@ -232,15 +228,13 @@ const claimGroomingBookingSlot = async ({
 
   return withFirestoreFallback(async () => firestore.runTransaction(async (transaction) => {
     const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)));
-    const snapshotsById = new Map(allLockIds.map((id, index) => [id, snapshots[index]]));
+    const snapshotsById = new Map(laneLockIds.flat().map((id, index) => [id, snapshots[index]]));
 
     for (const slotNumber of slotOrder) {
       if (blockedSlotNumbers.includes(slotNumber)) continue;
       const laneIds = laneLockIds[slotNumber - 1];
       const laneOccupied = laneIds.some((id) => snapshotsById.get(id).exists && !oldLocks.has(id));
-      const legacyOccupied = slotNumber === 1
-        && legacyLockIds.some((id) => snapshotsById.get(id).exists && !oldLocks.has(id));
-      if (laneOccupied || legacyOccupied) continue;
+      if (laneOccupied) continue;
 
       const createdLockIds = laneIds.filter((id) => !snapshotsById.get(id).exists);
       createdLockIds.forEach((id) => {

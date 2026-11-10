@@ -1450,7 +1450,13 @@ const createCashTransaction = async (req, res, next) => {
         error.message = `${error.message} A partial appointment or reservation may need staff review.`;
       }
     }
-    next(error);
+    if (error && error.status) {
+      return res.status(error.status).json({
+        error: error.message || 'Unable to complete this sale.',
+        message: error.message || 'Unable to complete this sale.',
+      });
+    }
+    return next(error);
   }
 };
 
